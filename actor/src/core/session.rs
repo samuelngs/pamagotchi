@@ -5,8 +5,10 @@ use super::state::StateHandle;
 use super::tools::action_tools;
 use crate::identity::PersonId;
 use crate::llm::{
-    AssistantMessage, ChatRequest, FinishReason, Message, Provider, StreamEvent, ToolCall,
+    AssistantMessage, ChatRequest, FinishReason, Message, Provider, SamplingConfig, StreamEvent,
+    ToolCall,
 };
+use crate::platform::{MediaAttachment, MediaKind, PlatformRouter};
 use crate::personality::{
     AffectShift, BeliefChange, PersonalityDelta, RelationshipChange, TraitNudge,
 };
@@ -28,10 +30,12 @@ pub struct SessionContext {
     pub store: Arc<dyn Store>,
     pub provider: Arc<dyn Provider>,
     pub model: String,
+    pub sampling: SamplingConfig,
     pub context: Option<ActionContext>,
     pub inject_rx: mpsc::Receiver<InboundMessage>,
     pub progress: Arc<RwLock<ActionProgress>>,
     pub max_turns: usize,
+    pub platform: Arc<PlatformRouter>,
 }
 
 #[allow(dead_code)]
@@ -95,13 +99,14 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
     }
 
     for inbound in &ctx.messages {
-        llm_messages.push(Message::user(&inbound.content));
+        let display = inbound.display_content();
+        llm_messages.push(Message::user(&display));
 
         if let Some(conv) = &ctx.conversation {
             let stored = StoredMessage {
                 timestamp: inbound.timestamp,
                 role: MessageRole::User,
-                content: inbound.content.clone(),
+                content: display,
                 person: inbound.person.clone(),
                 metadata: inbound.metadata.clone(),
             };
@@ -121,9 +126,15 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
     };
 
     for turn in 0..ctx.max_turns {
+        let tool_choice = if !session_state.responded && matches!(ctx.kind, ActionKind::Respond) {
+            crate::llm::ToolChoice::Required
+        } else {
+            crate::llm::ToolChoice::Auto
+        };
         let request = ChatRequest::new(&ctx.model, llm_messages.clone())
             .with_tools(tools.clone())
-            .with_temperature(0.7);
+            .with_tool_choice(tool_choice)
+            .with_sampling(&ctx.sampling);
 
         let mut stream = match ctx.provider.chat_stream(&request).await {
             Ok(s) => s,
@@ -181,12 +192,13 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
             })
             .collect();
 
-        debug!(
+        info!(
             action = %ctx.action_id,
             turn,
             finish = ?finish,
             tool_calls = tool_calls.len(),
-            "LLM response"
+            text_len = text.len(),
+            "LLM turn complete"
         );
 
         if !text.is_empty() {
@@ -220,17 +232,18 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
 
         if !session_state.injected_messages.is_empty() {
             for msg in &session_state.injected_messages {
-                if !llm_messages.iter().any(|m| matches!(m, Message::User(u) if *u == msg.content)) {
+                let display = msg.display_content();
+                if !llm_messages.iter().any(|m| matches!(m, Message::User(u) if *u == display)) {
                     llm_messages.push(Message::system(
                         "--- New message arrived while you were working. Address it before finishing. ---",
                     ));
-                    llm_messages.push(Message::user(&msg.content));
+                    llm_messages.push(Message::user(&display));
 
                     if let Some(conv) = &ctx.conversation {
                         let stored = StoredMessage {
                             timestamp: msg.timestamp,
                             role: MessageRole::User,
-                            content: msg.content.clone(),
+                            content: display,
                             person: msg.person.clone(),
                             metadata: msg.metadata.clone(),
                         };
@@ -281,8 +294,8 @@ async fn execute_tool(
         "update_intent" => tool_update_intent(args, ctx).await,
         "delete_intent" => tool_delete_intent(args, ctx).await,
         "forget_memory" => tool_forget_memory(args, ctx).await,
-        "start_composing" => tool_start_composing(args, ctx),
-        "stop_composing" => tool_stop_composing(args, ctx),
+        "start_composing" => tool_start_composing(args, ctx).await,
+        "stop_composing" => tool_stop_composing(args, ctx).await,
         _ => format!("Unknown tool: {name}"),
     }
 }
@@ -370,41 +383,72 @@ async fn tool_send_message(
     let platform_id = args["platform_id"].as_str();
     let external_id = args["external_id"].as_str();
 
+    let media = match (args["media_url"].as_str(), args["media_type"].as_str()) {
+        (Some(url), Some(kind_str)) => match MediaKind::parse(kind_str) {
+            Some(kind) => Some(MediaAttachment {
+                kind,
+                url: Some(url.to_string()),
+                mime: args["mime_type"].as_str().map(String::from),
+                filename: args["filename"].as_str().map(String::from),
+                size: None,
+            }),
+            None => return format!("Unknown media type: {kind_str}"),
+        },
+        _ => None,
+    };
+
     let is_outbound = platform_id.is_some() && external_id.is_some();
 
-    if !is_outbound {
-        if let Some(conv) = &ctx.conversation {
-            let stored = StoredMessage {
-                timestamp: now(),
-                role: MessageRole::Assistant,
-                content: content.clone(),
-                person: None,
-                metadata: Value::Null,
-            };
-            ctx.store.append_message(conv, None, None, &stored).await.ok();
-        }
+    let (target_platform, target_id) = if is_outbound {
+        (
+            platform_id.unwrap().to_string(),
+            external_id.unwrap().to_string(),
+        )
+    } else if let Some(msg) = ctx.messages.first() {
+        (msg.platform_id.clone(), msg.external_id.clone())
+    } else {
+        state.responded = true;
+        return "No delivery target — message not sent.".into();
+    };
+
+    let delivery = ctx
+        .platform
+        .send_message(&target_platform, &target_id, &content, media.as_ref())
+        .await;
+
+    if let Some(conv) = &ctx.conversation {
+        let stored = StoredMessage {
+            timestamp: now(),
+            role: MessageRole::Assistant,
+            content: content.clone(),
+            person: None,
+            metadata: Value::Null,
+        };
+        ctx.store
+            .append_message(conv, Some(&target_platform), None, &stored)
+            .await
+            .ok();
     }
 
     state.responded = true;
 
-    // TODO: route through communication layer
-    info!(
-        action = %ctx.action_id,
-        conversation = ?ctx.conversation,
-        platform_id = ?platform_id,
-        external_id = ?external_id,
-        content_len = content.len(),
-        "send_message"
-    );
-
-    if is_outbound {
-        format!(
-            "Message sent to {}:{}.",
-            platform_id.unwrap_or("?"),
-            external_id.unwrap_or("?")
-        )
-    } else {
-        "Message sent.".into()
+    match delivery {
+        Ok(_) => {
+            if is_outbound {
+                format!("Message sent to {target_platform}:{target_id}.")
+            } else {
+                "Message sent.".into()
+            }
+        }
+        Err(e) => {
+            warn!(
+                action = %ctx.action_id,
+                %e,
+                platform = %target_platform,
+                "message delivery failed"
+            );
+            format!("Message stored but delivery failed: {e}")
+        }
     }
 }
 
@@ -581,36 +625,46 @@ async fn tool_forget_memory(args: &Value, ctx: &SessionContext) -> String {
     }
 }
 
-fn tool_start_composing(args: &Value, ctx: &SessionContext) -> String {
-    let conversation = args["conversation"]
-        .as_str()
-        .map(|s| ConversationId(s.to_string()))
-        .or_else(|| ctx.conversation.clone());
+async fn tool_start_composing(args: &Value, ctx: &SessionContext) -> String {
+    let external_id = args["external_id"].as_str();
+    let platform_id = args["platform_id"].as_str();
 
-    // TODO: route through communication layer
-    info!(
-        action = %ctx.action_id,
-        conversation = ?conversation,
-        "start_composing"
-    );
+    let (pid, eid) = match (platform_id, external_id) {
+        (Some(p), Some(e)) => (p.to_string(), e.to_string()),
+        _ => match ctx.messages.first() {
+            Some(msg) => (msg.platform_id.clone(), msg.external_id.clone()),
+            None => return "No target for composing signal.".into(),
+        },
+    };
 
-    "Composing signal sent.".into()
+    match ctx.platform.start_composing(&pid, &eid).await {
+        Ok(_) => "Composing signal sent.".into(),
+        Err(e) => {
+            warn!(action = %ctx.action_id, %e, "start_composing failed");
+            format!("Composing signal failed: {e}")
+        }
+    }
 }
 
-fn tool_stop_composing(args: &Value, ctx: &SessionContext) -> String {
-    let conversation = args["conversation"]
-        .as_str()
-        .map(|s| ConversationId(s.to_string()))
-        .or_else(|| ctx.conversation.clone());
+async fn tool_stop_composing(args: &Value, ctx: &SessionContext) -> String {
+    let external_id = args["external_id"].as_str();
+    let platform_id = args["platform_id"].as_str();
 
-    // TODO: route through communication layer
-    info!(
-        action = %ctx.action_id,
-        conversation = ?conversation,
-        "stop_composing"
-    );
+    let (pid, eid) = match (platform_id, external_id) {
+        (Some(p), Some(e)) => (p.to_string(), e.to_string()),
+        _ => match ctx.messages.first() {
+            Some(msg) => (msg.platform_id.clone(), msg.external_id.clone()),
+            None => return "No target for composing signal.".into(),
+        },
+    };
 
-    "Composing signal cleared.".into()
+    match ctx.platform.stop_composing(&pid, &eid).await {
+        Ok(_) => "Composing signal cleared.".into(),
+        Err(e) => {
+            warn!(action = %ctx.action_id, %e, "stop_composing failed");
+            format!("Composing signal failed: {e}")
+        }
+    }
 }
 
 async fn tool_delete_intent(args: &Value, _ctx: &SessionContext) -> String {

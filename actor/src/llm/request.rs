@@ -1,12 +1,35 @@
 use super::{Message, Tool, ToolChoice};
 use serde::Serialize;
 
+#[derive(Clone, Default)]
+pub struct SamplingConfig {
+    pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+    pub top_k: Option<u32>,
+    pub min_p: Option<f32>,
+}
+
+impl ChatRequest {
+    pub fn with_sampling(mut self, config: &SamplingConfig) -> Self {
+        if let Some(t) = config.temperature {
+            self.temperature = Some(t);
+        }
+        self.top_p = config.top_p;
+        self.top_k = config.top_k;
+        self.min_p = config.min_p;
+        self
+    }
+}
+
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<Message>,
     pub tools: Vec<Tool>,
     pub tool_choice: ToolChoice,
     pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+    pub top_k: Option<u32>,
+    pub min_p: Option<f32>,
     pub max_tokens: Option<u32>,
     pub response_format: Option<ResponseFormat>,
 }
@@ -19,6 +42,9 @@ impl ChatRequest {
             tools: vec![],
             tool_choice: ToolChoice::Auto,
             temperature: None,
+            top_p: None,
+            top_k: None,
+            min_p: None,
             max_tokens: None,
             response_format: None,
         }
@@ -36,6 +62,21 @@ impl ChatRequest {
 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
+        self
+    }
+
+    pub fn with_top_p(mut self, top_p: f32) -> Self {
+        self.top_p = Some(top_p);
+        self
+    }
+
+    pub fn with_top_k(mut self, top_k: u32) -> Self {
+        self.top_k = Some(top_k);
+        self
+    }
+
+    pub fn with_min_p(mut self, min_p: f32) -> Self {
+        self.min_p = Some(min_p);
         self
     }
 

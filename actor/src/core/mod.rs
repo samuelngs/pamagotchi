@@ -1,5 +1,5 @@
 mod action;
-mod event;
+pub(crate) mod event;
 mod mind;
 mod prompt;
 mod registry;
@@ -16,8 +16,9 @@ pub use mind::Mind;
 pub use session::OutboundMessage;
 pub use state::{SharedState, StateHandle};
 
-use crate::llm::Provider;
+use crate::llm::{Provider, SamplingConfig};
 use crate::personality::{GrowthConfig, PersonalityState};
+use crate::platform::PlatformRouter;
 use crate::store::{ActorConfig, Store};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -37,9 +38,12 @@ pub struct ActorBuilder {
     growth_config: GrowthConfig,
     store: Arc<dyn Store>,
     provider: Arc<dyn Provider>,
+    platform: Arc<PlatformRouter>,
     model: String,
+    sampling: SamplingConfig,
     max_concurrency: usize,
     event_buffer: usize,
+    event_channel: Option<(mpsc::Sender<WakeEvent>, mpsc::Receiver<WakeEvent>)>,
 }
 
 impl ActorBuilder {
@@ -54,11 +58,15 @@ impl ActorBuilder {
             growth_config: GrowthConfig::default(),
             store,
             provider,
+            platform: Arc::new(PlatformRouter::new()),
             model: "gpt-4o".into(),
+            sampling: SamplingConfig::default(),
             max_concurrency: 5,
             event_buffer: 256,
+            event_channel: None,
         }
     }
+
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
@@ -75,13 +83,32 @@ impl ActorBuilder {
         self
     }
 
+    pub fn with_sampling(mut self, sampling: SamplingConfig) -> Self {
+        self.sampling = sampling;
+        self
+    }
+
     pub fn with_max_concurrency(mut self, max: usize) -> Self {
         self.max_concurrency = max;
         self
     }
 
+    pub fn with_platform(mut self, platform: PlatformRouter) -> Self {
+        self.platform = Arc::new(platform);
+        self
+    }
+
     pub fn with_event_buffer(mut self, size: usize) -> Self {
         self.event_buffer = size;
+        self
+    }
+
+    pub fn with_event_channel(
+        mut self,
+        tx: mpsc::Sender<WakeEvent>,
+        rx: mpsc::Receiver<WakeEvent>,
+    ) -> Self {
+        self.event_channel = Some((tx, rx));
         self
     }
 
@@ -100,7 +127,9 @@ impl ActorBuilder {
             actor_config: RwLock::new(self.actor_config),
         });
 
-        let (event_tx, event_rx) = mpsc::channel(self.event_buffer);
+        let (event_tx, event_rx) = self
+            .event_channel
+            .unwrap_or_else(|| mpsc::channel(self.event_buffer));
         let (delta_tx, delta_rx) = mpsc::channel(64);
 
         let state_handle = StateHandle::new(shared.clone(), delta_tx);
@@ -113,7 +142,9 @@ impl ActorBuilder {
             state_handle.clone(),
             self.store,
             self.provider,
+            self.platform,
             self.model,
+            self.sampling,
             self.max_concurrency,
         );
 
@@ -171,6 +202,9 @@ impl Actor {
         if let Some(handle) = self.mind_handle.take() {
             handle.await.ok();
         }
+
+        drop(self.state);
+
         if let Some(handle) = self.state_handle.take() {
             handle.await.ok();
         }

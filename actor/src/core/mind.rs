@@ -6,8 +6,9 @@ use super::event::{InboundMessage, WakeEvent};
 use super::registry::ActionRegistry;
 use super::state::StateHandle;
 use crate::identity::PersonId;
-use crate::llm::Provider;
+use crate::llm::{Provider, SamplingConfig};
 use crate::personality::Authority;
+use crate::platform::PlatformRouter;
 use crate::store::{ConversationId, MessageRole, Store};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -20,7 +21,9 @@ pub struct Mind {
     state: StateHandle,
     store: Arc<dyn Store>,
     provider: Arc<dyn Provider>,
+    platform: Arc<PlatformRouter>,
     model: String,
+    sampling: SamplingConfig,
 }
 
 impl Mind {
@@ -30,7 +33,9 @@ impl Mind {
         state: StateHandle,
         store: Arc<dyn Store>,
         provider: Arc<dyn Provider>,
+        platform: Arc<PlatformRouter>,
         model: String,
+        sampling: SamplingConfig,
         max_concurrency: usize,
     ) -> Self {
         Self {
@@ -40,7 +45,9 @@ impl Mind {
             state,
             store,
             provider,
+            platform,
             model,
+            sampling,
         }
     }
 
@@ -447,7 +454,9 @@ impl Mind {
         let state_handle = self.state.clone();
         let store = self.store.clone();
         let provider = self.provider.clone();
+        let platform = self.platform.clone();
         let model = self.model.clone();
+        let sampling = self.sampling.clone();
         let progress = self
             .registry
             .get(&id)
@@ -468,10 +477,12 @@ impl Mind {
                 store,
                 provider,
                 model,
+                sampling,
                 context,
                 inject_rx,
                 progress,
                 max_turns: 10,
+                platform,
             };
 
             let result = super::session::run_session(ctx).await;

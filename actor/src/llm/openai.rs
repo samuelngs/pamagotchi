@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tracing::{debug, trace};
 
 pub struct OpenAiProvider {
     client: Client,
@@ -100,6 +101,9 @@ impl OpenAiProvider {
             model: request.model.clone(),
             messages,
             temperature: request.temperature,
+            top_p: request.top_p,
+            top_k: request.top_k,
+            min_p: request.min_p,
             max_tokens: request.max_tokens,
             tools,
             tool_choice,
@@ -193,6 +197,10 @@ impl Provider for OpenAiProvider {
         let url = format!("{}/chat/completions", self.base_url);
         let wire = self.build_request(request, true);
 
+        if let Ok(json) = serde_json::to_string_pretty(&wire) {
+            debug!(url = %url, "LLM request:\n{json}");
+        }
+
         let response = self
             .client
             .post(&url)
@@ -248,6 +256,7 @@ async fn stream_sse(
                 return Ok(());
             }
 
+            trace!(raw = %data, "SSE chunk");
             let chunk: WireStreamChunk = serde_json::from_str(data)?;
 
             for choice in chunk.choices {
@@ -324,6 +333,12 @@ struct WireRequest {
     messages: Vec<WireMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_p: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]

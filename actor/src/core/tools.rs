@@ -64,7 +64,7 @@ pub fn action_tools() -> Vec<Tool> {
                 "properties": {
                     "content": {
                         "type": "string",
-                        "description": "The message to send"
+                        "description": "The message text"
                     },
                     "platform_id": {
                         "type": "string",
@@ -73,6 +73,23 @@ pub fn action_tools() -> Vec<Tool> {
                     "external_id": {
                         "type": "string",
                         "description": "Recipient's ID on that platform. Must be paired with platform_id."
+                    },
+                    "media_url": {
+                        "type": "string",
+                        "description": "URL of media to attach"
+                    },
+                    "media_type": {
+                        "type": "string",
+                        "enum": ["image", "video", "audio", "sticker", "file"],
+                        "description": "Type of media attachment"
+                    },
+                    "mime_type": {
+                        "type": "string",
+                        "description": "MIME type of the media (e.g. image/png, video/mp4)"
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "Filename for file attachments"
                     }
                 },
                 "required": ["content"]
