@@ -483,6 +483,7 @@ impl Mind {
                 progress,
                 max_turns: 10,
                 platform,
+                session_start: std::time::Instant::now(),
             };
 
             let result = super::session::run_session(ctx).await;

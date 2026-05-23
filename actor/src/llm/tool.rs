@@ -5,7 +5,7 @@ pub struct Tool {
     pub parameters: serde_json::Value,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ToolChoice {
     Auto,
     None,

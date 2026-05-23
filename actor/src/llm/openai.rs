@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace, warn};
 
 pub struct OpenAiProvider {
     client: Client,
@@ -201,6 +201,9 @@ impl Provider for OpenAiProvider {
             debug!(url = %url, "LLM request:\n{json}");
         }
 
+        info!(url = %url, model = %wire.model, "sending LLM request");
+        let t0 = std::time::Instant::now();
+
         let response = self
             .client
             .post(&url)
@@ -211,6 +214,8 @@ impl Provider for OpenAiProvider {
             .context("request failed")?;
 
         let status = response.status();
+        info!(status = %status, elapsed_ms = t0.elapsed().as_millis(), "LLM HTTP response received");
+
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             if let Ok(err) = serde_json::from_str::<WireErrorResponse>(&body) {
@@ -223,6 +228,7 @@ impl Provider for OpenAiProvider {
 
         tokio::spawn(async move {
             if let Err(e) = stream_sse(response, &tx).await {
+                warn!(%e, "SSE stream error");
                 let _ = tx.send(Err(e)).await;
             }
         });

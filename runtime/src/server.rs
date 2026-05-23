@@ -125,5 +125,7 @@ async fn build_platforms(
         }
     }
 
+    router.start_composing_sweep();
+
     Ok(router)
 }

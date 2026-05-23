@@ -269,29 +269,24 @@ pub fn action_tools() -> Vec<Tool> {
             }),
         },
         Tool {
-            name: "start_composing".into(),
-            description: "Signal that you are composing a response in a conversation. Shows activity to the other party.".into(),
+            name: "get_current_time".into(),
+            description: "Get the current date and time. Optionally provide a timezone for local time conversion.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "conversation": {
+                    "timezone": {
                         "type": "string",
-                        "description": "Conversation ID to signal composing in. Defaults to current conversation."
+                        "description": "IANA timezone name (e.g. 'Asia/Hong_Kong', 'America/New_York', 'Europe/London'). If omitted, returns UTC only."
                     }
                 }
             }),
         },
         Tool {
-            name: "stop_composing".into(),
-            description: "Signal that you stopped composing without sending. Use when you decide not to respond after starting to compose.".into(),
+            name: "get_session_elapsed".into(),
+            description: "Check how much time has passed since this session started. Useful to gauge pacing and how long you've been working.".into(),
             parameters: json!({
                 "type": "object",
-                "properties": {
-                    "conversation": {
-                        "type": "string",
-                        "description": "Conversation ID to stop composing in. Defaults to current conversation."
-                    }
-                }
+                "properties": {}
             }),
         },
         Tool {

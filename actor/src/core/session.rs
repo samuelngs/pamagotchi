@@ -36,11 +36,13 @@ pub struct SessionContext {
     pub progress: Arc<RwLock<ActionProgress>>,
     pub max_turns: usize,
     pub platform: Arc<PlatformRouter>,
+    pub session_start: std::time::Instant,
 }
 
 #[allow(dead_code)]
 struct SessionState {
     responded: bool,
+    composing_released: bool,
     delta: PersonalityDelta,
     thoughts: Vec<Thought>,
     memories_formed: Vec<MemoryId>,
@@ -57,6 +59,11 @@ pub struct OutboundMessage {
 pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
     let action_ctx = ctx.context.as_ref();
 
+    let composing_target = resolve_composing_target(&ctx);
+    if let Some((ref pid, ref eid)) = composing_target {
+        ctx.platform.acquire_composing(pid, eid).await;
+    }
+
     let system_prompt = match prompt::build_system_prompt(
         &ctx.state,
         &ctx.store,
@@ -70,6 +77,9 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
         Ok(p) => p,
         Err(e) => {
             warn!(%e, action = %ctx.action_id, "failed to build prompt");
+            if let Some((ref pid, ref eid)) = composing_target {
+                ctx.platform.release_composing(pid, eid).await;
+            }
             return ActionResult {
                 delta: None,
                 thoughts: vec![],
@@ -80,17 +90,34 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
         }
     };
 
+    info!(action = %ctx.action_id, system_prompt_len = system_prompt.len(), "system prompt built");
+    debug!(action = %ctx.action_id, system_prompt = %system_prompt, "system prompt content");
+
     let mut llm_messages = vec![Message::system(system_prompt)];
 
     if let Some(action_ctx) = action_ctx {
         for msg in &action_ctx.recent_messages {
-            let llm_msg = match msg.role {
-                MessageRole::User => Message::user(&msg.content),
-                MessageRole::Assistant => Message::assistant(&msg.content),
-                MessageRole::System => Message::system(&msg.content),
+            match msg.role {
+                MessageRole::User => {
+                    llm_messages.push(Message::user(&msg.content));
+                }
+                MessageRole::Assistant => {
+                    let call_id = format!("hist-{}", msg.timestamp);
+                    llm_messages.push(Message::Assistant(AssistantMessage {
+                        text: None,
+                        tool_calls: vec![ToolCall {
+                            id: call_id.clone(),
+                            name: "send_message".into(),
+                            arguments: serde_json::json!({ "content": msg.content }),
+                        }],
+                    }));
+                    llm_messages.push(Message::tool_result(&call_id, "Message sent."));
+                }
+                MessageRole::System => {
+                    llm_messages.push(Message::system(&msg.content));
+                }
                 MessageRole::Tool => continue,
-            };
-            llm_messages.push(llm_msg);
+            }
         }
 
         if !action_ctx.new_messages.is_empty() {
@@ -118,6 +145,7 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
 
     let mut session_state = SessionState {
         responded: false,
+        composing_released: false,
         delta: empty_delta(ctx.messages.first().and_then(|m| m.person.clone())),
         thoughts: vec![],
         memories_formed: vec![],
@@ -126,18 +154,25 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
     };
 
     for turn in 0..ctx.max_turns {
-        let tool_choice = if !session_state.responded && matches!(ctx.kind, ActionKind::Respond) {
-            crate::llm::ToolChoice::Required
-        } else {
-            crate::llm::ToolChoice::Auto
-        };
+        let tool_choice = crate::llm::ToolChoice::Auto;
+        let msg_summary: Vec<String> = llm_messages.iter().map(|m| match m {
+            Message::System(s) => format!("system({})", s.len()),
+            Message::User(s) => format!("user({})", s.len()),
+            Message::Assistant(a) => format!("assistant(text={},tools={})", a.text.as_ref().map_or(0, |t| t.len()), a.tool_calls.len()),
+            Message::Tool(t) => format!("tool_result({}:{})", t.call_id.chars().take(8).collect::<String>(), t.content.len()),
+        }).collect();
+        info!(action = %ctx.action_id, turn, tool_choice = ?tool_choice, messages = ?msg_summary, "LLM request starting");
+
         let request = ChatRequest::new(&ctx.model, llm_messages.clone())
             .with_tools(tools.clone())
             .with_tool_choice(tool_choice)
             .with_sampling(&ctx.sampling);
 
         let mut stream = match ctx.provider.chat_stream(&request).await {
-            Ok(s) => s,
+            Ok(s) => {
+                info!(action = %ctx.action_id, turn, "LLM stream opened");
+                s
+            }
             Err(e) => {
                 warn!(%e, action = %ctx.action_id, turn, "LLM stream failed");
                 break;
@@ -182,6 +217,8 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
             }
         }
 
+        info!(action = %ctx.action_id, turn, "LLM stream ended");
+
         let tool_calls: Vec<ToolCall> = partial_tools
             .into_iter()
             .map(|tc| ToolCall {
@@ -217,6 +254,20 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
         }));
 
         for tool_call in &tool_calls {
+            let args_summary = tool_call.arguments.to_string();
+            let args_short = if args_summary.len() > 200 {
+                format!("{}...", &args_summary[..200])
+            } else {
+                args_summary
+            };
+            info!(
+                action = %ctx.action_id,
+                turn,
+                tool = %tool_call.name,
+                args = %args_short,
+                "executing tool"
+            );
+
             let result = execute_tool(
                 &tool_call.name,
                 &tool_call.arguments,
@@ -224,6 +275,19 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
                 &mut session_state,
             )
             .await;
+
+            let result_short = if result.len() > 200 {
+                format!("{}...", &result[..200])
+            } else {
+                result.clone()
+            };
+            info!(
+                action = %ctx.action_id,
+                turn,
+                tool = %tool_call.name,
+                result = %result_short,
+                "tool completed"
+            );
 
             llm_messages.push(Message::tool_result(&tool_call.id, &result));
 
@@ -255,6 +319,12 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
 
         if matches!(finish, FinishReason::Stop | FinishReason::Length) {
             break;
+        }
+    }
+
+    if !session_state.composing_released {
+        if let Some((ref pid, ref eid)) = composing_target {
+            ctx.platform.release_composing(pid, eid).await;
         }
     }
 
@@ -294,8 +364,8 @@ async fn execute_tool(
         "update_intent" => tool_update_intent(args, ctx).await,
         "delete_intent" => tool_delete_intent(args, ctx).await,
         "forget_memory" => tool_forget_memory(args, ctx).await,
-        "start_composing" => tool_start_composing(args, ctx).await,
-        "stop_composing" => tool_stop_composing(args, ctx).await,
+        "get_current_time" => tool_get_current_time(args),
+        "get_session_elapsed" => tool_get_session_elapsed(ctx),
         _ => format!("Unknown tool: {name}"),
     }
 }
@@ -415,6 +485,11 @@ async fn tool_send_message(
         .platform
         .send_message(&target_platform, &target_id, &content, media.as_ref())
         .await;
+
+    if !state.composing_released {
+        ctx.platform.release_composing(&target_platform, &target_id).await;
+        state.composing_released = true;
+    }
 
     if let Some(conv) = &ctx.conversation {
         let stored = StoredMessage {
@@ -625,46 +700,11 @@ async fn tool_forget_memory(args: &Value, ctx: &SessionContext) -> String {
     }
 }
 
-async fn tool_start_composing(args: &Value, ctx: &SessionContext) -> String {
-    let external_id = args["external_id"].as_str();
-    let platform_id = args["platform_id"].as_str();
-
-    let (pid, eid) = match (platform_id, external_id) {
-        (Some(p), Some(e)) => (p.to_string(), e.to_string()),
-        _ => match ctx.messages.first() {
-            Some(msg) => (msg.platform_id.clone(), msg.external_id.clone()),
-            None => return "No target for composing signal.".into(),
-        },
-    };
-
-    match ctx.platform.start_composing(&pid, &eid).await {
-        Ok(_) => "Composing signal sent.".into(),
-        Err(e) => {
-            warn!(action = %ctx.action_id, %e, "start_composing failed");
-            format!("Composing signal failed: {e}")
-        }
+fn resolve_composing_target(ctx: &SessionContext) -> Option<(String, String)> {
+    if let Some(msg) = ctx.messages.first() {
+        return Some((msg.platform_id.clone(), msg.external_id.clone()));
     }
-}
-
-async fn tool_stop_composing(args: &Value, ctx: &SessionContext) -> String {
-    let external_id = args["external_id"].as_str();
-    let platform_id = args["platform_id"].as_str();
-
-    let (pid, eid) = match (platform_id, external_id) {
-        (Some(p), Some(e)) => (p.to_string(), e.to_string()),
-        _ => match ctx.messages.first() {
-            Some(msg) => (msg.platform_id.clone(), msg.external_id.clone()),
-            None => return "No target for composing signal.".into(),
-        },
-    };
-
-    match ctx.platform.stop_composing(&pid, &eid).await {
-        Ok(_) => "Composing signal cleared.".into(),
-        Err(e) => {
-            warn!(action = %ctx.action_id, %e, "stop_composing failed");
-            format!("Composing signal failed: {e}")
-        }
-    }
+    None
 }
 
 async fn tool_delete_intent(args: &Value, _ctx: &SessionContext) -> String {
@@ -690,6 +730,43 @@ async fn tool_update_intent(args: &Value, _ctx: &SessionContext) -> String {
     );
 
     format!("Intent {id} updated.")
+}
+
+fn tool_get_current_time(args: &Value) -> String {
+    use chrono::Utc;
+
+    let now = Utc::now();
+    let mut out = format!("UTC: {}", now.format("%Y-%m-%d %H:%M:%S"));
+
+    if let Some(tz_str) = args["timezone"].as_str() {
+        match tz_str.parse::<chrono_tz::Tz>() {
+            Ok(tz) => {
+                let local = now.with_timezone(&tz);
+                out.push_str(&format!(
+                    "\nLocal ({}): {}",
+                    tz_str,
+                    local.format("%Y-%m-%d %H:%M:%S %Z")
+                ));
+            }
+            Err(_) => {
+                out.push_str(&format!("\nUnknown timezone: {tz_str}"));
+            }
+        }
+    }
+
+    out
+}
+
+fn tool_get_session_elapsed(ctx: &SessionContext) -> String {
+    let elapsed = ctx.session_start.elapsed();
+    let secs = elapsed.as_secs();
+    if secs < 60 {
+        format!("{secs} seconds")
+    } else if secs < 3600 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h {}m {}s", secs / 3600, (secs % 3600) / 60, secs % 60)
+    }
 }
 
 fn update_progress(

@@ -5,6 +5,7 @@ use super::action::{ActionId, ActionResult};
 
 #[derive(Clone, Debug)]
 pub struct InboundMessage {
+    pub message_id: String,
     pub platform_id: String,
     pub external_id: String,
     pub conversation: ConversationId,

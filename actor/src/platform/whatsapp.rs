@@ -5,7 +5,7 @@ use crate::store::ConversationId;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use whatsapp_rust::bot::Bot;
 use whatsapp_rust::proto_helpers::MessageExt;
 use whatsapp_rust::types::events::Event;
@@ -108,6 +108,7 @@ async fn handle_event(event: &Event, tx: &mpsc::Sender<WakeEvent>) {
         }
         Event::Message(msg, info) => {
             if info.source.is_from_me {
+                debug!(message_id = %info.id, "dropping self-message (is_from_me)");
                 return;
             }
 
@@ -122,6 +123,7 @@ async fn handle_event(event: &Event, tx: &mpsc::Sender<WakeEvent>) {
             let chat = info.source.chat.to_string();
 
             let inbound = InboundMessage {
+                message_id: info.id.to_string(),
                 platform_id: "whatsapp".into(),
                 external_id: chat.clone(),
                 conversation: ConversationId(format!("whatsapp:{chat}")),
