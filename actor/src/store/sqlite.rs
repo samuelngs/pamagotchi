@@ -5,7 +5,7 @@ use super::{
 };
 use crate::identity::{
     Alias, ClaimEvidence, ClaimStatus, Group, GroupContext, GroupId, IdentityClaim, Person,
-    PersonId, Platform, Relation, SocialRelation,
+    PersonId, Relation, SocialRelation,
 };
 use crate::personality::{Authority, BehaviorDirective, DirectiveScope, Label};
 use rusqlite::{params, Connection};
@@ -143,10 +143,10 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
         CREATE TABLE IF NOT EXISTS aliases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             person_id TEXT NOT NULL,
-            platform TEXT NOT NULL,
             platform_id TEXT NOT NULL,
+            external_id TEXT NOT NULL,
             display_name TEXT NOT NULL,
-            UNIQUE(platform, platform_id)
+            UNIQUE(platform_id, external_id)
         );
         CREATE INDEX IF NOT EXISTS idx_aliases_person ON aliases(person_id);
 
@@ -172,10 +172,10 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
         CREATE TABLE IF NOT EXISTS groups (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            platform TEXT NOT NULL,
             platform_id TEXT NOT NULL,
+            external_id TEXT NOT NULL,
             context TEXT NOT NULL DEFAULT 'social',
-            UNIQUE(platform, platform_id)
+            UNIQUE(platform_id, external_id)
         );
 
         CREATE TABLE IF NOT EXISTS group_members (
@@ -805,24 +805,24 @@ impl Store for SqliteStore {
     async fn add_alias(&self, person: &PersonId, alias: &Alias) -> anyhow::Result<()> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO aliases (person_id, platform, platform_id, display_name)
+            "INSERT INTO aliases (person_id, platform_id, external_id, display_name)
              VALUES (?1, ?2, ?3, ?4)",
-            params![person.0, alias.platform.as_str(), alias.platform_id, alias.display_name],
+            params![person.0, alias.platform_id, alias.external_id, alias.display_name],
         )?;
         Ok(())
     }
 
     async fn resolve_alias(
         &self,
-        platform: &str,
         platform_id: &str,
+        external_id: &str,
     ) -> anyhow::Result<Option<Person>> {
         let conn = self.lock()?;
         match conn.query_row(
             "SELECT p.id, p.name, p.bio, p.first_seen, p.last_seen
              FROM aliases a JOIN people p ON p.id = a.person_id
-             WHERE a.platform = ?1 AND a.platform_id = ?2",
-            params![platform, platform_id],
+             WHERE a.platform_id = ?1 AND a.external_id = ?2",
+            params![platform_id, external_id],
             read_person,
         ) {
             Ok(p) => Ok(Some(p)),
@@ -834,14 +834,13 @@ impl Store for SqliteStore {
     async fn get_aliases(&self, person: &PersonId) -> anyhow::Result<Vec<Alias>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT platform, platform_id, display_name FROM aliases WHERE person_id = ?1",
+            "SELECT platform_id, external_id, display_name FROM aliases WHERE person_id = ?1",
         )?;
         let results = stmt
             .query_map(params![person.0], |row| {
-                let platform_str: String = row.get("platform")?;
                 Ok(Alias {
-                    platform: Platform::parse(&platform_str),
                     platform_id: row.get("platform_id")?,
+                    external_id: row.get("external_id")?,
                     display_name: row.get("display_name")?,
                 })
             })?
@@ -1028,12 +1027,12 @@ impl Store for SqliteStore {
         let conn = self.lock()?;
         let tx = TxGuard::begin(&conn)?;
         conn.execute(
-            "INSERT INTO groups (id, name, platform, platform_id, context) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO groups (id, name, platform_id, external_id, context) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 group.id.0,
                 group.name,
-                group.platform.as_str(),
                 group.platform_id,
+                group.external_id,
                 group.context.as_str(),
             ],
         )?;
@@ -1050,21 +1049,20 @@ impl Store for SqliteStore {
     async fn get_group(&self, id: &GroupId) -> anyhow::Result<Option<Group>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT id, name, platform, platform_id, context FROM groups WHERE id = ?1",
+            "SELECT id, name, platform_id, external_id, context FROM groups WHERE id = ?1",
             params![id.0],
             |row| {
-                let platform_str: String = row.get("platform")?;
                 let context_str: String = row.get("context")?;
                 Ok((
                     row.get::<_, String>("id")?,
                     row.get::<_, String>("name")?,
-                    platform_str,
                     row.get::<_, String>("platform_id")?,
+                    row.get::<_, String>("external_id")?,
                     context_str,
                 ))
             },
         ) {
-            Ok((gid, name, platform, platform_id, context)) => {
+            Ok((gid, name, platform_id, external_id, context)) => {
                 let mut stmt = conn.prepare(
                     "SELECT person_id FROM group_members WHERE group_id = ?1",
                 )?;
@@ -1077,8 +1075,8 @@ impl Store for SqliteStore {
                 Ok(Some(Group {
                     id: GroupId(gid),
                     name,
-                    platform: Platform::parse(&platform),
                     platform_id,
+                    external_id,
                     context: GroupContext::parse(&context),
                     members,
                 }))
@@ -1508,8 +1506,8 @@ mod tests {
         let store = test_store();
         store.add_person(&sample_person("p1", "Alice")).await.unwrap();
         store.add_alias(&PersonId("p1".into()), &Alias {
-            platform: Platform::Discord,
-            platform_id: "discord-123".into(),
+            platform_id: "discord".into(),
+            external_id: "discord-123".into(),
             display_name: "alice#1234".into(),
         }).await.unwrap();
 
@@ -1557,8 +1555,8 @@ mod tests {
         store.add_person(&sample_person("p2", "Alice Alt")).await.unwrap();
 
         store.add_alias(&PersonId("p2".into()), &Alias {
-            platform: Platform::Telegram,
-            platform_id: "tg-alice".into(),
+            platform_id: "telegram".into(),
+            external_id: "tg-alice".into(),
             display_name: "alice_t".into(),
         }).await.unwrap();
 
@@ -1605,8 +1603,8 @@ mod tests {
         store.add_group(&Group {
             id: GroupId("g1".into()),
             name: "Family Chat".into(),
-            platform: Platform::Discord,
-            platform_id: "discord-family".into(),
+            platform_id: "discord".into(),
+            external_id: "discord-family".into(),
             context: GroupContext::Family,
             members: vec![PersonId("p1".into()), PersonId("p2".into())],
         }).await.unwrap();

@@ -1,4 +1,4 @@
-use super::{PersonId, Platform};
+use super::PersonId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -8,8 +8,8 @@ pub struct GroupId(pub String);
 pub struct Group {
     pub id: GroupId,
     pub name: String,
-    pub platform: Platform,
     pub platform_id: String,
+    pub external_id: String,
     pub context: GroupContext,
     pub members: Vec<PersonId>,
 }

@@ -54,7 +54,7 @@ pub trait Store: Send + Sync {
 
     // Aliases
     async fn add_alias(&self, person: &PersonId, alias: &Alias) -> anyhow::Result<()>;
-    async fn resolve_alias(&self, platform: &str, platform_id: &str) -> anyhow::Result<Option<Person>>;
+    async fn resolve_alias(&self, platform_id: &str, external_id: &str) -> anyhow::Result<Option<Person>>;
     async fn get_aliases(&self, person: &PersonId) -> anyhow::Result<Vec<Alias>>;
     async fn merge_people(&self, keep: &PersonId, merge: &PersonId) -> anyhow::Result<()>;
 
