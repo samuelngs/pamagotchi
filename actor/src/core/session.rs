@@ -4,7 +4,9 @@ use super::prompt;
 use super::state::StateHandle;
 use super::tools::action_tools;
 use crate::identity::PersonId;
-use crate::llm::{AssistantMessage, ChatRequest, FinishReason, Message, Provider};
+use crate::llm::{
+    AssistantMessage, ChatRequest, FinishReason, Message, Provider, StreamEvent, ToolCall,
+};
 use crate::personality::{
     AffectShift, BeliefChange, PersonalityDelta, RelationshipChange, TraitNudge,
 };
@@ -29,6 +31,7 @@ pub struct SessionContext {
     pub context: Option<ActionContext>,
     pub inject_rx: mpsc::Receiver<InboundMessage>,
     pub progress: Arc<RwLock<ActionProgress>>,
+    pub max_turns: usize,
 }
 
 #[allow(dead_code)]
@@ -102,7 +105,7 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
                 person: inbound.person.clone(),
                 metadata: inbound.metadata.clone(),
             };
-            ctx.store.append_message(conv, None, &stored).await.ok();
+            ctx.store.append_message(conv, None, None, &stored).await.ok();
         }
     }
 
@@ -117,34 +120,12 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
         reply_tx: None,
     };
 
-    let max_turns = 10;
-    for turn in 0..max_turns {
-        while let Ok(msg) = ctx.inject_rx.try_recv() {
-            info!(action = %ctx.action_id, "received injected message");
-            llm_messages.push(Message::system(
-                "--- New message arrived while you were working. Address it before finishing. ---",
-            ));
-            llm_messages.push(Message::user(&msg.content));
-
-            if let Some(conv) = &ctx.conversation {
-                let stored = StoredMessage {
-                    timestamp: msg.timestamp,
-                    role: MessageRole::User,
-                    content: msg.content.clone(),
-                    person: msg.person.clone(),
-                    metadata: msg.metadata.clone(),
-                };
-                ctx.store.append_message(conv, None, &stored).await.ok();
-            }
-
-            session_state.injected_messages.push(msg);
-        }
-
+    for turn in 0..ctx.max_turns {
         let request = ChatRequest::new(&ctx.model, llm_messages.clone())
             .with_tools(tools.clone())
             .with_temperature(0.7);
 
-        let stream = match ctx.provider.chat_stream(&request).await {
+        let mut stream = match ctx.provider.chat_stream(&request).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(%e, action = %ctx.action_id, turn, "LLM stream failed");
@@ -152,40 +133,74 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
             }
         };
 
-        let response = match stream.collect().await {
-            Ok(r) => r,
-            Err(e) => {
-                warn!(%e, action = %ctx.action_id, turn, "LLM stream collection failed");
-                break;
+        let mut text = String::new();
+        let mut partial_tools: Vec<PartialToolCall> = vec![];
+        let mut finish = FinishReason::Stop;
+
+        while let Some(event) = stream.recv().await {
+            let event = match event {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!(%e, action = %ctx.action_id, turn, "stream event error");
+                    break;
+                }
+            };
+
+            match event {
+                StreamEvent::TextDelta(delta) => text.push_str(&delta),
+                StreamEvent::ToolCallBegin { index, id, name } => {
+                    if partial_tools.len() <= index {
+                        partial_tools.resize_with(index + 1, PartialToolCall::default);
+                    }
+                    partial_tools[index].id = id;
+                    partial_tools[index].name = name;
+                }
+                StreamEvent::ToolCallDelta { index, arguments_delta } => {
+                    if partial_tools.len() <= index {
+                        partial_tools.resize_with(index + 1, PartialToolCall::default);
+                    }
+                    partial_tools[index].arguments.push_str(&arguments_delta);
+                }
+                StreamEvent::FinishReason(r) => finish = r,
+                StreamEvent::Usage(_) => {}
             }
-        };
+
+            while let Ok(msg) = ctx.inject_rx.try_recv() {
+                info!(action = %ctx.action_id, "received injected message mid-stream");
+                session_state.injected_messages.push(msg);
+            }
+        }
+
+        let tool_calls: Vec<ToolCall> = partial_tools
+            .into_iter()
+            .map(|tc| ToolCall {
+                id: tc.id,
+                name: tc.name,
+                arguments: serde_json::from_str(&tc.arguments)
+                    .unwrap_or(Value::Object(Default::default())),
+            })
+            .collect();
 
         debug!(
             action = %ctx.action_id,
             turn,
-            finish = ?response.finish_reason,
-            tool_calls = response.tool_calls().len(),
+            finish = ?finish,
+            tool_calls = tool_calls.len(),
             "LLM response"
         );
 
-        if let Some(text) = response.text() {
-            if !text.is_empty() {
-                info!(action = %ctx.action_id, thought = %text, "internal monologue");
-            }
+        if !text.is_empty() {
+            info!(action = %ctx.action_id, thought = %text, "internal monologue");
         }
 
-        let has_tools = response.has_tool_calls();
-        let finish = response.finish_reason;
-
-        let text = response.message.text.clone();
-        let tool_calls = response.message.tool_calls;
+        let has_tools = !tool_calls.is_empty();
 
         if !has_tools {
             break;
         }
 
         llm_messages.push(Message::Assistant(AssistantMessage {
-            text,
+            text: if text.is_empty() { None } else { Some(text) },
             tool_calls: tool_calls.clone(),
         }));
 
@@ -201,6 +216,28 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
             llm_messages.push(Message::tool_result(&tool_call.id, &result));
 
             update_progress(&ctx.progress, &session_state, &tool_call.name);
+        }
+
+        if !session_state.injected_messages.is_empty() {
+            for msg in &session_state.injected_messages {
+                if !llm_messages.iter().any(|m| matches!(m, Message::User(u) if *u == msg.content)) {
+                    llm_messages.push(Message::system(
+                        "--- New message arrived while you were working. Address it before finishing. ---",
+                    ));
+                    llm_messages.push(Message::user(&msg.content));
+
+                    if let Some(conv) = &ctx.conversation {
+                        let stored = StoredMessage {
+                            timestamp: msg.timestamp,
+                            role: MessageRole::User,
+                            content: msg.content.clone(),
+                            person: msg.person.clone(),
+                            metadata: msg.metadata.clone(),
+                        };
+                        ctx.store.append_message(conv, None, None, &stored).await.ok();
+                    }
+                }
+            }
         }
 
         if matches!(finish, FinishReason::Stop | FinishReason::Length) {
@@ -236,6 +273,7 @@ async fn execute_tool(
         "recall_memories" => tool_recall_memories(args, ctx).await,
         "form_memory" => tool_form_memory(args, ctx, state).await,
         "send_message" => tool_send_message(args, ctx, state).await,
+        "lookup_contacts" => tool_lookup_contacts(args, ctx).await,
         "read_messages" => tool_read_messages(args, ctx).await,
         "reflect" => tool_reflect(args, ctx, state),
         "note_thought" => tool_note_thought(args, ctx, state).await,
@@ -329,29 +367,45 @@ async fn tool_send_message(
     state: &mut SessionState,
 ) -> String {
     let content = args["content"].as_str().unwrap_or("").to_string();
+    let platform_id = args["platform_id"].as_str();
+    let external_id = args["external_id"].as_str();
 
-    if let Some(conv) = &ctx.conversation {
-        let stored = StoredMessage {
-            timestamp: now(),
-            role: MessageRole::Assistant,
-            content: content.clone(),
-            person: None,
-            metadata: Value::Null,
-        };
-        ctx.store.append_message(conv, None, &stored).await.ok();
+    let is_outbound = platform_id.is_some() && external_id.is_some();
+
+    if !is_outbound {
+        if let Some(conv) = &ctx.conversation {
+            let stored = StoredMessage {
+                timestamp: now(),
+                role: MessageRole::Assistant,
+                content: content.clone(),
+                person: None,
+                metadata: Value::Null,
+            };
+            ctx.store.append_message(conv, None, None, &stored).await.ok();
+        }
     }
 
     state.responded = true;
 
-    // TODO: send through communication layer via reply_tx channel
+    // TODO: route through communication layer
     info!(
         action = %ctx.action_id,
         conversation = ?ctx.conversation,
+        platform_id = ?platform_id,
+        external_id = ?external_id,
         content_len = content.len(),
         "send_message"
     );
 
-    "Message sent.".into()
+    if is_outbound {
+        format!(
+            "Message sent to {}:{}.",
+            platform_id.unwrap_or("?"),
+            external_id.unwrap_or("?")
+        )
+    } else {
+        "Message sent.".into()
+    }
 }
 
 fn tool_reflect(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
@@ -455,6 +509,28 @@ async fn tool_create_intent(args: &Value, _ctx: &SessionContext) -> String {
     info!(task, kind, "intent created (stub)");
 
     format!("Intent created: {task}")
+}
+
+async fn tool_lookup_contacts(args: &Value, ctx: &SessionContext) -> String {
+    let person_id = args["person"].as_str().unwrap_or("");
+    let person = PersonId(person_id.to_string());
+
+    match ctx.store.get_aliases(&person).await {
+        Ok(aliases) if aliases.is_empty() => format!("No contact methods found for {person_id}."),
+        Ok(aliases) => {
+            let mut out = String::new();
+            for alias in &aliases {
+                out.push_str(&format!(
+                    "- {} ({}): {}\n",
+                    alias.platform_id,
+                    alias.external_id,
+                    alias.display_name,
+                ));
+            }
+            out
+        }
+        Err(e) => format!("Error looking up contacts: {e}"),
+    }
 }
 
 async fn tool_read_messages(args: &Value, ctx: &SessionContext) -> String {
@@ -612,4 +688,11 @@ fn uuid_v4() -> String {
         .unwrap_or_default()
         .as_nanos();
     format!("{:032x}", t)
+}
+
+#[derive(Default)]
+struct PartialToolCall {
+    id: String,
+    name: String,
+    arguments: String,
 }

@@ -471,6 +471,7 @@ impl Mind {
                 context,
                 inject_rx,
                 progress,
+                max_turns: 10,
             };
 
             let result = super::session::run_session(ctx).await;

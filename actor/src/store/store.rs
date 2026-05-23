@@ -25,6 +25,7 @@ pub trait Store: Send + Sync {
     async fn append_message(
         &self,
         conv: &ConversationId,
+        platform_id: Option<&str>,
         group: Option<&GroupId>,
         msg: &StoredMessage,
     ) -> anyhow::Result<()>;

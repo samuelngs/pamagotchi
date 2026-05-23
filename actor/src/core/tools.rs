@@ -58,7 +58,7 @@ pub fn action_tools() -> Vec<Tool> {
         },
         Tool {
             name: "send_message".into(),
-            description: "Send a message to a conversation. Can be used to respond or to reach out proactively.".into(),
+            description: "Send a message. Omit platform_id and external_id to reply in the current conversation. Provide both to send to a specific destination (use lookup_contacts to find someone's contact methods).".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -66,16 +66,30 @@ pub fn action_tools() -> Vec<Tool> {
                         "type": "string",
                         "description": "The message to send"
                     },
-                    "conversation": {
+                    "platform_id": {
                         "type": "string",
-                        "description": "Conversation ID to send to. Defaults to current conversation if omitted."
+                        "description": "Platform to send through (e.g. discord, telegram, whatsapp)"
                     },
-                    "person": {
+                    "external_id": {
                         "type": "string",
-                        "description": "Person ID to message. Used for proactive outreach when no conversation exists."
+                        "description": "Recipient's ID on that platform. Must be paired with platform_id."
                     }
                 },
                 "required": ["content"]
+            }),
+        },
+        Tool {
+            name: "lookup_contacts".into(),
+            description: "Look up how to reach a person. Returns their known contact methods across platforms.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "person": {
+                        "type": "string",
+                        "description": "Person ID to look up"
+                    }
+                },
+                "required": ["person"]
             }),
         },
         Tool {

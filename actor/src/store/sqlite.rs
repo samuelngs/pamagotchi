@@ -90,6 +90,7 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
 
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
+            platform_id TEXT,
             person_id TEXT,
             group_id TEXT,
             summary TEXT,
@@ -572,6 +573,7 @@ impl Store for SqliteStore {
     async fn append_message(
         &self,
         conv: &ConversationId,
+        platform_id: Option<&str>,
         group: Option<&GroupId>,
         msg: &StoredMessage,
     ) -> anyhow::Result<()> {
@@ -581,14 +583,15 @@ impl Store for SqliteStore {
         let group_id = group.map(|g| &g.0);
 
         conn.execute(
-            "INSERT INTO conversations (id, person_id, group_id, started_at, last_message_at, message_count)
-             VALUES (?1, ?2, ?3, ?4, ?4, 1)
+            "INSERT INTO conversations (id, platform_id, person_id, group_id, started_at, last_message_at, message_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)
              ON CONFLICT(id) DO UPDATE SET
-                last_message_at = ?4,
+                last_message_at = ?5,
                 message_count = message_count + 1,
+                platform_id = COALESCE(conversations.platform_id, excluded.platform_id),
                 person_id = COALESCE(conversations.person_id, excluded.person_id),
                 group_id = COALESCE(conversations.group_id, excluded.group_id)",
-            params![conv.0, person_id, group_id, msg.timestamp],
+            params![conv.0, platform_id, person_id, group_id, msg.timestamp],
         )?;
 
         let metadata_json = serde_json::to_string(&msg.metadata)?;
@@ -655,7 +658,7 @@ impl Store for SqliteStore {
     async fn list_conversations(&self) -> anyhow::Result<Vec<ConversationSummary>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT id, person_id, group_id, summary, message_count, started_at, last_message_at
+            "SELECT id, platform_id, person_id, group_id, summary, message_count, started_at, last_message_at
              FROM conversations ORDER BY last_message_at DESC",
         )?;
         let results = stmt
@@ -664,6 +667,7 @@ impl Store for SqliteStore {
                 let group_id: Option<String> = row.get("group_id")?;
                 Ok(ConversationSummary {
                     id: ConversationId(row.get("id")?),
+                    platform_id: row.get("platform_id")?,
                     person: person_id.map(PersonId),
                     group: group_id.map(GroupId),
                     summary: row.get("summary")?,
@@ -1367,7 +1371,7 @@ mod tests {
         let store = test_store();
         let conv = ConversationId("c1".into());
 
-        store.append_message(&conv, None, &StoredMessage {
+        store.append_message(&conv, None, None, &StoredMessage {
             timestamp: 1000,
             role: MessageRole::User,
             content: "hello".into(),
@@ -1375,7 +1379,7 @@ mod tests {
             metadata: serde_json::Value::Null,
         }).await.unwrap();
 
-        store.append_message(&conv, None, &StoredMessage {
+        store.append_message(&conv, None, None, &StoredMessage {
             timestamp: 1001,
             role: MessageRole::Assistant,
             content: "hi there".into(),
@@ -1564,7 +1568,7 @@ mod tests {
         }).await.unwrap();
 
         let conv = ConversationId("c1".into());
-        store.append_message(&conv, None, &StoredMessage {
+        store.append_message(&conv, None, None, &StoredMessage {
             timestamp: 1000,
             role: MessageRole::User,
             content: "from alt account".into(),
