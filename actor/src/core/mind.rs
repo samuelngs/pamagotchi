@@ -280,6 +280,11 @@ impl Mind {
         action_id: &ActionId,
         result: &super::action::ActionResult,
     ) {
+        if let Some(ref delta) = result.delta {
+            self.state.send_delta(delta.clone()).await;
+            info!(%action_id, "forwarded personality delta to state task");
+        }
+
         for msg in &result.unprocessed_messages {
             info!(%action_id, "re-queuing unprocessed message");
             self.event_tx
