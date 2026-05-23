@@ -445,7 +445,7 @@ impl Store for SqliteStore {
 
     async fn recall(&self, query: &RecallQuery) -> anyhow::Result<Vec<Memory>> {
         let conn = self.lock()?;
-        let fetch_limit = (query.limit * 2) as i64;
+        let fetch_limit = ((query.offset + query.limit) * 2) as i64;
 
         let person_filter = query.person.as_ref();
         let person_ids: HashSet<String> = if let Some(ref person) = person_filter {
@@ -531,6 +531,9 @@ impl Store for SqliteStore {
             true
         });
 
+        if query.offset > 0 {
+            memories.drain(..query.offset.min(memories.len()));
+        }
         memories.truncate(query.limit);
 
         let mut people_stmt = conn.prepare(

@@ -10,6 +10,7 @@ pub struct RecallQuery {
     pub min_importance: Option<f32>,
     pub max_sensitivity: Option<f32>,
     pub limit: usize,
+    pub offset: usize,
 }
 
 pub struct TimeRange {
@@ -28,6 +29,7 @@ impl RecallQuery {
             min_importance: None,
             max_sensitivity: None,
             limit,
+            offset: 0,
         }
     }
 
@@ -41,6 +43,7 @@ impl RecallQuery {
             min_importance: None,
             max_sensitivity: None,
             limit,
+            offset: 0,
         }
     }
 
@@ -66,6 +69,11 @@ impl RecallQuery {
 
     pub fn with_max_sensitivity(mut self, max: f32) -> Self {
         self.max_sensitivity = Some(max);
+        self
+    }
+
+    pub fn with_offset(mut self, offset: usize) -> Self {
+        self.offset = offset;
         self
     }
 }

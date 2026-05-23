@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub enum Message {
     System(String),
     User(String),
@@ -35,17 +36,20 @@ impl From<AssistantMessage> for Message {
     }
 }
 
+#[derive(Clone)]
 pub struct AssistantMessage {
     pub text: Option<String>,
     pub tool_calls: Vec<ToolCall>,
 }
 
+#[derive(Clone)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: serde_json::Value,
 }
 
+#[derive(Clone)]
 pub struct ToolResult {
     pub call_id: String,
     pub content: String,

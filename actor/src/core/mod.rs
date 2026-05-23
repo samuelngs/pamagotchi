@@ -1,8 +1,11 @@
 mod action;
 mod event;
 mod mind;
+mod prompt;
 mod registry;
+mod session;
 mod state;
+mod tools;
 
 pub use action::{
     ActionId, ActionKind, ActionRequest, ActionResult, ActionTiming, MindDecision,
@@ -10,8 +13,10 @@ pub use action::{
 };
 pub use event::{FiredIntent, InboundMessage, WakeEvent};
 pub use mind::Mind;
+pub use session::OutboundMessage;
 pub use state::{SharedState, StateHandle};
 
+use crate::llm::Provider;
 use crate::personality::{GrowthConfig, PersonalityState};
 use crate::store::{ActorConfig, Store};
 use std::sync::{Arc, RwLock};
@@ -31,20 +36,33 @@ pub struct ActorBuilder {
     personality: PersonalityState,
     growth_config: GrowthConfig,
     store: Arc<dyn Store>,
+    provider: Arc<dyn Provider>,
+    model: String,
     max_concurrency: usize,
     event_buffer: usize,
 }
 
 impl ActorBuilder {
-    pub fn new(actor_config: ActorConfig, store: Arc<dyn Store>) -> Self {
+    pub fn new(
+        actor_config: ActorConfig,
+        store: Arc<dyn Store>,
+        provider: Arc<dyn Provider>,
+    ) -> Self {
         Self {
             actor_config,
             personality: PersonalityState::new(Default::default()),
             growth_config: GrowthConfig::default(),
             store,
+            provider,
+            model: "gpt-4o".into(),
             max_concurrency: 5,
             event_buffer: 256,
         }
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
     }
 
     pub fn with_personality(mut self, personality: PersonalityState) -> Self {
@@ -94,6 +112,8 @@ impl ActorBuilder {
             event_tx.clone(),
             state_handle.clone(),
             self.store,
+            self.provider,
+            self.model,
             self.max_concurrency,
         );
 
@@ -117,8 +137,12 @@ impl ActorBuilder {
 }
 
 impl Actor {
-    pub fn builder(actor_config: ActorConfig, store: Arc<dyn Store>) -> ActorBuilder {
-        ActorBuilder::new(actor_config, store)
+    pub fn builder(
+        actor_config: ActorConfig,
+        store: Arc<dyn Store>,
+        provider: Arc<dyn Provider>,
+    ) -> ActorBuilder {
+        ActorBuilder::new(actor_config, store, provider)
     }
 
     pub async fn send_event(&self, event: WakeEvent) -> anyhow::Result<()> {

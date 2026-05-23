@@ -20,6 +20,7 @@ impl ChatResponse {
     }
 }
 
+#[derive(Debug)]
 pub enum FinishReason {
     Stop,
     ToolCalls,

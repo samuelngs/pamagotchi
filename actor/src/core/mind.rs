@@ -1,15 +1,17 @@
 use super::action::{
-    ActionId, ActionKind, ActionRequest, ActionState, ActionStatus, ActionTiming, MindDecision,
+    ActionBrief, ActionContext, ActionId, ActionKind, ActionProgress, ActionRequest, ActionState,
+    ActionStatus, ActionTiming, MindDecision,
 };
 use super::event::{InboundMessage, WakeEvent};
 use super::registry::ActionRegistry;
 use super::state::StateHandle;
 use crate::identity::PersonId;
+use crate::llm::Provider;
 use crate::personality::Authority;
-use crate::store::Store;
-use std::sync::Arc;
+use crate::store::{ConversationId, MessageRole, Store};
+use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct Mind {
     event_rx: mpsc::Receiver<WakeEvent>,
@@ -17,6 +19,8 @@ pub struct Mind {
     registry: ActionRegistry,
     state: StateHandle,
     store: Arc<dyn Store>,
+    provider: Arc<dyn Provider>,
+    model: String,
 }
 
 impl Mind {
@@ -25,6 +29,8 @@ impl Mind {
         event_tx: mpsc::Sender<WakeEvent>,
         state: StateHandle,
         store: Arc<dyn Store>,
+        provider: Arc<dyn Provider>,
+        model: String,
         max_concurrency: usize,
     ) -> Self {
         Self {
@@ -33,6 +39,8 @@ impl Mind {
             registry: ActionRegistry::new(max_concurrency),
             state,
             store,
+            provider,
+            model,
         }
     }
 
@@ -43,6 +51,16 @@ impl Mind {
                 Some(WakeEvent::Shutdown) => {
                     self.shutdown().await;
                     break;
+                }
+                Some(WakeEvent::ActionCompleted { action_id, result }) => {
+                    self.registry.mark_completed(&action_id);
+                    self.handle_action_completed(&action_id, &result).await;
+                    let decision = self.decide(WakeEvent::ActionCompleted {
+                        action_id,
+                        result,
+                    });
+                    self.execute(decision).await;
+                    self.registry.gc();
                 }
                 Some(event) => {
                     let decision = self.decide(event);
@@ -102,6 +120,7 @@ impl Mind {
                     priority: ActionKind::Outreach.default_priority(),
                     messages: vec![],
                     timing: ActionTiming::Immediate,
+                    context: None,
                 }))
             }
             WakeEvent::ActionCompleted { action_id, .. } => {
@@ -130,29 +149,34 @@ impl Mind {
     fn decide_message(&self, msg: InboundMessage) -> MindDecision {
         let conv_actions = self.registry.for_conversation(&msg.conversation);
 
-        let unreplied: Vec<&ActionState> = conv_actions
+        let (unreplied, replied): (Vec<&ActionState>, Vec<&ActionState>) = conv_actions
             .iter()
-            .filter(|a| !a.has_responded && matches!(a.status, ActionStatus::Running))
+            .filter(|a| matches!(a.status, ActionStatus::Running))
             .copied()
-            .collect();
+            .partition(|a| {
+                !a.progress
+                    .read()
+                    .map_or(false, |p| p.responded)
+            });
 
         if !unreplied.is_empty() {
-            let cancel_ids: Vec<ActionId> = unreplied.iter().map(|a| a.id.clone()).collect();
-            let mut all_messages = vec![];
-            // Original messages from cancelled actions aren't carried over —
-            // the new action loads conversation history from the store
-            all_messages.push(msg.clone());
-
-            if self.registry.at_capacity() {
-                return MindDecision::cancel_and_spawn(
-                    cancel_ids,
-                    ActionRequest::respond(all_messages, msg.conversation),
-                );
+            if let Some(target) = unreplied.first() {
+                if target.inject_tx.is_some() {
+                    return MindDecision::inject_one(target.id.clone(), msg);
+                }
             }
+            let cancel_ids: Vec<ActionId> = unreplied.iter().map(|a| a.id.clone()).collect();
             return MindDecision::cancel_and_spawn(
                 cancel_ids,
-                ActionRequest::respond(all_messages, msg.conversation),
+                ActionRequest::respond(vec![msg.clone()], msg.conversation),
             );
+        }
+
+        if !replied.is_empty() && !self.registry.at_capacity() {
+            return MindDecision::spawn_one(ActionRequest::respond(
+                vec![msg.clone()],
+                msg.conversation,
+            ));
         }
 
         if self.registry.at_capacity() {
@@ -183,6 +207,7 @@ impl Mind {
                         priority: action.priority,
                         messages: vec![],
                         timing: ActionTiming::Immediate,
+                        context: None,
                     });
                 }
             }
@@ -194,6 +219,104 @@ impl Mind {
                 spawn,
                 cancel: vec![],
                 supplement: vec![],
+                inject: vec![],
+            }
+        }
+    }
+
+    async fn gather_context(
+        &self,
+        conversation: Option<&ConversationId>,
+        new_messages: &[InboundMessage],
+        cancelled_note: Option<String>,
+    ) -> ActionContext {
+        let (summary, recent_messages) = if let Some(conv) = conversation {
+            let summary = self
+                .store
+                .list_conversations()
+                .await
+                .ok()
+                .and_then(|convs| {
+                    convs
+                        .into_iter()
+                        .find(|c| c.id == *conv)
+                        .and_then(|c| c.summary)
+                });
+
+            let recent = self
+                .store
+                .get_messages(conv, 20, None)
+                .await
+                .unwrap_or_default();
+
+            (summary, recent)
+        } else {
+            (None, vec![])
+        };
+
+        let concurrent_actions: Vec<ActionBrief> = self
+            .registry
+            .running_actions()
+            .iter()
+            .map(|a| ActionBrief {
+                id: a.id.clone(),
+                kind: a.kind.clone(),
+                task: a.task.clone(),
+                conversation: a.conversation.clone(),
+            })
+            .collect();
+
+        ActionContext {
+            summary,
+            recent_messages,
+            new_messages: new_messages.to_vec(),
+            cancelled_note,
+            concurrent_actions,
+        }
+    }
+
+    async fn handle_action_completed(
+        &self,
+        action_id: &ActionId,
+        result: &super::action::ActionResult,
+    ) {
+        for msg in &result.unprocessed_messages {
+            info!(%action_id, "re-queuing unprocessed message");
+            self.event_tx
+                .send(WakeEvent::Message(msg.clone()))
+                .await
+                .ok();
+        }
+
+        let action_conv = self
+            .registry
+            .get(action_id)
+            .and_then(|a| a.conversation.clone());
+
+        for msg in &result.injected_messages {
+            if let Some(conv) = &action_conv {
+                let recent = self
+                    .store
+                    .get_messages(conv, 5, None)
+                    .await
+                    .unwrap_or_default();
+
+                let has_response_after = recent.iter().any(|m| {
+                    matches!(m.role, MessageRole::Assistant) && m.timestamp > msg.timestamp
+                });
+
+                if !has_response_after {
+                    info!(%action_id, "re-queuing injected message (no response found)");
+                    self.event_tx
+                        .send(WakeEvent::Message(msg.clone()))
+                        .await
+                        .ok();
+                }
+            } else {
+                self.event_tx
+                    .send(WakeEvent::Message(msg.clone()))
+                    .await
+                    .ok();
             }
         }
     }
@@ -216,17 +339,27 @@ impl Mind {
             }
         }
 
+        for (id, msg) in decision.inject {
+            if let Some(action) = self.registry.get(&id) {
+                if let Some(tx) = &action.inject_tx {
+                    match tx.try_send(msg) {
+                        Ok(()) => info!(%id, "injected message into running action"),
+                        Err(e) => warn!(%id, %e, "failed to inject message"),
+                    }
+                }
+            }
+        }
+
         for request in decision.spawn {
             self.spawn_action(request).await;
         }
 
         for (id, ctx) in &decision.supplement {
             debug!(%id, note = %ctx.note, "supplementing action");
-            // TODO: inject context into running action session
         }
     }
 
-    async fn spawn_action(&mut self, request: ActionRequest) {
+    async fn spawn_action(&mut self, mut request: ActionRequest) {
         let id = self.registry.next_id();
         let depends_on = match &request.timing {
             ActionTiming::Immediate => vec![],
@@ -252,6 +385,8 @@ impl Mind {
         let conversation = request.conversation.clone();
         let priority = request.priority;
 
+        let progress = Arc::new(RwLock::new(ActionProgress::new()));
+
         let state = ActionState {
             id: id.clone(),
             kind: kind.clone(),
@@ -262,11 +397,27 @@ impl Mind {
             has_responded: false,
             depends_on,
             handle: None,
+            progress: progress.clone(),
+            inject_tx: None,
         };
 
         self.registry.insert(state);
 
         if !is_pending {
+            if request.context.is_none() {
+                let cancelled_note = request
+                    .context
+                    .as_ref()
+                    .and_then(|c| c.cancelled_note.clone());
+                request.context = Some(
+                    self.gather_context(
+                        request.conversation.as_ref(),
+                        &request.messages,
+                        cancelled_note,
+                    )
+                    .await,
+                );
+            }
             self.launch_action_task(id, kind, task_desc, request).await;
         } else {
             info!(%id, task = %task_desc, "queued pending action");
@@ -278,19 +429,50 @@ impl Mind {
         id: ActionId,
         kind: ActionKind,
         task_desc: String,
-        _request: ActionRequest,
+        request: ActionRequest,
     ) {
+        let (inject_tx, inject_rx) = mpsc::channel::<InboundMessage>(32);
+
+        if let Some(action) = self.registry.get_mut(&id) {
+            action.inject_tx = Some(inject_tx);
+        }
+
         let event_tx = self.event_tx.clone();
         let action_id = id.clone();
         let state_handle = self.state.clone();
         let store = self.store.clone();
+        let provider = self.provider.clone();
+        let model = self.model.clone();
+        let progress = self
+            .registry
+            .get(&id)
+            .map(|a| a.progress.clone())
+            .unwrap_or_else(|| Arc::new(RwLock::new(ActionProgress::new())));
+
+        let context = request.context;
 
         let handle = tokio::spawn(async move {
             info!(%action_id, kind = ?kind, task = %task_desc, "action started");
 
-            // TODO: full action session — LLM call, MCP tools, reflection
-            // For now, stub: just log and complete
-            let result = run_action_stub(&action_id, &kind, state_handle, store).await;
+            let ctx = super::session::SessionContext {
+                action_id: action_id.clone(),
+                kind,
+                messages: request.messages,
+                conversation: request.conversation,
+                state: state_handle,
+                store,
+                provider,
+                model,
+                context,
+                inject_rx,
+                progress,
+            };
+
+            let result = super::session::run_session(ctx).await;
+
+            if result.delta.is_some() {
+                info!(%action_id, "action produced personality delta");
+            }
 
             event_tx
                 .send(WakeEvent::ActionCompleted {
@@ -319,18 +501,5 @@ impl Mind {
         for id in &running {
             self.registry.cancel(id);
         }
-    }
-}
-
-async fn run_action_stub(
-    _id: &ActionId,
-    _kind: &ActionKind,
-    _state: StateHandle,
-    _store: Arc<dyn Store>,
-) -> super::action::ActionResult {
-    super::action::ActionResult {
-        delta: None,
-        thoughts: vec![],
-        memories_formed: vec![],
     }
 }

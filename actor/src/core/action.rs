@@ -1,8 +1,10 @@
 use crate::personality::PersonalityDelta;
-use crate::store::{ConversationId, MemoryId, Thought};
+use crate::store::{ConversationId, MemoryId, StoredMessage, Thought};
 use super::event::InboundMessage;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::{Arc, RwLock};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -41,6 +43,21 @@ pub enum ActionTiming {
     AfterAll(Vec<ActionId>),
 }
 
+pub struct ActionContext {
+    pub summary: Option<String>,
+    pub recent_messages: Vec<StoredMessage>,
+    pub new_messages: Vec<InboundMessage>,
+    pub cancelled_note: Option<String>,
+    pub concurrent_actions: Vec<ActionBrief>,
+}
+
+pub struct ActionBrief {
+    pub id: ActionId,
+    pub kind: ActionKind,
+    pub task: String,
+    pub conversation: Option<ConversationId>,
+}
+
 pub struct ActionRequest {
     pub kind: ActionKind,
     pub task: String,
@@ -48,6 +65,7 @@ pub struct ActionRequest {
     pub priority: u8,
     pub messages: Vec<InboundMessage>,
     pub timing: ActionTiming,
+    pub context: Option<ActionContext>,
 }
 
 impl ActionRequest {
@@ -59,6 +77,7 @@ impl ActionRequest {
             priority: ActionKind::Respond.default_priority(),
             messages,
             timing: ActionTiming::Immediate,
+            context: None,
         }
     }
 
@@ -70,6 +89,7 @@ impl ActionRequest {
             priority: ActionKind::Ruminate.default_priority(),
             messages: vec![],
             timing: ActionTiming::Immediate,
+            context: None,
         }
     }
 
@@ -81,6 +101,7 @@ impl ActionRequest {
             priority: ActionKind::Consolidate.default_priority(),
             messages: vec![],
             timing: ActionTiming::Immediate,
+            context: None,
         }
     }
 }
@@ -94,10 +115,30 @@ pub enum ActionStatus {
     Cancelled,
 }
 
+pub struct ActionProgress {
+    pub responded: bool,
+    pub thoughts_count: usize,
+    pub memories_formed: usize,
+    pub last_activity: String,
+}
+
+impl ActionProgress {
+    pub fn new() -> Self {
+        Self {
+            responded: false,
+            thoughts_count: 0,
+            memories_formed: 0,
+            last_activity: String::new(),
+        }
+    }
+}
+
 pub struct ActionResult {
     pub delta: Option<PersonalityDelta>,
     pub thoughts: Vec<Thought>,
     pub memories_formed: Vec<MemoryId>,
+    pub unprocessed_messages: Vec<InboundMessage>,
+    pub injected_messages: Vec<InboundMessage>,
 }
 
 pub struct ActionState {
@@ -110,12 +151,15 @@ pub struct ActionState {
     pub has_responded: bool,
     pub depends_on: Vec<ActionId>,
     pub handle: Option<JoinHandle<()>>,
+    pub progress: Arc<RwLock<ActionProgress>>,
+    pub inject_tx: Option<mpsc::Sender<InboundMessage>>,
 }
 
 pub struct MindDecision {
     pub spawn: Vec<ActionRequest>,
     pub cancel: Vec<ActionId>,
     pub supplement: Vec<(ActionId, SupplementContext)>,
+    pub inject: Vec<(ActionId, InboundMessage)>,
 }
 
 impl MindDecision {
@@ -124,6 +168,7 @@ impl MindDecision {
             spawn: vec![],
             cancel: vec![],
             supplement: vec![],
+            inject: vec![],
         }
     }
 
@@ -132,6 +177,7 @@ impl MindDecision {
             spawn: vec![request],
             cancel: vec![],
             supplement: vec![],
+            inject: vec![],
         }
     }
 
@@ -140,6 +186,16 @@ impl MindDecision {
             spawn: vec![request],
             cancel,
             supplement: vec![],
+            inject: vec![],
+        }
+    }
+
+    pub fn inject_one(action_id: ActionId, message: InboundMessage) -> Self {
+        Self {
+            spawn: vec![],
+            cancel: vec![],
+            supplement: vec![],
+            inject: vec![(action_id, message)],
         }
     }
 }
