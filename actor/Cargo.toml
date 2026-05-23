@@ -8,7 +8,9 @@ license.workspace = true
 anyhow.workspace = true
 async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
+sqlite-vec = "0.1.9"
 tokio.workspace = true
 tracing.workspace = true
