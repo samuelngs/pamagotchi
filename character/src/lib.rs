@@ -3,6 +3,7 @@
 //! Generates small retro-style sprites from a seed, fully deterministic:
 //! same seed + config = identical creature, every time.
 
+pub mod animate;
 pub mod features;
 pub mod grid;
 pub mod outline;
@@ -130,6 +131,10 @@ impl Creature {
     /// Print the rendered creature to stdout.
     pub fn print(&self) {
         print!("{}", self.render());
+    }
+
+    pub fn idle_frames(&self) -> Vec<animate::AnimationFrame> {
+        animate::idle_frames(&self.grid)
     }
 
     /// Get the raw cell at a grid position.

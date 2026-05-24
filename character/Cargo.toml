@@ -6,7 +6,12 @@ license.workspace = true
 
 [dependencies]
 rand = { workspace = true }
+ctrlc = "3"
 
 [[example]]
 name = "gallery"
 path = "examples/gallery.rs"
+
+[[example]]
+name = "animate"
+path = "examples/animate.rs"
