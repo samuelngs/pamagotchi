@@ -57,15 +57,15 @@ impl From<String> for Seed {
 
 const CANONICAL_W: u32 = 16;
 const CANONICAL_H: u32 = 16;
+const QUADRANT_THRESHOLD: u32 = 8;
 
 /// Configuration for creature generation.
 #[derive(Debug, Clone)]
 pub struct CreatureConfig {
-    /// Display width in pixels (default: 16). Clamped to nearest multiple of
-    /// 16 (canonical size) to ensure pixel-perfect scaling.
-    pub width: u32,
-    /// Display height in pixels (default: 16). Same clamping as width.
-    pub height: u32,
+    /// Display size in character rows (default: 8, min: 3).
+    /// Small sizes (< 8) use quadrant rendering with 2:1 pixel aspect.
+    /// Large sizes (≥ 8) use half-block rendering with square pixels.
+    pub size: u32,
     /// Sole source of randomness — determines the creature entirely.
     pub seed: Seed,
     /// Optional fixed palette. If `None`, one is generated from the seed.
@@ -79,12 +79,28 @@ pub struct CreatureConfig {
 impl Default for CreatureConfig {
     fn default() -> Self {
         Self {
-            width: CANONICAL_W,
-            height: CANONICAL_H,
+            size: QUADRANT_THRESHOLD,
             seed: Seed::default(),
             palette: None,
             leg_count: None,
             eye_count: None,
+        }
+    }
+}
+
+fn compress_eyes(grid: &mut Grid) {
+    for x in 0..grid.width {
+        let mut y = 0;
+        while y < grid.height {
+            if grid.get(x, y) == Some(Cell::Eye) {
+                y += 1;
+                while y < grid.height && grid.get(x, y) == Some(Cell::Eye) {
+                    grid.set(x, y, Cell::Body);
+                    y += 1;
+                }
+            } else {
+                y += 1;
+            }
         }
     }
 }
@@ -119,9 +135,18 @@ impl Creature {
         features::place_eyes(&mut grid, &mut rng, config.eye_count);
         features::place_legs(&mut grid, &mut rng, config.leg_count);
 
-        let out_w = config.width.max(12);
-        let out_h = config.height.max(12);
-        let display = grid.scale(out_w, out_h);
+        let sz = config.size.max(3);
+        let compact = sz < QUADRANT_THRESHOLD;
+        let (pixel_w, pixel_h) = if compact {
+            (4 * sz, 2 * sz)
+        } else {
+            (2 * sz, 2 * sz)
+        };
+        let mut display = grid.scale(pixel_w, pixel_h);
+
+        if compact {
+            compress_eyes(&mut display);
+        }
 
         Self {
             canonical: grid,
@@ -130,9 +155,12 @@ impl Creature {
         }
     }
 
-    /// Render to an ANSI truecolor string using half-block encoding.
     pub fn render(&self) -> String {
-        render::render_to_string(&self.grid, &self.palette)
+        if self.grid.width > self.grid.height {
+            render::render_to_string_quadrant(&self.grid, &self.palette)
+        } else {
+            render::render_to_string(&self.grid, &self.palette)
+        }
     }
 
     /// Print the rendered creature to stdout.
@@ -143,11 +171,18 @@ impl Creature {
     pub fn idle_frames(&self) -> Vec<animate::AnimationFrame> {
         let frames = animate::idle_frames(&self.canonical);
         let (w, h) = (self.grid.width, self.grid.height);
+        let compact = w > h;
         frames
             .into_iter()
-            .map(|f| animate::AnimationFrame {
-                grid: f.grid.scale(w, h),
-                duration_ms: f.duration_ms,
+            .map(|f| {
+                let mut grid = f.grid.scale(w, h);
+                if compact {
+                    compress_eyes(&mut grid);
+                }
+                animate::AnimationFrame {
+                    grid,
+                    duration_ms: f.duration_ms,
+                }
             })
             .collect()
     }

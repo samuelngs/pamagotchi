@@ -1,5 +1,4 @@
 use character::{Creature, CreatureConfig};
-use character::render::render_to_string;
 
 fn main() {
     let seed: u64 = std::env::args()
@@ -7,15 +6,15 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    println!("\n  seed={seed} at different sizes\n");
-    for size in [8, 12, 16, 24, 32] {
+    println!("\n  seed={seed} — size = character row height\n");
+    for size in [3, 4, 5, 8, 12, 16] {
         let creature = Creature::generate(&CreatureConfig {
-            width: size,
-            height: size,
+            size,
             seed: seed.into(),
             ..Default::default()
         });
-        println!("--- {size}x{size} ---");
-        print!("{}", render_to_string(&creature.grid, &creature.palette));
+        let mode = if creature.grid.width > creature.grid.height { "quadrant" } else { "half-block" };
+        println!("--- size={size} ({}x{} px, {mode}) ---", creature.grid.width, creature.grid.height);
+        print!("{}", creature.render());
     }
 }
