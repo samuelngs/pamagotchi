@@ -5,11 +5,11 @@ use super::action::{
 use super::event::{InboundMessage, WakeEvent};
 use super::registry::ActionRegistry;
 use super::state::StateHandle;
-use crate::identity::PersonId;
-use crate::llm::{Provider, SamplingConfig};
+use super::tools::mind_tools;
+use crate::llm::{ChatRequest, Message, Provider, SamplingConfig, ToolChoice};
 use crate::personality::Authority;
 use crate::platform::PlatformRouter;
-use crate::store::{ConversationId, MessageRole, Store};
+use crate::store::{MessageRole, Store};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -62,15 +62,15 @@ impl Mind {
                 Some(WakeEvent::ActionCompleted { action_id, result }) => {
                     self.registry.mark_completed(&action_id);
                     self.handle_action_completed(&action_id, &result).await;
-                    let decision = self.decide(WakeEvent::ActionCompleted {
-                        action_id,
-                        result,
-                    });
+                    let event = WakeEvent::ActionCompleted { action_id, result };
+                    let verdict = self.evaluate(&event).await;
+                    let decision = self.build_decision(verdict, &event);
                     self.execute(decision).await;
                     self.registry.gc();
                 }
                 Some(event) => {
-                    let decision = self.decide(event);
+                    let verdict = self.evaluate(&event).await;
+                    let decision = self.build_decision(verdict, &event);
                     self.execute(decision).await;
                     self.registry.gc();
                 }
@@ -84,43 +84,159 @@ impl Mind {
         info!("mind stopped");
     }
 
-    fn decide(&self, event: WakeEvent) -> MindDecision {
-        if let Some(decision) = self.fast_path(&event) {
-            return decision;
+    async fn evaluate(&self, event: &WakeEvent) -> MindVerdict {
+        let prompt = self.build_mind_prompt(event).await;
+        let event_desc = describe_event(event);
+
+        let request = ChatRequest::new(&self.model, vec![
+            Message::system(prompt),
+            Message::user(event_desc),
+        ])
+        .with_tools(mind_tools())
+        .with_tool_choice(ToolChoice::Required)
+        .with_sampling(&self.sampling);
+
+        let response = match self.provider.chat(&request).await {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(%e, "mind LLM call failed, falling back to respond");
+                return MindVerdict::Respond;
+            }
+        };
+
+        let thinking = response.text().unwrap_or("");
+        if !thinking.is_empty() {
+            info!(mind_thinking = %thinking, "mind internal thought");
         }
-        self.complex_decide(event)
+
+        let tool_calls = response.tool_calls();
+        if tool_calls.is_empty() {
+            warn!("mind returned no tool call despite Required, defaulting to respond");
+            return MindVerdict::Respond;
+        }
+
+        let call = &tool_calls[0];
+        let reason = call.arguments["reason"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        let verdict = match call.name.as_str() {
+            "respond" => {
+                info!(reason = %reason, "mind decided: respond");
+                MindVerdict::Respond
+            }
+            "drop" => {
+                info!(reason = %reason, "mind decided: drop");
+                MindVerdict::Drop
+            }
+            "defer" => {
+                info!(reason = %reason, "mind decided: defer");
+                MindVerdict::Defer
+            }
+            other => {
+                warn!(tool = other, "mind called unknown tool, defaulting to respond");
+                MindVerdict::Respond
+            }
+        };
+
+        verdict
     }
 
-    fn fast_path(&self, event: &WakeEvent) -> Option<MindDecision> {
+    fn build_decision(&self, verdict: MindVerdict, event: &WakeEvent) -> MindDecision {
+        if matches!(self.resolve_authority(event), Authority::Blocked) {
+            info!("blocked person — dropping silently");
+            return MindDecision::drop();
+        }
+
+        match verdict {
+            MindVerdict::Drop | MindVerdict::Defer => MindDecision::drop(),
+            MindVerdict::Respond => self.respond_to(event),
+        }
+    }
+
+    fn resolve_authority(&self, event: &WakeEvent) -> Authority {
+        let person = match event {
+            WakeEvent::Message(msg) => msg.person.as_ref(),
+            WakeEvent::IntentFired(intent) => intent.person.as_ref(),
+            _ => None,
+        };
+        let personality = self.state.read_personality();
+        person
+            .and_then(|p| personality.relationships.get(p))
+            .map_or(Authority::Default, |r| r.authority.clone())
+    }
+
+    fn respond_to(&self, event: &WakeEvent) -> MindDecision {
+        let authority = self.resolve_authority(event);
+
         match event {
             WakeEvent::Message(msg) => {
-                if self.is_blocked(&msg.person) {
-                    debug!(person = ?msg.person, "dropping message from blocked person");
-                    return Some(MindDecision::drop());
-                }
-
                 let conv_actions = self.registry.for_conversation(&msg.conversation);
+                let running: Vec<&ActionState> = conv_actions
+                    .iter()
+                    .filter(|a| matches!(a.status, ActionStatus::Running))
+                    .copied()
+                    .collect();
 
-                if conv_actions.is_empty() && !self.registry.at_capacity() {
-                    return Some(MindDecision::spawn_one(ActionRequest::respond(
-                        vec![msg.clone()],
-                        msg.conversation.clone(),
-                    )));
+                let unreplied: Vec<&ActionState> = running
+                    .iter()
+                    .filter(|a| !a.progress.read().map_or(false, |p| p.responded))
+                    .copied()
+                    .collect();
+
+                if !unreplied.is_empty() {
+                    if let Some(target) = unreplied.first() {
+                        if target.inject_tx.is_some() {
+                            return MindDecision::inject_one(target.id.clone(), msg.clone());
+                        }
+                    }
+                    let cancel_ids: Vec<ActionId> =
+                        unreplied.iter().map(|a| a.id.clone()).collect();
+                    return MindDecision::cancel_and_spawn(
+                        cancel_ids,
+                        ActionRequest::respond(
+                            vec![msg.clone()],
+                            msg.conversation.clone(),
+                            authority,
+                        ),
+                    );
                 }
 
-                None
+                if self.registry.at_capacity() {
+                    if let Some(lowest) = self.registry.lowest_priority_running() {
+                        if lowest.priority < ActionKind::Respond.default_priority() {
+                            return MindDecision::cancel_and_spawn(
+                                vec![lowest.id.clone()],
+                                ActionRequest::respond(
+                                    vec![msg.clone()],
+                                    msg.conversation.clone(),
+                                    authority,
+                                ),
+                            );
+                        }
+                    }
+                    warn!("mind wants to respond but at capacity, dropping");
+                    return MindDecision::drop();
+                }
+
+                MindDecision::spawn_one(ActionRequest::respond(
+                    vec![msg.clone()],
+                    msg.conversation.clone(),
+                    authority,
+                ))
             }
             WakeEvent::IdleTick { .. } => {
                 if self.registry.at_capacity() {
-                    return Some(MindDecision::drop());
+                    return MindDecision::drop();
                 }
-                Some(MindDecision::spawn_one(ActionRequest::ruminate()))
+                MindDecision::spawn_one(ActionRequest::ruminate())
             }
             WakeEvent::IntentFired(intent) => {
                 if self.registry.at_capacity() {
-                    return Some(MindDecision::drop());
+                    return MindDecision::drop();
                 }
-                Some(MindDecision::spawn_one(ActionRequest {
+                MindDecision::spawn_one(ActionRequest {
                     kind: ActionKind::Respond,
                     task: intent.task.clone(),
                     conversation: intent.conversation.clone(),
@@ -128,139 +244,121 @@ impl Mind {
                     messages: vec![],
                     timing: ActionTiming::Immediate,
                     context: None,
-                }))
+                    authority,
+                })
             }
             WakeEvent::ActionCompleted { action_id, .. } => {
                 let pending = self.registry.pending_after(action_id);
-                if pending.is_empty() {
-                    Some(MindDecision::drop())
+                let mut spawn = vec![];
+                for pid in &pending {
+                    if self.registry.all_dependencies_met(pid) {
+                        if let Some(action) = self.registry.get(pid) {
+                            spawn.push(ActionRequest {
+                                kind: action.kind.clone(),
+                                task: action.task.clone(),
+                                conversation: action.conversation.clone(),
+                                priority: action.priority,
+                                messages: vec![],
+                                timing: ActionTiming::Immediate,
+                                context: None,
+                                authority: Authority::Default,
+                            });
+                        }
+                    }
+                }
+                if spawn.is_empty() {
+                    MindDecision::drop()
                 } else {
-                    None
+                    MindDecision {
+                        spawn,
+                        cancel: vec![],
+                        supplement: vec![],
+                        inject: vec![],
+                    }
                 }
             }
-            WakeEvent::TypingUpdate { .. } => Some(MindDecision::drop()),
-            WakeEvent::Shutdown => Some(MindDecision::drop()),
+            WakeEvent::TypingUpdate { .. } => MindDecision::drop(),
+            WakeEvent::Shutdown => MindDecision::drop(),
         }
     }
 
-    fn complex_decide(&self, event: WakeEvent) -> MindDecision {
-        match event {
-            WakeEvent::Message(msg) => self.decide_message(msg),
-            WakeEvent::ActionCompleted { action_id, .. } => {
-                self.decide_action_completed(&action_id)
-            }
-            _ => MindDecision::drop(),
-        }
-    }
+    async fn build_mind_prompt(&self, event: &WakeEvent) -> String {
+        let mut prompt = String::with_capacity(1024);
 
-    fn decide_message(&self, msg: InboundMessage) -> MindDecision {
-        let conv_actions = self.registry.for_conversation(&msg.conversation);
-
-        let (unreplied, replied): (Vec<&ActionState>, Vec<&ActionState>) = conv_actions
-            .iter()
-            .filter(|a| matches!(a.status, ActionStatus::Running))
-            .copied()
-            .partition(|a| {
-                !a.progress
-                    .read()
-                    .map_or(false, |p| p.responded)
-            });
-
-        if !unreplied.is_empty() {
-            if let Some(target) = unreplied.first() {
-                if target.inject_tx.is_some() {
-                    return MindDecision::inject_one(target.id.clone(), msg);
-                }
-            }
-            let cancel_ids: Vec<ActionId> = unreplied.iter().map(|a| a.id.clone()).collect();
-            return MindDecision::cancel_and_spawn(
-                cancel_ids,
-                ActionRequest::respond(vec![msg.clone()], msg.conversation),
-            );
-        }
-
-        if !replied.is_empty() && !self.registry.at_capacity() {
-            return MindDecision::spawn_one(ActionRequest::respond(
-                vec![msg.clone()],
-                msg.conversation,
-            ));
-        }
-
-        if self.registry.at_capacity() {
-            if let Some(lowest) = self.registry.lowest_priority_running() {
-                if lowest.priority < ActionKind::Respond.default_priority() {
-                    return MindDecision::cancel_and_spawn(
-                        vec![lowest.id.clone()],
-                        ActionRequest::respond(vec![msg.clone()], msg.conversation),
-                    );
-                }
-            }
-            return MindDecision::drop();
-        }
-
-        MindDecision::spawn_one(ActionRequest::respond(vec![msg.clone()], msg.conversation))
-    }
-
-    fn decide_action_completed(&self, action_id: &ActionId) -> MindDecision {
-        let pending = self.registry.pending_after(action_id);
-        let mut spawn = vec![];
-        for pid in &pending {
-            if self.registry.all_dependencies_met(pid) {
-                if let Some(action) = self.registry.get(pid) {
-                    spawn.push(ActionRequest {
-                        kind: action.kind.clone(),
-                        task: action.task.clone(),
-                        conversation: action.conversation.clone(),
-                        priority: action.priority,
-                        messages: vec![],
-                        timing: ActionTiming::Immediate,
-                        context: None,
-                    });
-                }
-            }
-        }
-        if spawn.is_empty() {
-            MindDecision::drop()
-        } else {
-            MindDecision {
-                spawn,
-                cancel: vec![],
-                supplement: vec![],
-                inject: vec![],
-            }
-        }
-    }
-
-    async fn gather_context(
-        &self,
-        conversation: Option<&ConversationId>,
-        new_messages: &[InboundMessage],
-        cancelled_note: Option<String>,
-    ) -> ActionContext {
-        let (summary, recent_messages) = if let Some(conv) = conversation {
-            let summary = self
-                .store
-                .list_conversations()
-                .await
-                .ok()
-                .and_then(|convs| {
-                    convs
-                        .into_iter()
-                        .find(|c| c.id == *conv)
-                        .and_then(|c| c.summary)
-                });
-
-            let recent = self
-                .store
-                .get_messages(conv, 20, None)
-                .await
-                .unwrap_or_default();
-
-            (summary, recent)
-        } else {
-            (None, vec![])
+        let query = crate::store::RecallQuery::by_text("my name, who I am", 1)
+            .with_kind(crate::store::MemoryKind::Semantic)
+            .with_min_importance(0.5);
+        let identity = match self.store.recall(&query).await {
+            Ok(memories) if !memories.is_empty() => memories[0].content.clone(),
+            _ => "an unnamed being".into(),
         };
 
+        {
+            let personality = self.state.read_personality();
+
+            prompt.push_str(&format!(
+                "You are the inner mind of {}. You are the control gate — every event passes through you.\n",
+                identity
+            ));
+            prompt.push_str("Evaluate what happened and decide whether to engage.\n\n");
+
+            if let Some(msg) = event.message() {
+                if let Some(person_id) = &msg.person {
+                    if let Some(rel) = personality.relationships.get(person_id) {
+                        prompt.push_str(&format!(
+                            "## Person\n{} — {} (Authority: {})\nTrust: {:.0}%, Familiarity: {:.0}%\n\n",
+                            person_id.0,
+                            rel.label.as_str(),
+                            rel.authority.as_str(),
+                            rel.trust * 100.0,
+                            rel.familiarity * 100.0,
+                        ));
+                    } else {
+                        prompt.push_str(&format!(
+                            "## Person\n{} — unknown (no relationship record)\n\n",
+                            person_id.0,
+                        ));
+                    }
+                }
+            }
+        }
+
+        let running = self.registry.running_actions();
+        prompt.push_str(&format!(
+            "## State\nCapacity: {}/{}\n",
+            running.len(),
+            self.registry.max_concurrency(),
+        ));
+        if !running.is_empty() {
+            prompt.push_str("Running actions:\n");
+            for a in &running {
+                let responded = a.progress.read().map_or(false, |p| p.responded);
+                prompt.push_str(&format!(
+                    "- {} ({:?}) conv={} responded={}\n",
+                    a.id,
+                    a.kind,
+                    a.conversation.as_ref().map_or("none", |c| c.0.as_str()),
+                    responded,
+                ));
+            }
+        }
+        prompt.push('\n');
+
+        let recent_thoughts = self.store.recent_thoughts(5).await.unwrap_or_default();
+        if !recent_thoughts.is_empty() {
+            prompt.push_str("## Recent thoughts\n");
+            for t in &recent_thoughts {
+                prompt.push_str(&format!("- [{}] {}\n", t.kind.as_str(), t.content));
+            }
+            prompt.push('\n');
+        }
+
+        prompt.push_str("Use the respond, drop, or defer tool to make your decision.\n");
+
+        prompt
+    }
+
+    fn gather_context(&self, cancelled_note: Option<String>) -> ActionContext {
         let concurrent_actions: Vec<ActionBrief> = self
             .registry
             .running_actions()
@@ -274,9 +372,6 @@ impl Mind {
             .collect();
 
         ActionContext {
-            summary,
-            recent_messages,
-            new_messages: new_messages.to_vec(),
             cancelled_note,
             concurrent_actions,
         }
@@ -331,17 +426,6 @@ impl Mind {
                     .ok();
             }
         }
-    }
-
-    fn is_blocked(&self, person: &Option<PersonId>) -> bool {
-        let Some(person) = person else {
-            return false;
-        };
-        let personality = self.state.read_personality();
-        personality
-            .relationships
-            .get(person)
-            .map_or(false, |r| r.authority == Authority::Blocked)
     }
 
     async fn execute(&mut self, decision: MindDecision) {
@@ -417,18 +501,7 @@ impl Mind {
 
         if !is_pending {
             if request.context.is_none() {
-                let cancelled_note = request
-                    .context
-                    .as_ref()
-                    .and_then(|c| c.cancelled_note.clone());
-                request.context = Some(
-                    self.gather_context(
-                        request.conversation.as_ref(),
-                        &request.messages,
-                        cancelled_note,
-                    )
-                    .await,
-                );
+                request.context = Some(self.gather_context(None));
             }
             self.launch_action_task(id, kind, task_desc, request).await;
         } else {
@@ -473,6 +546,7 @@ impl Mind {
                 kind,
                 messages: request.messages,
                 conversation: request.conversation,
+                authority: request.authority,
                 state: state_handle,
                 store,
                 provider,
@@ -519,5 +593,55 @@ impl Mind {
         for id in &running {
             self.registry.cancel(id);
         }
+    }
+}
+
+#[derive(Debug)]
+enum MindVerdict {
+    Respond,
+    Drop,
+    Defer,
+}
+
+fn describe_event(event: &WakeEvent) -> String {
+    match event {
+        WakeEvent::Message(msg) => {
+            format!(
+                "New message in conversation {}:\n{}",
+                msg.conversation.0,
+                msg.display_content()
+            )
+        }
+        WakeEvent::IdleTick { elapsed_secs } => {
+            format!("Idle tick. {:.0} seconds since last activity.", elapsed_secs)
+        }
+        WakeEvent::IntentFired(intent) => {
+            let conv = intent
+                .conversation
+                .as_ref()
+                .map_or("none".to_string(), |c| c.0.clone());
+            format!(
+                "Scheduled intent fired: {} (conversation: {})",
+                intent.task, conv
+            )
+        }
+        WakeEvent::ActionCompleted { action_id, result } => {
+            let has_delta = result.delta.is_some();
+            let unprocessed = result.unprocessed_messages.len();
+            format!(
+                "Action {} completed. personality_delta={} unprocessed_messages={}",
+                action_id, has_delta, unprocessed
+            )
+        }
+        WakeEvent::TypingUpdate {
+            person, typing, ..
+        } => {
+            format!(
+                "{} {} typing.",
+                person.0,
+                if *typing { "started" } else { "stopped" }
+            )
+        }
+        WakeEvent::Shutdown => unreachable!(),
     }
 }

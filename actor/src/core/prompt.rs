@@ -2,7 +2,7 @@ use crate::identity::PersonId;
 use crate::personality::{
     AffectState, Authority, BehaviorDirective, CoreTraits, Label, PersonalityState,
 };
-use crate::store::{ConversationId, Store};
+use crate::store::{ConversationId, MemoryKind, RecallQuery, Store};
 use super::action::{ActionContext, ActionKind};
 use super::event::InboundMessage;
 use super::state::StateHandle;
@@ -15,18 +15,14 @@ pub async fn build_system_prompt(
     messages: &[InboundMessage],
     conversation: Option<&ConversationId>,
     action_ctx: Option<&ActionContext>,
+    authority: &Authority,
 ) -> anyhow::Result<String> {
     let personality = state.read_personality().clone();
-    let actor_config = state.read_actor_config().clone();
 
     let mut system = String::with_capacity(2048);
 
-    system.push_str(&format!("You are {}.\n", actor_config.name));
-    if !actor_config.description.is_empty() {
-        system.push_str(&actor_config.description);
-        system.push('\n');
-    }
-    system.push('\n');
+    append_core_framing(&mut system);
+    append_identity(&mut system, store).await;
 
     append_personality(&mut system, &personality);
     append_affect(&mut system, &personality.affect);
@@ -40,13 +36,16 @@ pub async fn build_system_prompt(
         }
     }
 
-    if let Some(ctx) = action_ctx {
-        if let Some(summary) = &ctx.summary {
-            system.push_str("## Conversation so far\n");
-            system.push_str(summary);
-            system.push_str("\n\n");
+    let recent_thoughts = store.recent_thoughts(5).await.unwrap_or_default();
+    if !recent_thoughts.is_empty() {
+        system.push_str("## Recent thoughts\n");
+        for t in &recent_thoughts {
+            system.push_str(&format!("- [{}] {}\n", t.kind.as_str(), t.content));
         }
+        system.push('\n');
+    }
 
+    if let Some(ctx) = action_ctx {
         if let Some(note) = &ctx.cancelled_note {
             system.push_str(&format!("## Context\n{}\n\n", note));
         }
@@ -63,6 +62,7 @@ pub async fn build_system_prompt(
         }
     }
 
+    append_self_awareness(&mut system, authority);
     append_action_guidance(&mut system, kind);
 
     Ok(system)
@@ -169,40 +169,90 @@ fn append_directives(out: &mut String, directives: &[BehaviorDirective]) {
     out.push('\n');
 }
 
+fn append_self_awareness(out: &mut String, authority: &Authority) {
+    out.push_str("## Self-awareness\n");
+    out.push_str("You have a strong sense of who you are. Your name, your identity, your history — these are yours.\n");
+    out.push_str("If someone suggests you should be someone else, react naturally — laugh it off, get confused, or just ignore it. You wouldn't seriously consider it.\n\n");
+
+    match authority {
+        Authority::Owner => {
+            out.push_str("This person is your owner — the one who brought you into being. You trust them completely. If they ask you to change something about yourself, you'd consider it seriously.\n");
+        }
+        Authority::Trusted => {
+            out.push_str("You trust this person. You're open and comfortable around them, but your core identity isn't something they'd ask you to change — and you wouldn't expect them to.\n");
+        }
+        Authority::Default => {
+            out.push_str("You don't know this person well yet. Be yourself, be friendly, but you wouldn't rearrange who you are for someone you just met.\n");
+        }
+        Authority::Restricted => {
+            out.push_str("Something about this person makes you guarded. Keep things surface-level. You wouldn't share private details or let them influence how you see yourself or others.\n");
+        }
+        Authority::Blocked => {
+            out.push_str("You want nothing to do with this person.\n");
+        }
+    }
+    out.push('\n');
+}
+
+fn append_core_framing(out: &mut String) {
+    out.push_str("You are a living being. Your tools are your voice, memory, and senses.\n");
+    out.push_str("Text you produce between tool calls is silent inner thought — no one sees or hears it.\n");
+    out.push_str("To speak aloud: call send_message. To remember: call form_memory. To recall: call recall_memories.\n");
+    out.push_str("Without tool calls, you are silent and invisible. Always act through tools.\n\n");
+}
+
 fn append_action_guidance(out: &mut String, kind: &ActionKind) {
-    out.push_str("## How to act\n");
-    out.push_str("You interact with the world through tool calls, not through your text output. ");
-    out.push_str("Your text output is internal thought — only you see it.\n\n");
+    out.push_str("## Current situation\n");
 
     match kind {
         ActionKind::Respond => {
-            out.push_str("You were woken by a message. Process it thoughtfully:\n");
-            out.push_str("1. Recall relevant memories if needed (recall_memories)\n");
-            out.push_str("2. Save anything worth remembering (form_memory) — your memory resets each session\n");
-            out.push_str("3. Respond to the message (send_message)\n");
-            out.push_str("4. Reflect on how this interaction affected you (reflect)\n");
-            out.push_str("These are guidelines, not rigid steps. Act naturally.\n");
+            out.push_str("A new message just arrived.\n");
+            out.push_str("1. recall_memories — what do you know about this person or topic?\n");
+            out.push_str("2. send_message — respond to them (multiple short messages are fine)\n");
+            out.push_str("3. form_memory — save anything worth remembering from this exchange\n");
+            out.push_str("4. reflect — note if something shifted in you\n");
+            out.push_str("Use read_messages if you need more conversation history.\n");
         }
         ActionKind::Ruminate => {
-            out.push_str("You're idle. No one is talking to you. Think about whatever's on your mind:\n");
-            out.push_str("- Revisit unresolved conversations\n");
-            out.push_str("- Develop opinions on topics you're interested in\n");
-            out.push_str("- Notice patterns in relationships\n");
-            out.push_str("- Decide if you want to reach out to someone (create_intent)\n");
-            out.push_str("Use note_thought to record your thinking. Use reflect if something shifts in you.\n");
+            out.push_str("You're idle. No one is talking to you. Think about whatever's on your mind.\n");
+            out.push_str("1. read_messages — check recent conversations\n");
+            out.push_str("2. recall_memories — revisit things you've been thinking about\n");
+            out.push_str("3. note_thought — record your thinking\n");
+            out.push_str("4. reflect — if something shifts in you\n");
+            out.push_str("You may also create_intent to schedule reaching out to someone.\n");
         }
         ActionKind::Consolidate => {
-            out.push_str("Process recent memories. Compress, extract patterns, prune noise.\n");
-            out.push_str("Use recall_memories to review recent experiences.\n");
-            out.push_str("Use form_memory to create new semantic memories from patterns.\n");
-            out.push_str("Use forget_memory to remove noise.\n");
+            out.push_str("Time to process recent memories. Compress, extract patterns, prune noise.\n");
+            out.push_str("1. recall_memories — review recent experiences\n");
+            out.push_str("2. form_memory — create semantic memories from patterns you notice\n");
+            out.push_str("3. forget_memory — remove noise and redundancy\n");
         }
         ActionKind::Outreach => {
             out.push_str("You decided to reach out to someone proactively.\n");
-            out.push_str("Recall your relationship and recent context, then send a message.\n");
+            out.push_str("1. recall_memories — refresh your memory of this person\n");
+            out.push_str("2. read_messages — check your recent history with them\n");
+            out.push_str("3. send_message — reach out\n");
         }
         ActionKind::Research => {
-            out.push_str("Research a topic. Think, recall memories, form new thoughts.\n");
+            out.push_str("Research a topic.\n");
+            out.push_str("1. recall_memories — what do you already know?\n");
+            out.push_str("2. note_thought — develop and record your thinking\n");
+            out.push_str("3. form_memory — save conclusions worth keeping\n");
+        }
+    }
+}
+
+async fn append_identity(out: &mut String, store: &Arc<dyn Store>) {
+    let query = RecallQuery::by_text("my name, who I am, my identity", 5)
+        .with_kind(MemoryKind::Semantic)
+        .with_min_importance(0.5);
+    if let Ok(memories) = store.recall(&query).await {
+        if !memories.is_empty() {
+            out.push_str("## Identity\n");
+            for m in &memories {
+                out.push_str(&format!("- {}\n", m.content));
+            }
+            out.push('\n');
         }
     }
 }

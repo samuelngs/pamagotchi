@@ -1,5 +1,5 @@
 use crate::personality::{GrowthConfig, PersonalityDelta, PersonalityState};
-use crate::store::{ActorConfig, ActorSnapshot, Store};
+use crate::store::{ActorSnapshot, Store};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -7,7 +7,6 @@ use tracing::{info, warn};
 pub struct SharedState {
     pub personality: RwLock<PersonalityState>,
     pub config: RwLock<GrowthConfig>,
-    pub actor_config: RwLock<ActorConfig>,
 }
 
 #[derive(Clone)]
@@ -27,10 +26,6 @@ impl StateHandle {
 
     pub fn read_config(&self) -> std::sync::RwLockReadGuard<'_, GrowthConfig> {
         self.shared.config.read().unwrap()
-    }
-
-    pub fn read_actor_config(&self) -> std::sync::RwLockReadGuard<'_, ActorConfig> {
-        self.shared.actor_config.read().unwrap()
     }
 
     pub async fn send_delta(&self, delta: PersonalityDelta) {
@@ -103,9 +98,7 @@ impl StateTask {
         let snapshot = {
             let personality = self.shared.personality.read().unwrap().clone();
             let config = self.shared.config.read().unwrap().clone();
-            let actor_config = self.shared.actor_config.read().unwrap().clone();
             ActorSnapshot {
-                actor: actor_config,
                 personality,
                 config,
                 saved_at: now(),

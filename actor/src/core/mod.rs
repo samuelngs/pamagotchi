@@ -19,7 +19,7 @@ pub use state::{SharedState, StateHandle};
 use crate::llm::{Provider, SamplingConfig};
 use crate::personality::{GrowthConfig, PersonalityState};
 use crate::platform::PlatformRouter;
-use crate::store::{ActorConfig, Store};
+use crate::store::Store;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -33,7 +33,6 @@ pub struct Actor {
 }
 
 pub struct ActorBuilder {
-    actor_config: ActorConfig,
     personality: PersonalityState,
     growth_config: GrowthConfig,
     store: Arc<dyn Store>,
@@ -47,13 +46,8 @@ pub struct ActorBuilder {
 }
 
 impl ActorBuilder {
-    pub fn new(
-        actor_config: ActorConfig,
-        store: Arc<dyn Store>,
-        provider: Arc<dyn Provider>,
-    ) -> Self {
+    pub fn new(store: Arc<dyn Store>, provider: Arc<dyn Provider>) -> Self {
         Self {
-            actor_config,
             personality: PersonalityState::new(Default::default()),
             growth_config: GrowthConfig::default(),
             store,
@@ -124,7 +118,6 @@ impl ActorBuilder {
         let shared = Arc::new(SharedState {
             personality: RwLock::new(personality),
             config: RwLock::new(growth_config),
-            actor_config: RwLock::new(self.actor_config),
         });
 
         let (event_tx, event_rx) = self
@@ -168,12 +161,8 @@ impl ActorBuilder {
 }
 
 impl Actor {
-    pub fn builder(
-        actor_config: ActorConfig,
-        store: Arc<dyn Store>,
-        provider: Arc<dyn Provider>,
-    ) -> ActorBuilder {
-        ActorBuilder::new(actor_config, store, provider)
+    pub fn builder(store: Arc<dyn Store>, provider: Arc<dyn Provider>) -> ActorBuilder {
+        ActorBuilder::new(store, provider)
     }
 
     pub async fn send_event(&self, event: WakeEvent) -> anyhow::Result<()> {

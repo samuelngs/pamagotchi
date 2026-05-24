@@ -344,3 +344,50 @@ pub fn action_tools() -> Vec<Tool> {
         },
     ]
 }
+
+pub fn mind_tools() -> Vec<Tool> {
+    vec![
+        Tool {
+            name: "respond".into(),
+            description: "Engage with this event. Start an action session to handle it.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Why you decided to engage"
+                    }
+                },
+                "required": ["reason"]
+            }),
+        },
+        Tool {
+            name: "drop".into(),
+            description: "Ignore this event. Not worth engaging with right now.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Why you decided to ignore"
+                    }
+                },
+                "required": ["reason"]
+            }),
+        },
+        Tool {
+            name: "defer".into(),
+            description: "Hold off on this event. Something else takes priority, or the timing isn't right.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Why you decided to defer"
+                    }
+                },
+                "required": ["reason"]
+            }),
+        },
+    ]
+}

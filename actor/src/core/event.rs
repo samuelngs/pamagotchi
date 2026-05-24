@@ -57,3 +57,12 @@ pub enum WakeEvent {
     },
     Shutdown,
 }
+
+impl WakeEvent {
+    pub fn message(&self) -> Option<&InboundMessage> {
+        match self {
+            Self::Message(msg) => Some(msg),
+            _ => None,
+        }
+    }
+}

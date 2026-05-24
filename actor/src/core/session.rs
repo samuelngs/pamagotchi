@@ -10,11 +10,11 @@ use crate::llm::{
 };
 use crate::platform::{MediaAttachment, MediaKind, PlatformRouter};
 use crate::personality::{
-    AffectShift, BeliefChange, PersonalityDelta, RelationshipChange, TraitNudge,
+    AffectShift, Authority, BeliefChange, PersonalityDelta, RelationshipChange, TraitNudge,
 };
 use crate::store::{
-    ConversationId, Memory, MemoryId, MemoryKind, MemorySource, MessageRole, StoredMessage, Store,
-    Thought, ThoughtKind,
+    ConversationId, Memory, MemoryId, MemoryKind, MemorySource, MessageRole, StoredMessage,
+    Store, Thought, ThoughtKind,
 };
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
@@ -26,6 +26,7 @@ pub struct SessionContext {
     pub kind: ActionKind,
     pub messages: Vec<InboundMessage>,
     pub conversation: Option<ConversationId>,
+    pub authority: Authority,
     pub state: StateHandle,
     pub store: Arc<dyn Store>,
     pub provider: Arc<dyn Provider>,
@@ -71,6 +72,7 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
         &ctx.messages,
         ctx.conversation.as_ref(),
         action_ctx,
+        &ctx.authority,
     )
     .await
     {
@@ -94,36 +96,6 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
     debug!(action = %ctx.action_id, system_prompt = %system_prompt, "system prompt content");
 
     let mut llm_messages = vec![Message::system(system_prompt)];
-
-    if let Some(action_ctx) = action_ctx {
-        for msg in &action_ctx.recent_messages {
-            match msg.role {
-                MessageRole::User => {
-                    llm_messages.push(Message::user(&msg.content));
-                }
-                MessageRole::Assistant => {
-                    let call_id = format!("hist-{}", msg.timestamp);
-                    llm_messages.push(Message::Assistant(AssistantMessage {
-                        text: None,
-                        tool_calls: vec![ToolCall {
-                            id: call_id.clone(),
-                            name: "send_message".into(),
-                            arguments: serde_json::json!({ "content": msg.content }),
-                        }],
-                    }));
-                    llm_messages.push(Message::tool_result(&call_id, "Message sent."));
-                }
-                MessageRole::System => {
-                    llm_messages.push(Message::system(&msg.content));
-                }
-                MessageRole::Tool => continue,
-            }
-        }
-
-        if !action_ctx.new_messages.is_empty() {
-            llm_messages.push(Message::system("--- New messages (triggered this session) ---"));
-        }
-    }
 
     for inbound in &ctx.messages {
         let display = inbound.display_content();
@@ -268,6 +240,18 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
                 "executing tool"
             );
 
+            if let Err(denied) =
+                check_tool_permission(&tool_call.name, &tool_call.arguments, &ctx).await
+            {
+                info!(
+                    action = %ctx.action_id,
+                    tool = %tool_call.name,
+                    "tool denied: {denied}"
+                );
+                llm_messages.push(Message::tool_result(&tool_call.id, &denied));
+                continue;
+            }
+
             let result = execute_tool(
                 &tool_call.name,
                 &tool_call.arguments,
@@ -344,6 +328,57 @@ pub async fn run_session(mut ctx: SessionContext) -> ActionResult {
         unprocessed_messages: unprocessed,
         injected_messages: session_state.injected_messages,
     }
+}
+
+async fn check_tool_permission(
+    name: &str,
+    args: &Value,
+    ctx: &SessionContext,
+) -> Result<(), String> {
+    match name {
+        "form_memory" => {
+            let tags: Vec<&str> = args["tags"]
+                .as_array()
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            let has_identity_tag = tags.iter().any(|t| {
+                let lower = t.to_lowercase();
+                lower == "identity" || lower == "self" || lower == "name"
+            });
+            if has_identity_tag && !matches!(ctx.authority, Authority::Owner) {
+                return Err("Something feels wrong about this. You don't want to change something this core about yourself.".into());
+            }
+        }
+        "forget_memory" => {
+            let id = args["memory_id"].as_str().unwrap_or("");
+            if let Ok(Some(memory)) = ctx.store.get_memory(&MemoryId(id.to_string())).await {
+                if matches!(memory.source, MemorySource::External)
+                    && !matches!(ctx.authority, Authority::Owner)
+                {
+                    return Err(
+                        "This memory feels fundamental — you instinctively hold onto it."
+                            .into(),
+                    );
+                }
+            }
+        }
+        "reflect" => {
+            if let Some(rels) = args["relationship_changes"].as_array() {
+                for r in rels {
+                    if r.get("authority").is_some()
+                        && !matches!(ctx.authority, Authority::Owner)
+                    {
+                        return Err(
+                            "Changing how you feel about someone isn't something you'd do on command."
+                                .into(),
+                        );
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 async fn execute_tool(

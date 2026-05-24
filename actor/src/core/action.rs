@@ -1,5 +1,5 @@
-use crate::personality::PersonalityDelta;
-use crate::store::{ConversationId, MemoryId, StoredMessage, Thought};
+use crate::personality::{Authority, PersonalityDelta};
+use crate::store::{ConversationId, MemoryId, Thought};
 use super::event::InboundMessage;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -8,11 +8,17 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ActionId(pub u64);
+pub struct ActionId(pub String);
+
+impl ActionId {
+    pub fn new() -> Self {
+        Self(nanoid::nanoid!())
+    }
+}
 
 impl fmt::Display for ActionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "action-{}", self.0)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -44,9 +50,6 @@ pub enum ActionTiming {
 }
 
 pub struct ActionContext {
-    pub summary: Option<String>,
-    pub recent_messages: Vec<StoredMessage>,
-    pub new_messages: Vec<InboundMessage>,
     pub cancelled_note: Option<String>,
     pub concurrent_actions: Vec<ActionBrief>,
 }
@@ -66,10 +69,15 @@ pub struct ActionRequest {
     pub messages: Vec<InboundMessage>,
     pub timing: ActionTiming,
     pub context: Option<ActionContext>,
+    pub authority: Authority,
 }
 
 impl ActionRequest {
-    pub fn respond(messages: Vec<InboundMessage>, conversation: ConversationId) -> Self {
+    pub fn respond(
+        messages: Vec<InboundMessage>,
+        conversation: ConversationId,
+        authority: Authority,
+    ) -> Self {
         Self {
             kind: ActionKind::Respond,
             task: "Respond to message".into(),
@@ -78,6 +86,7 @@ impl ActionRequest {
             messages,
             timing: ActionTiming::Immediate,
             context: None,
+            authority,
         }
     }
 
@@ -90,6 +99,7 @@ impl ActionRequest {
             messages: vec![],
             timing: ActionTiming::Immediate,
             context: None,
+            authority: Authority::Default,
         }
     }
 
@@ -102,6 +112,7 @@ impl ActionRequest {
             messages: vec![],
             timing: ActionTiming::Immediate,
             context: None,
+            authority: Authority::Default,
         }
     }
 }

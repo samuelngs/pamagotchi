@@ -1294,7 +1294,6 @@ fn read_directive(row: &rusqlite::Row) -> rusqlite::Result<BehaviorDirective> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::ActorConfig;
     use crate::personality::{CoreTraits, GrowthConfig, PersonalityState};
 
     fn test_store() -> SqliteStore {
@@ -1417,11 +1416,6 @@ mod tests {
     async fn snapshots() {
         let store = test_store();
         let snapshot = ActorSnapshot {
-            actor: ActorConfig {
-                name: "Pama".into(),
-                description: "A friendly digital being".into(),
-                owner: PersonId("sam".into()),
-            },
             personality: PersonalityState::new(CoreTraits::default()),
             config: GrowthConfig::default(),
             saved_at: 3000,

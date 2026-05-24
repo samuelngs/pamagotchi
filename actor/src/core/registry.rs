@@ -1,12 +1,10 @@
 use super::action::{ActionId, ActionState, ActionStatus};
 use crate::store::ConversationId;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) struct ActionRegistry {
     actions: HashMap<ActionId, ActionState>,
     max_concurrency: usize,
-    next_id: AtomicU64,
 }
 
 #[allow(dead_code)]
@@ -15,12 +13,11 @@ impl ActionRegistry {
         Self {
             actions: HashMap::new(),
             max_concurrency,
-            next_id: AtomicU64::new(1),
         }
     }
 
     pub fn next_id(&self) -> ActionId {
-        ActionId(self.next_id.fetch_add(1, Ordering::Relaxed))
+        ActionId::new()
     }
 
     pub fn insert(&mut self, state: ActionState) {
@@ -63,6 +60,10 @@ impl ActionRegistry {
 
     pub fn at_capacity(&self) -> bool {
         self.running_count() >= self.max_concurrency
+    }
+
+    pub fn max_concurrency(&self) -> usize {
+        self.max_concurrency
     }
 
     pub fn for_conversation(&self, conv: &ConversationId) -> Vec<&ActionState> {
