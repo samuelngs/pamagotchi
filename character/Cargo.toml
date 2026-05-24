@@ -1,0 +1,12 @@
+[package]
+name = "character"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rand = { workspace = true }
+
+[[example]]
+name = "gallery"
+path = "examples/gallery.rs"
