@@ -55,12 +55,16 @@ impl From<String> for Seed {
     fn from(s: String) -> Self { Seed::Text(s) }
 }
 
+const CANONICAL_W: u32 = 16;
+const CANONICAL_H: u32 = 16;
+
 /// Configuration for creature generation.
 #[derive(Debug, Clone)]
 pub struct CreatureConfig {
-    /// Grid width in pixels (default: 16).
+    /// Display width in pixels (default: 16). Clamped to nearest multiple of
+    /// 16 (canonical size) to ensure pixel-perfect scaling.
     pub width: u32,
-    /// Grid height in pixels (default: 16).
+    /// Display height in pixels (default: 16). Same clamping as width.
     pub height: u32,
     /// Sole source of randomness — determines the creature entirely.
     pub seed: Seed,
@@ -75,8 +79,8 @@ pub struct CreatureConfig {
 impl Default for CreatureConfig {
     fn default() -> Self {
         Self {
-            width: 16,
-            height: 16,
+            width: CANONICAL_W,
+            height: CANONICAL_H,
             seed: Seed::default(),
             palette: None,
             leg_count: None,
@@ -88,6 +92,7 @@ impl Default for CreatureConfig {
 /// A generated creature: grid data + color palette.
 #[derive(Debug, Clone)]
 pub struct Creature {
+    canonical: Grid,
     pub grid: Grid,
     pub palette: Palette,
 }
@@ -104,23 +109,25 @@ impl Creature {
     pub fn generate(config: &CreatureConfig) -> Self {
         let mut rng = StdRng::seed_from_u64(config.seed.to_u64());
 
-        // 1. Palette
         let palette = config
             .palette
             .clone()
             .unwrap_or_else(|| Palette::generate(&mut rng));
 
-        // 2. Body fill
-        let mut grid = Grid::new(config.width, config.height);
+        let mut grid = Grid::new(CANONICAL_W, CANONICAL_H);
         grid.fill_body(&mut rng);
-
-        // 3. Eyes
         features::place_eyes(&mut grid, &mut rng, config.eye_count);
-
-        // 4. Legs
         features::place_legs(&mut grid, &mut rng, config.leg_count);
 
-        Self { grid, palette }
+        let out_w = config.width.max(12);
+        let out_h = config.height.max(12);
+        let display = grid.scale(out_w, out_h);
+
+        Self {
+            canonical: grid,
+            grid: display,
+            palette,
+        }
     }
 
     /// Render to an ANSI truecolor string using half-block encoding.
@@ -134,7 +141,15 @@ impl Creature {
     }
 
     pub fn idle_frames(&self) -> Vec<animate::AnimationFrame> {
-        animate::idle_frames(&self.grid)
+        let frames = animate::idle_frames(&self.canonical);
+        let (w, h) = (self.grid.width, self.grid.height);
+        frames
+            .into_iter()
+            .map(|f| animate::AnimationFrame {
+                grid: f.grid.scale(w, h),
+                duration_ms: f.duration_ms,
+            })
+            .collect()
     }
 
     /// Get the raw cell at a grid position.

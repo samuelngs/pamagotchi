@@ -258,6 +258,35 @@ impl Grid {
         }
         count
     }
+
+    pub fn scale(&self, target_w: u32, target_h: u32) -> Grid {
+        if target_w == self.width && target_h == self.height {
+            return self.clone();
+        }
+        let mut out = Grid::new(target_w, target_h);
+        let src_half = self.width / 2;
+        let tgt_half = target_w / 2;
+
+        for sy in 0..self.height {
+            let ty_start = sy * target_h / self.height;
+            let ty_end = ((sy + 1) * target_h / self.height).max(ty_start + 1);
+            for sx in 0..src_half {
+                let tx_start = sx * tgt_half / src_half;
+                let tx_end = ((sx + 1) * tgt_half / src_half).max(tx_start + 1);
+                let cell = self.get(sx, sy).unwrap_or(Cell::Empty);
+                let priority = matches!(cell, Cell::Eye | Cell::Pupil);
+                for ty in ty_start..ty_end.min(target_h) {
+                    for tx in tx_start..tx_end.min(tgt_half) {
+                        if priority || out.get(tx, ty) == Some(Cell::Empty) {
+                            out.set(tx, ty, cell);
+                            out.set(target_w - 1 - tx, ty, cell);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]
