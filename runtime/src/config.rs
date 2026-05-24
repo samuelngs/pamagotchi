@@ -32,7 +32,6 @@ impl Default for LogConfig {
 #[derive(Serialize, Deserialize)]
 pub struct ActorEntry {
     pub id: String,
-    pub name: String,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<ProviderConfig>,
@@ -204,21 +203,14 @@ impl Config {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        let mut names = HashSet::new();
         let mut ids = HashSet::new();
 
         for actor in &self.actors {
-            if !names.insert(&actor.name) {
-                bail!("duplicate actor name: {}", actor.name);
-            }
             if !ids.insert(&actor.id) {
                 bail!("duplicate actor id: {}", actor.id);
             }
             if actor.id.len() != 64 || !actor.id.chars().all(|c| c.is_ascii_hexdigit()) {
                 bail!("actor id must be 64 hex characters, got: {}", actor.id);
-            }
-            if actor.name.is_empty() {
-                bail!("actor name cannot be empty");
             }
         }
         Ok(())
@@ -260,7 +252,6 @@ mod tests {
         let yaml = r#"
 actors:
   - id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-    name: pama
     provider:
       chat:
         kind: openai
@@ -268,7 +259,6 @@ actors:
 "#;
         let config: Config = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.actors.len(), 1);
-        assert_eq!(config.actors[0].name, "pama");
         assert_eq!(config.actors[0].max_turns, 5);
         let provider = config.actors[0].provider.as_ref().unwrap();
         assert_eq!(provider.chat.model(), "gpt-4o");
@@ -287,7 +277,6 @@ log:
 
 actors:
   - id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-    name: pama
     max_turns: 10
     max_concurrency: 3
     provider:
@@ -324,17 +313,15 @@ actors:
     }
 
     #[test]
-    fn reject_duplicate_names() {
+    fn reject_duplicate_ids() {
         let yaml = r#"
 actors:
   - id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-    name: pama
     provider:
       chat:
         kind: openai
         model: gpt-4o
-  - id: "b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-    name: pama
+  - id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
     provider:
       chat:
         kind: openai
@@ -349,7 +336,6 @@ actors:
         let yaml = r#"
 actors:
   - id: "tooshort"
-    name: pama
     provider:
       chat:
         kind: openai
@@ -394,9 +380,9 @@ actors:
     #[test]
     fn roundtrip_serialize() {
         let mut config = Config::default();
+        let id = generate_id();
         config.actors.push(ActorEntry {
-            id: generate_id(),
-            name: "test".into(),
+            id: id.clone(),
             provider: None,
             max_turns: 5,
             max_concurrency: 5,
@@ -405,6 +391,6 @@ actors:
         let yaml = serde_yaml::to_string(&config).unwrap();
         let parsed: Config = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed.actors.len(), 1);
-        assert_eq!(parsed.actors[0].name, "test");
+        assert_eq!(parsed.actors[0].id, id);
     }
 }

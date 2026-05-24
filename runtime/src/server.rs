@@ -1,10 +1,9 @@
 use crate::config::{ActorEntry, Config, PlatformEntry};
 use actor::core::{Actor, ActorBuilder};
-use actor::identity::PersonId;
 use actor::llm::{OpenAiProvider, Provider};
 use actor::platform::whatsapp::WhatsAppAdapter;
 use actor::platform::PlatformRouter;
-use actor::store::{ActorConfig, SqliteConfig, SqliteStore};
+use actor::store::{SqliteConfig, SqliteStore};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -16,10 +15,10 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     for entry in &config.actors {
         match start_actor(entry, &data_dir).await {
-            Ok(Some(actor)) => actors.push((entry.name.clone(), actor)),
+            Ok(Some(actor)) => actors.push((entry.id.clone(), actor)),
             Ok(None) => {}
             Err(e) => {
-                error!(actor = %entry.name, %e, "failed to start actor");
+                error!(id = %entry.id, %e, "failed to start actor");
                 return Err(e);
             }
         }
@@ -33,10 +32,10 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     tokio::signal::ctrl_c().await?;
     info!("shutdown signal received");
 
-    for (name, actor) in actors {
-        info!(name = %name, "shutting down actor");
+    for (id, actor) in actors {
+        info!(id = %id, "shutting down actor");
         if let Err(e) = actor.shutdown().await {
-            error!(name = %name, %e, "actor shutdown error");
+            error!(id = %id, %e, "actor shutdown error");
         }
     }
 
@@ -48,7 +47,7 @@ async fn start_actor(entry: &ActorEntry, data_dir: &Path) -> anyhow::Result<Opti
     let provider_config = match entry.provider.as_ref() {
         Some(p) => p,
         None => {
-            warn!(actor = %entry.name, "no provider configured, skipping");
+            warn!(id = %entry.id, "no provider configured, skipping");
             return Ok(None);
         }
     };
@@ -66,15 +65,9 @@ async fn start_actor(entry: &ActorEntry, data_dir: &Path) -> anyhow::Result<Opti
     })?);
 
     let (event_tx, event_rx) = mpsc::channel(256);
-    let router = build_platforms(&entry.platforms, &actor_dir, &entry.name, &event_tx).await?;
+    let router = build_platforms(&entry.platforms, &actor_dir, &entry.id, &event_tx).await?;
 
-    let actor_config = ActorConfig {
-        name: entry.name.clone(),
-        description: String::new(),
-        owner: PersonId(String::new()),
-    };
-
-    let actor = ActorBuilder::new(actor_config, store, provider)
+    let actor = ActorBuilder::new(store, provider)
         .with_model(model)
         .with_sampling(sampling)
         .with_platform(router)
@@ -83,7 +76,7 @@ async fn start_actor(entry: &ActorEntry, data_dir: &Path) -> anyhow::Result<Opti
         .build()
         .await?;
 
-    info!(name = %entry.name, id = %entry.id, "actor started");
+    info!(id = %entry.id, "actor started");
     Ok(Some(actor))
 }
 
@@ -108,7 +101,7 @@ fn build_provider(entry: &crate::config::ProviderEntry) -> anyhow::Result<Arc<dy
 async fn build_platforms(
     platforms: &[PlatformEntry],
     actor_dir: &Path,
-    actor_name: &str,
+    actor_id: &str,
     event_tx: &mpsc::Sender<actor::core::WakeEvent>,
 ) -> anyhow::Result<PlatformRouter> {
     let mut router = PlatformRouter::new();
@@ -119,7 +112,7 @@ async fn build_platforms(
                 let db_path = platform.db_path(actor_dir);
                 let adapter =
                     WhatsAppAdapter::connect(&db_path.to_string_lossy(), event_tx.clone()).await?;
-                info!(actor = %actor_name, "whatsapp connected");
+                info!(actor = %actor_id, "whatsapp connected");
                 router.register(Arc::new(adapter));
             }
         }
