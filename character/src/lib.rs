@@ -88,6 +88,46 @@ impl Default for CreatureConfig {
     }
 }
 
+fn fill_compact_holes(grid: &mut Grid) {
+    let is_filled =
+        |c: Option<Cell>| matches!(c, Some(Cell::Body | Cell::Eye | Cell::Pupil | Cell::Outline));
+
+    fn row_span(grid: &Grid, y: u32, is_filled: impl Fn(Option<Cell>) -> bool) -> Option<(u32, u32)> {
+        let f = (0..grid.width).find(|&x| is_filled(grid.get(x, y)))?;
+        let l = (0..grid.width).rfind(|&x| is_filled(grid.get(x, y)))?;
+        Some((f, l))
+    }
+
+    // Bottom-to-top: widen narrow rows to taper smoothly from body below
+    for y in (0..grid.height.saturating_sub(1)).rev() {
+        if !((0..grid.width).any(|x| is_filled(grid.get(x, y)))) {
+            continue;
+        }
+        if let Some((bf, bl)) = row_span(grid, y + 1, &is_filled) {
+            let target_f = (bf + 1).min(grid.width - 1);
+            let target_l = bl.saturating_sub(1);
+            if target_f <= target_l {
+                for x in target_f..=target_l {
+                    if grid.get(x, y) == Some(Cell::Empty) {
+                        grid.set(x, y, Cell::Body);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fill remaining horizontal interior gaps per row
+    for y in 0..grid.height {
+        if let Some((f, l)) = row_span(grid, y, &is_filled) {
+            for x in f..=l {
+                if grid.get(x, y) == Some(Cell::Empty) {
+                    grid.set(x, y, Cell::Body);
+                }
+            }
+        }
+    }
+}
+
 fn compress_eyes(grid: &mut Grid) {
     for x in 0..grid.width {
         let mut y = 0;
@@ -145,6 +185,7 @@ impl Creature {
         let mut display = grid.scale(pixel_w, pixel_h);
 
         if compact {
+            fill_compact_holes(&mut display);
             compress_eyes(&mut display);
         }
 
@@ -177,6 +218,7 @@ impl Creature {
             .map(|f| {
                 let mut grid = f.grid.scale(w, h);
                 if compact {
+                    fill_compact_holes(&mut grid);
                     compress_eyes(&mut grid);
                 }
                 animate::AnimationFrame {
