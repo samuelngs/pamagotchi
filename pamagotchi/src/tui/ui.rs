@@ -2,8 +2,9 @@ use super::app::App;
 use super::widgets::{Button, InputBox, MessageList, ShortKey};
 use ratatui::prelude::*;
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
+    app.input_width = area.width as usize;
     let input_height = InputBox::height(app.input_line_count());
 
     let layout = Layout::vertical([

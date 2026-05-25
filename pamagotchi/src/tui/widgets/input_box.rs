@@ -1,3 +1,4 @@
+use crate::tui::app::{visual_cursor_x, visual_cursor_y};
 use crate::tui::theme;
 use ratatui::prelude::*;
 use ratatui::widgets::Block;
@@ -19,12 +20,19 @@ impl InputBox<'_> {
         if !self.focused {
             return None;
         }
-        let (cx, cy) = cursor_pos(self.text, self.cursor);
+        let wrap_width = self.text_width(area);
+        let cx = visual_cursor_x(self.text, self.cursor, wrap_width);
+        let cy = visual_cursor_y(self.text, self.cursor, wrap_width);
         let visible_cy = cy.saturating_sub(self.scroll);
         Some(Position::new(
             area.x + 1 + 2 + cx as u16,
             area.y + 1 + visible_cy as u16,
         ))
+    }
+
+    fn text_width(&self, area: Rect) -> usize {
+        let content_width = area.width.saturating_sub(2) as usize;
+        if content_width > 2 { content_width - 2 } else { 1 }
     }
 }
 
@@ -36,17 +44,14 @@ impl Widget for InputBox<'_> {
             theme::INPUT_BG_DIM
         };
 
-        // Top cap
         let cap = "▄".repeat(area.width as usize);
         buf.set_string(area.x, area.y, &cap, Style::default().fg(bg));
 
-        // Content area
         let content_bg = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(2));
         Block::default()
             .style(Style::default().bg(bg))
             .render(content_bg, buf);
 
-        // Bottom cap
         let bot_y = area.y + area.height.saturating_sub(1);
         let bot_cap = "▄".repeat(area.width as usize);
         buf.set_string(
@@ -56,7 +61,6 @@ impl Widget for InputBox<'_> {
             Style::default().fg(theme::BASE_BG).bg(bg),
         );
 
-        // Text content
         let content = Rect::new(
             area.x + 1,
             area.y + 1,
@@ -72,6 +76,7 @@ impl Widget for InputBox<'_> {
         let prompt_style = Style::default().fg(prompt_color).bg(bg);
         let text_style = Style::default().bg(bg);
         let prompt = "❯ ";
+        let wrap_width = if content.width > 2 { content.width as usize - 2 } else { 1 };
 
         if self.text.is_empty() {
             let line = Line::from(vec![
@@ -83,29 +88,34 @@ impl Widget for InputBox<'_> {
             ]);
             buf.set_line(content.x, content.y, &line, content.width);
         } else {
-            let all_lines: Vec<&str> = self.text.split('\n').collect();
+            let mut visual_lines: Vec<(String, bool)> = Vec::new();
+            for (li, logical_line) in self.text.split('\n').enumerate() {
+                let is_first_logical = li == 0;
+                if logical_line.is_empty() {
+                    visual_lines.push((String::new(), is_first_logical && visual_lines.is_empty()));
+                } else {
+                    let chars: Vec<char> = logical_line.chars().collect();
+                    for chunk in chars.chunks(wrap_width) {
+                        let is_first_visual = is_first_logical && visual_lines.is_empty();
+                        visual_lines.push((chunk.iter().collect(), is_first_visual));
+                    }
+                }
+            }
+
             let visible_count = content.height as usize;
             let start = self.scroll;
-            let end = all_lines.len().min(start + visible_count);
+            let end = visual_lines.len().min(start + visible_count);
 
             for (vi, i) in (start..end).enumerate() {
-                let prefix = if i == 0 {
+                let (ref text, show_prompt) = visual_lines[i];
+                let prefix = if show_prompt {
                     Span::styled(prompt, prompt_style)
                 } else {
                     Span::styled("  ", text_style)
                 };
-                let line = Line::from(vec![prefix, Span::styled(all_lines[i], text_style)]);
+                let line = Line::from(vec![prefix, Span::styled(text.as_str(), text_style)]);
                 buf.set_line(content.x, content.y + vi as u16, &line, content.width);
             }
         }
     }
-}
-
-fn cursor_pos(text: &str, byte_offset: usize) -> (usize, usize) {
-    let before = &text[..byte_offset];
-    let y = before.matches('\n').count();
-    let x = before
-        .rfind('\n')
-        .map_or(before.len(), |pos| before.len() - pos - 1);
-    (x, y)
 }

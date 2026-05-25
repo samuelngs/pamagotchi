@@ -10,6 +10,7 @@ pub struct App {
     pub input: String,
     pub cursor: usize,
     pub input_scroll: usize,
+    pub input_width: usize,
     pub messages: Vec<ChatMessage>,
     pub messages_scroll: usize,
     pub composing: bool,
@@ -24,6 +25,7 @@ impl App {
             input: String::new(),
             cursor: 0,
             input_scroll: 0,
+            input_width: 0,
             messages: Vec::new(),
             messages_scroll: 0,
             composing: false,
@@ -136,7 +138,7 @@ impl App {
     }
 
     pub fn ensure_cursor_visible(&mut self) {
-        let cy = self.input[..self.cursor].matches('\n').count();
+        let cy = visual_cursor_y(&self.input, self.cursor, self.wrap_width());
         let max_visible = 10;
         if cy < self.input_scroll {
             self.input_scroll = cy;
@@ -146,7 +148,11 @@ impl App {
     }
 
     pub fn input_line_count(&self) -> usize {
-        self.input.matches('\n').count() + 1
+        visual_line_count(&self.input, self.wrap_width())
+    }
+
+    fn wrap_width(&self) -> usize {
+        if self.input_width > 4 { self.input_width - 4 } else { 1 }
     }
 
     pub async fn submit_input(&mut self) {
@@ -177,4 +183,43 @@ impl App {
     pub fn scroll_down(&mut self, lines: usize) {
         self.messages_scroll = self.messages_scroll.saturating_sub(lines);
     }
+}
+
+fn wrapped_line_count(line: &str, width: usize) -> usize {
+    if width == 0 || line.is_empty() {
+        return 1;
+    }
+    let char_count = line.chars().count();
+    (char_count + width - 1) / width
+}
+
+pub fn visual_line_count(text: &str, width: usize) -> usize {
+    if width == 0 {
+        return text.matches('\n').count() + 1;
+    }
+    text.split('\n').map(|l| wrapped_line_count(l, width)).sum()
+}
+
+pub fn visual_cursor_y(text: &str, byte_offset: usize, width: usize) -> usize {
+    let before = &text[..byte_offset];
+    if width == 0 {
+        return before.matches('\n').count();
+    }
+    let lines: Vec<&str> = before.split('\n').collect();
+    let mut y = 0;
+    for (i, line) in lines.iter().enumerate() {
+        if i < lines.len() - 1 {
+            y += wrapped_line_count(line, width);
+        } else {
+            y += line.chars().count() / width;
+        }
+    }
+    y
+}
+
+pub fn visual_cursor_x(text: &str, byte_offset: usize, width: usize) -> usize {
+    let before = &text[..byte_offset];
+    let last_line = before.rsplit('\n').next().unwrap_or(before);
+    let col = last_line.chars().count();
+    if width == 0 { col } else { col % width }
 }
