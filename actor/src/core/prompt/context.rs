@@ -11,7 +11,6 @@ pub struct MindContext {
 #[derive(Serialize)]
 pub struct PersonContext {
     pub name: String,
-    pub label: String,
     pub authority: String,
     pub trust: i32,
     pub familiarity: i32,
@@ -63,7 +62,6 @@ pub struct InterestCtx {
 #[derive(Serialize)]
 pub struct RelationshipCtx {
     pub name: String,
-    pub label: String,
     pub trust: i32,
     pub familiarity: i32,
     pub interactions: u32,

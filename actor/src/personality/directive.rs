@@ -1,5 +1,5 @@
 use protocol::{GroupId, PersonId};
-use super::{Authority, Label};
+use super::Authority;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -18,7 +18,6 @@ pub struct BehaviorDirective {
 pub enum DirectiveScope {
     Global,
     Person(PersonId),
-    Label(Label),
     Authority(Authority),
     Group(GroupId),
 }
@@ -28,7 +27,6 @@ impl DirectiveScope {
         match self {
             Self::Global => "global",
             Self::Person(_) => "person",
-            Self::Label(_) => "label",
             Self::Authority(_) => "authority",
             Self::Group(_) => "group",
         }
@@ -38,7 +36,6 @@ impl DirectiveScope {
         match self {
             Self::Global => None,
             Self::Person(p) => Some(p.0.clone()),
-            Self::Label(l) => Some(l.as_str().to_string()),
             Self::Authority(a) => Some(a.as_str().to_string()),
             Self::Group(g) => Some(g.0.clone()),
         }

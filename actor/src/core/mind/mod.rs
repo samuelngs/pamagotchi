@@ -9,10 +9,13 @@ use super::registry::ActionRegistry;
 use super::state::StateHandle;
 use inference::InferenceRouter;
 use gateway::GatewayRouter;
+use crate::identity::{Identity, Person};
+use crate::personality::{Authority, Relationship};
 use crate::store::Store;
+use protocol::{InboundMessage, PersonId};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct Mind {
     pub(super) event_rx: mpsc::Receiver<WakeEvent>,
@@ -65,7 +68,10 @@ impl Mind {
                     self.execute_decision(decision).await;
                     self.registry.gc();
                 }
-                Some(event) => {
+                Some(mut event) => {
+                    if let WakeEvent::Message(ref mut msg) = event {
+                        self.resolve_person(msg).await;
+                    }
                     let verdict = self.evaluate(&event).await;
                     let decision = self.build_decision(verdict, &event);
                     self.execute_decision(decision).await;
@@ -79,6 +85,104 @@ impl Mind {
             }
         }
         info!("mind stopped");
+    }
+
+    async fn resolve_person(&self, msg: &mut InboundMessage) {
+        if msg.person.is_some() {
+            return;
+        }
+        if msg.gateway_id == "relay" {
+            self.resolve_relay_person(msg).await;
+        } else {
+            self.resolve_gateway_person(msg).await;
+        }
+    }
+
+    async fn resolve_relay_person(&self, msg: &mut InboundMessage) {
+        if let Some(owner_id) = self.find_owner() {
+            let _ = self.store.touch_person(&owner_id).await;
+            self.ensure_identity_linked(&owner_id, &msg.gateway_id, &msg.external_id).await;
+            msg.person = Some(owner_id);
+        } else {
+            let id = self.create_person_with_identity(msg, Authority::Owner).await;
+            if let Some(ref id) = id {
+                info!(person = %id.0, "created owner from first relay contact");
+            }
+            msg.person = id;
+        }
+    }
+
+    async fn resolve_gateway_person(&self, msg: &mut InboundMessage) {
+        match self.store.resolve_identity(&msg.gateway_id, &msg.external_id).await {
+            Ok(Some(person)) => {
+                let _ = self.store.touch_person(&person.id).await;
+                msg.person = Some(person.id);
+            }
+            Ok(None) => {
+                let authority = if self.find_owner().is_none() {
+                    Authority::Owner
+                } else {
+                    Authority::Default
+                };
+                msg.person = self.create_person_with_identity(msg, authority).await;
+            }
+            Err(e) => {
+                warn!("failed to resolve identity: {e}");
+            }
+        }
+    }
+
+    fn find_owner(&self) -> Option<PersonId> {
+        let ps = self.state.read_personality();
+        ps.relationships
+            .iter()
+            .find(|(_, rel)| rel.authority == Authority::Owner)
+            .map(|(id, _)| id.clone())
+    }
+
+    async fn create_person_with_identity(
+        &self,
+        msg: &InboundMessage,
+        authority: Authority,
+    ) -> Option<PersonId> {
+        let id = PersonId(nanoid::nanoid!());
+        let now = chrono::Utc::now().timestamp();
+        let person = Person {
+            id: id.clone(),
+            name: String::new(),
+            bio: String::new(),
+            first_seen: now,
+            last_seen: now,
+        };
+        if let Err(e) = self.store.add_person(&person).await {
+            warn!("failed to create person: {e}");
+            return None;
+        }
+        let identity = Identity {
+            gateway_id: msg.gateway_id.clone(),
+            external_id: msg.external_id.clone(),
+            display_name: None,
+        };
+        if let Err(e) = self.store.add_identity(&id, &identity).await {
+            warn!("failed to add identity: {e}");
+        }
+        let mut rel = Relationship::default();
+        rel.authority = authority;
+        self.state.shared.personality.write().unwrap()
+            .relationships.insert(id.clone(), rel);
+        Some(id)
+    }
+
+    async fn ensure_identity_linked(&self, person: &PersonId, gateway_id: &str, external_id: &str) {
+        if let Ok(Some(_)) = self.store.resolve_identity(gateway_id, external_id).await {
+            return;
+        }
+        let identity = Identity {
+            gateway_id: gateway_id.to_string(),
+            external_id: external_id.to_string(),
+            display_name: None,
+        };
+        let _ = self.store.add_identity(person, &identity).await;
     }
 
     async fn shutdown(&mut self) {

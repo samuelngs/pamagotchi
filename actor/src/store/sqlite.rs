@@ -4,11 +4,11 @@ use super::{
     ThoughtKind,
 };
 use crate::identity::{
-    Alias, ClaimEvidence, ClaimStatus, Group, GroupContext, IdentityClaim, Person,
+    ClaimEvidence, ClaimStatus, Group, GroupContext, IdentityClaim, Identity, Person,
     Relation, SocialRelation,
 };
 use protocol::{ConversationId, GroupId, MemoryId, PersonId};
-use crate::personality::{Authority, BehaviorDirective, DirectiveScope, Label};
+use crate::personality::{Authority, BehaviorDirective, DirectiveScope};
 use rusqlite::{params, Connection};
 use sqlite_vec::sqlite3_vec_init;
 use std::collections::HashSet;
@@ -142,15 +142,15 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
             last_seen INTEGER NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS aliases (
+        CREATE TABLE IF NOT EXISTS identities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             person_id TEXT NOT NULL,
             gateway_id TEXT NOT NULL,
             external_id TEXT NOT NULL,
-            display_name TEXT NOT NULL,
+            display_name TEXT,
             UNIQUE(gateway_id, external_id)
         );
-        CREATE INDEX IF NOT EXISTS idx_aliases_person ON aliases(person_id);
+        CREATE INDEX IF NOT EXISTS idx_identities_person ON identities(person_id);
 
         CREATE TABLE IF NOT EXISTS identity_claims (
             id TEXT PRIMARY KEY,
@@ -808,19 +808,19 @@ impl Store for SqliteStore {
         Ok(results)
     }
 
-    // Aliases
+    // Identities
 
-    async fn add_alias(&self, person: &PersonId, alias: &Alias) -> anyhow::Result<()> {
+    async fn add_identity(&self, person: &PersonId, identity: &Identity) -> anyhow::Result<()> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO aliases (person_id, gateway_id, external_id, display_name)
+            "INSERT INTO identities (person_id, gateway_id, external_id, display_name)
              VALUES (?1, ?2, ?3, ?4)",
-            params![person.0, alias.gateway_id, alias.external_id, alias.display_name],
+            params![person.0, identity.gateway_id, identity.external_id, identity.display_name.as_deref()],
         )?;
         Ok(())
     }
 
-    async fn resolve_alias(
+    async fn resolve_identity(
         &self,
         gateway_id: &str,
         external_id: &str,
@@ -828,8 +828,8 @@ impl Store for SqliteStore {
         let conn = self.lock()?;
         match conn.query_row(
             "SELECT p.id, p.name, p.bio, p.first_seen, p.last_seen
-             FROM aliases a JOIN people p ON p.id = a.person_id
-             WHERE a.gateway_id = ?1 AND a.external_id = ?2",
+             FROM identities i JOIN people p ON p.id = i.person_id
+             WHERE i.gateway_id = ?1 AND i.external_id = ?2",
             params![gateway_id, external_id],
             read_person,
         ) {
@@ -839,17 +839,17 @@ impl Store for SqliteStore {
         }
     }
 
-    async fn get_aliases(&self, person: &PersonId) -> anyhow::Result<Vec<Alias>> {
+    async fn get_identities(&self, person: &PersonId) -> anyhow::Result<Vec<Identity>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT gateway_id, external_id, display_name FROM aliases WHERE person_id = ?1",
+            "SELECT gateway_id, external_id, display_name FROM identities WHERE person_id = ?1",
         )?;
         let results = stmt
             .query_map(params![person.0], |row| {
-                Ok(Alias {
+                Ok(Identity {
                     gateway_id: row.get("gateway_id")?,
                     external_id: row.get("external_id")?,
-                    display_name: row.get("display_name")?,
+                    display_name: row.get::<_, Option<String>>("display_name")?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -863,7 +863,7 @@ impl Store for SqliteStore {
         }
         let conn = self.lock()?;
         let tx = TxGuard::begin(&conn)?;
-        conn.execute("UPDATE aliases SET person_id = ?1 WHERE person_id = ?2", params![keep.0, merge.0])?;
+        conn.execute("UPDATE identities SET person_id = ?1 WHERE person_id = ?2", params![keep.0, merge.0])?;
         conn.execute("UPDATE messages SET person_id = ?1 WHERE person_id = ?2", params![keep.0, merge.0])?;
         conn.execute("UPDATE conversations SET person_id = ?1 WHERE person_id = ?2", params![keep.0, merge.0])?;
         conn.execute(
@@ -1137,7 +1137,6 @@ impl Store for SqliteStore {
     async fn get_directives_for_context(
         &self,
         person: &PersonId,
-        label: &Label,
         authority: &Authority,
         group: Option<&GroupId>,
     ) -> anyhow::Result<Vec<BehaviorDirective>> {
@@ -1153,20 +1152,19 @@ impl Store for SqliteStore {
             "SELECT id, scope_type, scope_value, directive, set_by, priority, active, created_at, expires_at
              FROM behavior_directives
              WHERE active = 1
-               AND (expires_at IS NULL OR expires_at > ?5)
+               AND (expires_at IS NULL OR expires_at > ?4)
                AND (
                  scope_type = 'global'
                  OR (scope_type = 'person' AND scope_value = ?1)
-                 OR (scope_type = 'label' AND scope_value = ?2)
-                 OR (scope_type = 'authority' AND scope_value = ?3)
-                 OR (scope_type = 'group' AND scope_value = ?4)
+                 OR (scope_type = 'authority' AND scope_value = ?2)
+                 OR (scope_type = 'group' AND scope_value = ?3)
              )
              ORDER BY priority DESC",
         )?;
 
         let group_value: Option<&str> = group.map(|g| g.0.as_str());
         let rows = stmt.query_map(
-            params![person.0, label.as_str(), authority.as_str(), group_value, now],
+            params![person.0, authority.as_str(), group_value, now],
             read_directive,
         )?;
 
@@ -1272,7 +1270,6 @@ fn read_directive(row: &rusqlite::Row) -> rusqlite::Result<BehaviorDirective> {
 
     let scope = match scope_type.as_str() {
         "person" => DirectiveScope::Person(PersonId(scope_value.unwrap_or_default())),
-        "label" => DirectiveScope::Label(Label::parse(&scope_value.unwrap_or_default())),
         "authority" => DirectiveScope::Authority(
             Authority::parse(&scope_value.unwrap_or_default()).unwrap_or(Authority::Default),
         ),
@@ -1504,24 +1501,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn alias_resolution() {
+    async fn identity_resolution() {
         let store = test_store();
         store.add_person(&sample_person("p1", "Alice")).await.unwrap();
-        store.add_alias(&PersonId("p1".into()), &Alias {
+        store.add_identity(&PersonId("p1".into()), &Identity {
             gateway_id: "discord".into(),
             external_id: "discord-123".into(),
-            display_name: "alice#1234".into(),
+            display_name: Some("alice#1234".into()),
         }).await.unwrap();
 
-        let found = store.resolve_alias("discord", "discord-123").await.unwrap().unwrap();
+        let found = store.resolve_identity("discord", "discord-123").await.unwrap().unwrap();
         assert_eq!(found.id.0, "p1");
 
-        let not_found = store.resolve_alias("telegram", "unknown").await.unwrap();
+        let not_found = store.resolve_identity("telegram", "unknown").await.unwrap();
         assert!(not_found.is_none());
 
-        let aliases = store.get_aliases(&PersonId("p1".into())).await.unwrap();
-        assert_eq!(aliases.len(), 1);
-        assert_eq!(aliases[0].display_name, "alice#1234");
+        let identities = store.get_identities(&PersonId("p1".into())).await.unwrap();
+        assert_eq!(identities.len(), 1);
+        assert_eq!(identities[0].display_name.as_deref(), Some("alice#1234"));
     }
 
     #[tokio::test]
@@ -1556,10 +1553,10 @@ mod tests {
         store.add_person(&sample_person("p1", "Alice")).await.unwrap();
         store.add_person(&sample_person("p2", "Alice Alt")).await.unwrap();
 
-        store.add_alias(&PersonId("p2".into()), &Alias {
+        store.add_identity(&PersonId("p2".into()), &Identity {
             gateway_id: "telegram".into(),
             external_id: "tg-alice".into(),
-            display_name: "alice_t".into(),
+            display_name: Some("alice_t".into()),
         }).await.unwrap();
 
         let conv = ConversationId("c1".into());
@@ -1573,8 +1570,8 @@ mod tests {
 
         store.merge_people(&PersonId("p1".into()), &PersonId("p2".into())).await.unwrap();
 
-        let alias = store.resolve_alias("telegram", "tg-alice").await.unwrap().unwrap();
-        assert_eq!(alias.id.0, "p1");
+        let resolved = store.resolve_identity("telegram", "tg-alice").await.unwrap().unwrap();
+        assert_eq!(resolved.id.0, "p1");
 
         assert!(store.get_person(&PersonId("p2".into())).await.unwrap().is_none());
     }
@@ -1695,7 +1692,7 @@ mod tests {
 
         store.add_directive(&BehaviorDirective {
             id: "d3".into(),
-            scope: DirectiveScope::Label(Label::Family),
+            scope: DirectiveScope::Authority(Authority::Default),
             directive: "Be warm and respectful".into(),
             set_by: sam.clone(),
             priority: 5,
@@ -1705,7 +1702,7 @@ mod tests {
         }).await.unwrap();
 
         let directives = store
-            .get_directives_for_context(&mom, &Label::Family, &Authority::Default, None)
+            .get_directives_for_context(&mom, &Authority::Default, None)
             .await
             .unwrap();
         assert_eq!(directives.len(), 3);
@@ -1715,7 +1712,7 @@ mod tests {
 
         store.update_directive("d2", None, Some(false), None, None).await.unwrap();
         let directives = store
-            .get_directives_for_context(&mom, &Label::Family, &Authority::Default, None)
+            .get_directives_for_context(&mom, &Authority::Default, None)
             .await
             .unwrap();
         assert_eq!(directives.len(), 2);

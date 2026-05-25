@@ -19,7 +19,7 @@ pub enum ClaimEvidence {
     OwnerVouched,
     MutualClaim,
     SharedKnowledge,
-    ConfiguredAlias,
+    ConfiguredIdentity,
 }
 
 impl ClaimEvidence {
@@ -29,7 +29,7 @@ impl ClaimEvidence {
             Self::OwnerVouched => "owner_vouched",
             Self::MutualClaim => "mutual_claim",
             Self::SharedKnowledge => "shared_knowledge",
-            Self::ConfiguredAlias => "configured_alias",
+            Self::ConfiguredIdentity => "configured_identity",
         }
     }
 
@@ -39,7 +39,7 @@ impl ClaimEvidence {
             "owner_vouched" => Some(Self::OwnerVouched),
             "mutual_claim" => Some(Self::MutualClaim),
             "shared_knowledge" => Some(Self::SharedKnowledge),
-            "configured_alias" => Some(Self::ConfiguredAlias),
+            "configured_identity" => Some(Self::ConfiguredIdentity),
             _ => None,
         }
     }

@@ -172,16 +172,17 @@ pub async fn lookup_contacts(args: &Value, ctx: &SessionContext) -> String {
     let person_id = args["person"].as_str().unwrap_or("");
     let person = PersonId(person_id.to_string());
 
-    match ctx.store.get_aliases(&person).await {
-        Ok(aliases) if aliases.is_empty() => format!("No contact methods found for {person_id}."),
-        Ok(aliases) => {
+    match ctx.store.get_identities(&person).await {
+        Ok(identities) if identities.is_empty() => format!("No contact methods found for {person_id}."),
+        Ok(identities) => {
             let mut out = String::new();
-            for alias in &aliases {
+            for ident in &identities {
+                let name = ident.display_name.as_deref().unwrap_or("—");
                 out.push_str(&format!(
                     "- {} ({}): {}\n",
-                    alias.gateway_id,
-                    alias.external_id,
-                    alias.display_name,
+                    ident.gateway_id,
+                    ident.external_id,
+                    name,
                 ));
             }
             out

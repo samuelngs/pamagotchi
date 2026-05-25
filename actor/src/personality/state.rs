@@ -125,7 +125,6 @@ impl PersonalityState {
         &mut self,
         person: &PersonId,
         authority: Option<super::Authority>,
-        label: Option<super::Label>,
     ) {
         let rel = self
             .relationships
@@ -133,9 +132,6 @@ impl PersonalityState {
             .or_insert_with(Relationship::default);
         if let Some(a) = authority {
             rel.authority = a;
-        }
-        if let Some(l) = label {
-            rel.label = l;
         }
     }
 

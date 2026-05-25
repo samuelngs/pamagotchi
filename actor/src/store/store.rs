@@ -3,10 +3,10 @@ use super::{
     RecallQuery, StoredMessage, Thought,
 };
 use crate::identity::{
-    Alias, ClaimStatus, Group, IdentityClaim, Person, Relation, SocialRelation,
+    ClaimStatus, Group, IdentityClaim, Identity, Person, Relation, SocialRelation,
 };
 use protocol::{ConversationId, GroupId, MemoryId, PersonId};
-use crate::personality::{Authority, BehaviorDirective, Label};
+use crate::personality::{Authority, BehaviorDirective};
 use async_trait::async_trait;
 
 #[async_trait]
@@ -54,10 +54,10 @@ pub trait Store: Send + Sync {
     async fn touch_person(&self, id: &PersonId) -> anyhow::Result<()>;
     async fn list_people(&self) -> anyhow::Result<Vec<Person>>;
 
-    // Aliases
-    async fn add_alias(&self, person: &PersonId, alias: &Alias) -> anyhow::Result<()>;
-    async fn resolve_alias(&self, gateway_id: &str, external_id: &str) -> anyhow::Result<Option<Person>>;
-    async fn get_aliases(&self, person: &PersonId) -> anyhow::Result<Vec<Alias>>;
+    // Identities
+    async fn add_identity(&self, person: &PersonId, identity: &Identity) -> anyhow::Result<()>;
+    async fn resolve_identity(&self, gateway_id: &str, external_id: &str) -> anyhow::Result<Option<Person>>;
+    async fn get_identities(&self, person: &PersonId) -> anyhow::Result<Vec<Identity>>;
     async fn merge_people(&self, keep: &PersonId, merge: &PersonId) -> anyhow::Result<()>;
 
     // Identity claims
@@ -81,7 +81,6 @@ pub trait Store: Send + Sync {
     async fn get_directives_for_context(
         &self,
         person: &PersonId,
-        label: &Label,
         authority: &Authority,
         group: Option<&GroupId>,
     ) -> anyhow::Result<Vec<BehaviorDirective>>;

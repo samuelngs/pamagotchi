@@ -14,7 +14,7 @@ pub use config::{GrowthConfig, GrowthRate};
 pub use delta::{AffectShift, BeliefChange, PersonalityDelta, RelationshipChange, TraitNudge};
 pub use directive::{BehaviorDirective, DirectiveScope};
 pub use interest::Interest;
-pub use relationship::{Authority, Label, Relationship};
+pub use relationship::{Authority, Relationship};
 pub use state::{GrowthEvent, PersonalityState};
 pub use traits::CoreTraits;
 
