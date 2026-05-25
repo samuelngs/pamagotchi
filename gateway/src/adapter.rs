@@ -1,10 +1,11 @@
-use super::content::{MediaAttachment, PlatformCapabilities};
+use crate::content::GatewayCapabilities;
+use protocol::MediaAttachment;
 use async_trait::async_trait;
 
 #[async_trait]
-pub trait PlatformAdapter: Send + Sync {
-    fn platform_id(&self) -> &str;
-    fn capabilities(&self) -> PlatformCapabilities;
+pub trait GatewayAdapter: Send + Sync {
+    fn gateway_id(&self) -> &str;
+    fn capabilities(&self) -> GatewayCapabilities;
     async fn send_message(
         &self,
         external_id: &str,

@@ -1,7 +1,6 @@
-use super::{MediaAttachment, MediaKind, PlatformAdapter, PlatformCapabilities};
-use crate::core::event::{InboundMessage, WakeEvent};
-use crate::identity::GroupId;
-use crate::store::ConversationId;
+use crate::{GatewayAdapter, GatewayCapabilities};
+use protocol::{MediaAttachment, MediaKind};
+use protocol::{ConversationId, GroupId, InboundMessage};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -22,11 +21,11 @@ pub struct WhatsAppAdapter {
 impl WhatsAppAdapter {
     pub async fn connect(
         db_path: &str,
-        event_tx: mpsc::Sender<WakeEvent>,
+        inbound_tx: mpsc::Sender<InboundMessage>,
     ) -> anyhow::Result<Self> {
         let backend = SqliteStore::new(db_path).await?;
 
-        let tx = event_tx.clone();
+        let tx = inbound_tx.clone();
         let mut bot = Bot::builder()
             .with_backend(Arc::new(backend))
             .with_transport_factory(TokioWebSocketTransportFactory::new())
@@ -90,7 +89,7 @@ fn render_qr_compact(qr: &qrcode::QrCode) -> String {
     out
 }
 
-async fn handle_event(event: &Event, tx: &mpsc::Sender<WakeEvent>) {
+async fn handle_event(event: &Event, tx: &mpsc::Sender<InboundMessage>) {
     match event {
         Event::PairingQrCode { code, .. } => {
             info!("whatsapp pairing QR code received");
@@ -124,7 +123,7 @@ async fn handle_event(event: &Event, tx: &mpsc::Sender<WakeEvent>) {
 
             let inbound = InboundMessage {
                 message_id: info.id.to_string(),
-                platform_id: "whatsapp".into(),
+                gateway_id: "whatsapp".into(),
                 external_id: chat.clone(),
                 conversation: ConversationId(format!("whatsapp:{chat}")),
                 group: if info.source.is_group {
@@ -143,7 +142,7 @@ async fn handle_event(event: &Event, tx: &mpsc::Sender<WakeEvent>) {
                 }),
             };
 
-            if let Err(e) = tx.send(WakeEvent::Message(inbound)).await {
+            if let Err(e) = tx.send(inbound).await {
                 warn!("failed to forward whatsapp message: {e}");
             }
         }
@@ -231,13 +230,13 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
 }
 
 #[async_trait]
-impl PlatformAdapter for WhatsAppAdapter {
-    fn platform_id(&self) -> &str {
+impl GatewayAdapter for WhatsAppAdapter {
+    fn gateway_id(&self) -> &str {
         "whatsapp"
     }
 
-    fn capabilities(&self) -> PlatformCapabilities {
-        PlatformCapabilities {
+    fn capabilities(&self) -> GatewayCapabilities {
+        GatewayCapabilities {
             content_types: vec![
                 MediaKind::Image,
                 MediaKind::Video,
@@ -261,7 +260,6 @@ impl PlatformAdapter for WhatsAppAdapter {
             .map_err(|_| anyhow::anyhow!("invalid WhatsApp JID: {external_id}"))?;
 
         let message = if let Some(_media) = media {
-            // TODO: implement media upload + send
             warn!("media sending not yet implemented, sending text only");
             wa::Message {
                 conversation: Some(content.to_string()),
