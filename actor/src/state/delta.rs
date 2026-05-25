@@ -2,7 +2,7 @@ use protocol::PersonId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct PersonalityDelta {
+pub struct Delta {
     pub trait_nudges: Vec<TraitNudge>,
     pub belief_changes: Vec<BeliefChange>,
     pub relationship_changes: Vec<RelationshipChange>,

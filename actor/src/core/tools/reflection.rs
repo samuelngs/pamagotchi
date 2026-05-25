@@ -1,5 +1,5 @@
 use inference::Tool;
-use crate::personality::{AffectShift, BeliefChange, RelationshipChange, TraitNudge};
+use crate::state::{AffectShift, BeliefChange, RelationshipChange, TraitNudge};
 use protocol::PersonId;
 use crate::store::{Thought, ThoughtKind};
 use serde_json::{json, Value};
@@ -51,7 +51,10 @@ pub fn tools() -> Vec<Tool> {
                         "items": {
                             "type": "object",
                             "properties": {
-                                "person": { "type": "string" },
+                                "person": {
+                                    "type": "string",
+                                    "description": "Person ref. Defaults to current conversation partner."
+                                },
                                 "trust_delta": { "type": "number" },
                                 "familiarity_delta": { "type": "number" },
                                 "valence_delta": { "type": "number" }
@@ -99,7 +102,7 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-pub fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
+pub async fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
     if let Some(nudges) = args["trait_nudges"].as_array() {
         for nudge in nudges {
             if let (Some(name), Some(dir)) = (nudge["trait_name"].as_str(), nudge["direction"].as_f64()) {
@@ -127,10 +130,15 @@ pub fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> 
     }
 
     if let Some(rels) = args["relationship_changes"].as_array() {
+        let default_person = ctx.messages.first().and_then(|m| m.person.clone());
         for r in rels {
-            if let Some(person) = r["person"].as_str() {
+            let person = r["person"]
+                .as_str()
+                .map(|s| PersonId(s.to_string()))
+                .or_else(|| default_person.clone());
+            if let Some(person) = person {
                 state.delta.relationship_changes.push(RelationshipChange {
-                    person: PersonId(person.to_string()),
+                    person,
                     trust_delta: r["trust_delta"].as_f64().unwrap_or(0.0) as f32,
                     familiarity_delta: r["familiarity_delta"].as_f64().unwrap_or(0.0) as f32,
                     valence_delta: r["valence_delta"].as_f64().unwrap_or(0.0) as f32,

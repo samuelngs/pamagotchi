@@ -1,5 +1,5 @@
 use super::{
-    AffectState, Belief, CoreTraits, GrowthConfig, Interest, PersonalityDelta,
+    AffectState, Belief, CoreTraits, Delta, GrowthConfig, Interest,
     Relationship,
 };
 use protocol::PersonId;
@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct PersonalityState {
-    pub core_traits: CoreTraits,
+pub struct ActorState {
+    pub created_at: i64,
+    pub traits: CoreTraits,
     pub beliefs: Vec<Belief>,
-    pub relationships: HashMap<PersonId, Relationship>,
+    pub bonds: HashMap<PersonId, Relationship>,
     pub interests: Vec<Interest>,
     pub affect: AffectState,
     pub growth_log: Vec<GrowthEvent>,
@@ -23,24 +24,25 @@ pub struct GrowthEvent {
     pub person: Option<PersonId>,
 }
 
-impl PersonalityState {
-    pub fn new(core_traits: CoreTraits) -> Self {
+impl ActorState {
+    pub fn new(traits: CoreTraits) -> Self {
         Self {
-            core_traits,
+            created_at: now(),
+            traits,
             beliefs: vec![],
-            relationships: HashMap::new(),
+            bonds: HashMap::new(),
             interests: vec![],
             affect: AffectState::default(),
             growth_log: vec![],
         }
     }
 
-    pub fn apply_delta(&mut self, delta: &PersonalityDelta, config: &GrowthConfig) {
+    pub fn apply_delta(&mut self, delta: &Delta, config: &GrowthConfig) {
         let rate = config.rate_multiplier();
         let damping = 1.0 - config.core_trait_inertia;
 
         for nudge in &delta.trait_nudges {
-            self.core_traits.nudge(
+            self.traits.nudge(
                 &nudge.trait_name,
                 nudge.direction * damping * rate,
                 &config.trait_floors,
@@ -81,7 +83,7 @@ impl PersonalityState {
         }
         self.interests.retain(|i| i.intensity > 0.01);
 
-        for rel in self.relationships.values_mut() {
+        for rel in self.bonds.values_mut() {
             let decay = (-0.00001 * elapsed_secs).exp() as f32;
             rel.emotional_valence *= decay;
         }
@@ -110,7 +112,7 @@ impl PersonalityState {
     fn apply_relationship_change(&mut self, change: &super::RelationshipChange, rate: f32) {
         let person = change.person.clone();
         let rel = self
-            .relationships
+            .bonds
             .entry(person)
             .or_insert_with(Relationship::default);
         rel.trust = (rel.trust + change.trust_delta * rate).clamp(0.0, 1.0);
@@ -127,7 +129,7 @@ impl PersonalityState {
         authority: Option<super::Authority>,
     ) {
         let rel = self
-            .relationships
+            .bonds
             .entry(person.clone())
             .or_insert_with(Relationship::default);
         if let Some(a) = authority {
@@ -136,8 +138,8 @@ impl PersonalityState {
     }
 
     pub fn merge_relationship(&mut self, keep: &PersonId, merge: &PersonId) {
-        if let Some(merged_rel) = self.relationships.remove(merge) {
-            self.relationships
+        if let Some(merged_rel) = self.bonds.remove(merge) {
+            self.bonds
                 .entry(keep.clone())
                 .or_insert(merged_rel);
         }
@@ -202,3 +204,4 @@ fn now() -> i64 {
         .unwrap_or_default()
         .as_secs() as i64
 }
+

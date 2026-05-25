@@ -1,8 +1,8 @@
 use protocol::PersonId;
-use crate::personality::{AffectShift, PersonalityDelta};
+use crate::state::{AffectShift, Delta};
 
-pub fn empty_delta(triggered_by: Option<PersonId>) -> PersonalityDelta {
-    PersonalityDelta {
+pub fn empty_delta(triggered_by: Option<PersonId>) -> Delta {
+    Delta {
         trait_nudges: vec![],
         belief_changes: vec![],
         relationship_changes: vec![],
@@ -13,7 +13,7 @@ pub fn empty_delta(triggered_by: Option<PersonId>) -> PersonalityDelta {
     }
 }
 
-pub fn has_changes(delta: &PersonalityDelta) -> bool {
+pub fn has_changes(delta: &Delta) -> bool {
     !delta.trait_nudges.is_empty()
         || !delta.belief_changes.is_empty()
         || !delta.relationship_changes.is_empty()

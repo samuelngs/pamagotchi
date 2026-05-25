@@ -8,7 +8,7 @@ use crate::identity::{
     Relation, SocialRelation,
 };
 use protocol::{ConversationId, GroupId, MemoryId, PersonId};
-use crate::personality::{Authority, BehaviorDirective, DirectiveScope};
+use crate::state::{Authority, BehaviorDirective, DirectiveScope};
 use rusqlite::{params, Connection};
 use sqlite_vec::sqlite3_vec_init;
 use std::collections::HashSet;
@@ -136,8 +136,8 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
 
         CREATE TABLE IF NOT EXISTS people (
             id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            bio TEXT NOT NULL DEFAULT '',
+            name TEXT,
+            summary TEXT,
             first_seen INTEGER NOT NULL,
             last_seen INTEGER NOT NULL
         );
@@ -202,13 +202,43 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
     )?;
 
     conn.execute_batch(&format!(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories USING vec0(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0(
             memory_id TEXT PRIMARY KEY,
             embedding float[{embedding_dims}]
         );"
     ))?;
 
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+            content,
+            content_rowid='rowid'
+        );"
+    )?;
+
     Ok(())
+}
+
+fn build_fts_query(input: &str) -> String {
+    let words: Vec<&str> = input
+        .split_whitespace()
+        .filter(|w| w.len() > 1)
+        .collect();
+    if words.is_empty() {
+        return input.to_string();
+    }
+    words
+        .iter()
+        .map(|w| {
+            let clean: String = w.chars().filter(|c| c.is_alphanumeric()).collect();
+            if clean.is_empty() {
+                String::new()
+            } else {
+                format!("\"{clean}\"")
+            }
+        })
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" OR ")
 }
 
 fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
@@ -342,10 +372,15 @@ impl Store for SqliteStore {
         if let Some(ref embedding) = memory.embedding {
             let bytes = embedding_to_bytes(embedding);
             conn.execute(
-                "INSERT INTO vec_memories (memory_id, embedding) VALUES (?1, ?2)",
+                "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
                 params![memory.id.0, bytes],
             )?;
         }
+
+        conn.execute(
+            "INSERT INTO memories_fts (rowid, content) VALUES ((SELECT rowid FROM memories WHERE id = ?1), ?2)",
+            params![memory.id.0, memory.content],
+        )?;
 
         tx.commit()?;
         Ok(memory.id.clone())
@@ -369,7 +404,7 @@ impl Store for SqliteStore {
                     .collect();
 
                 if let Ok(bytes) = conn.query_row(
-                    "SELECT embedding FROM vec_memories WHERE memory_id = ?1",
+                    "SELECT embedding FROM memories_vec WHERE memory_id = ?1",
                     params![id.0],
                     |row| row.get::<_, Vec<u8>>(0),
                 ) {
@@ -389,6 +424,10 @@ impl Store for SqliteStore {
         if let Some(ref content) = update.content {
             conn.execute(
                 "UPDATE memories SET content = ?1 WHERE id = ?2",
+                params![content, id.0],
+            )?;
+            conn.execute(
+                "UPDATE memories_fts SET content = ?1 WHERE rowid = (SELECT rowid FROM memories WHERE id = ?2)",
                 params![content, id.0],
             )?;
         }
@@ -432,11 +471,11 @@ impl Store for SqliteStore {
         if let Some(ref embedding) = update.embedding {
             let bytes = embedding_to_bytes(embedding);
             conn.execute(
-                "DELETE FROM vec_memories WHERE memory_id = ?1",
+                "DELETE FROM memories_vec WHERE memory_id = ?1",
                 params![id.0],
             )?;
             conn.execute(
-                "INSERT INTO vec_memories (memory_id, embedding) VALUES (?1, ?2)",
+                "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
                 params![id.0, bytes],
             )?;
         }
@@ -466,7 +505,7 @@ impl Store for SqliteStore {
             let mut stmt = conn.prepare(
                 "SELECT m.id, m.kind, m.content, m.source, m.importance, m.sensitivity, m.emotional_valence,
                         m.created_at, m.accessed_at, m.access_count, m.tags
-                 FROM (SELECT memory_id, distance FROM vec_memories WHERE embedding MATCH ?1 AND k = ?2) v
+                 FROM (SELECT memory_id, distance FROM memories_vec WHERE embedding MATCH ?1 AND k = ?2) v
                  JOIN memories m ON m.id = v.memory_id
                  ORDER BY v.distance",
             )?;
@@ -474,18 +513,35 @@ impl Store for SqliteStore {
                 .filter_map(|r| r.ok())
                 .collect::<Vec<_>>()
         } else if let Some(ref text) = query.text {
-            let escaped = text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-            let pattern = format!("%{escaped}%");
+            let fts_query = build_fts_query(text);
             let mut stmt = conn.prepare(
-                "SELECT id, kind, content, source, importance, sensitivity, emotional_valence,
-                        created_at, accessed_at, access_count, tags
-                 FROM memories WHERE content LIKE ?1 ESCAPE '\\'
-                 ORDER BY importance DESC, created_at DESC
+                "SELECT m.id, m.kind, m.content, m.source, m.importance, m.sensitivity, m.emotional_valence,
+                        m.created_at, m.accessed_at, m.access_count, m.tags
+                 FROM memories_fts f
+                 JOIN memories m ON m.rowid = f.rowid
+                 WHERE memories_fts MATCH ?1
+                 ORDER BY bm25(memories_fts) ASC
                  LIMIT ?2",
             )?;
-            stmt.query_map(params![pattern, fetch_limit], read_memory)?
+            let results: Vec<_> = stmt.query_map(params![fts_query, fetch_limit], read_memory)?
                 .filter_map(|r| r.ok())
-                .collect::<Vec<_>>()
+                .collect();
+            if results.is_empty() {
+                let escaped = text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+                let pattern = format!("%{escaped}%");
+                let mut fallback = conn.prepare(
+                    "SELECT id, kind, content, source, importance, sensitivity, emotional_valence,
+                            created_at, accessed_at, access_count, tags
+                     FROM memories WHERE content LIKE ?1 ESCAPE '\\'
+                     ORDER BY importance DESC, created_at DESC
+                     LIMIT ?2",
+                )?;
+                fallback.query_map(params![pattern, fetch_limit], read_memory)?
+                    .filter_map(|r| r.ok())
+                    .collect::<Vec<_>>()
+            } else {
+                results
+            }
         } else {
             let mut stmt = conn.prepare(
                 "SELECT id, kind, content, source, importance, sensitivity, emotional_valence,
@@ -559,7 +615,11 @@ impl Store for SqliteStore {
         let conn = self.lock()?;
         let tx = TxGuard::begin(&conn)?;
         conn.execute(
-            "DELETE FROM vec_memories WHERE memory_id = ?1",
+            "DELETE FROM memories_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?1)",
+            params![id.0],
+        )?;
+        conn.execute(
+            "DELETE FROM memories_vec WHERE memory_id = ?1",
             params![id.0],
         )?;
         conn.execute(
@@ -744,9 +804,9 @@ impl Store for SqliteStore {
     async fn add_person(&self, person: &Person) -> anyhow::Result<PersonId> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO people (id, name, bio, first_seen, last_seen)
+            "INSERT INTO people (id, name, summary, first_seen, last_seen)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![person.id.0, person.name, person.bio, person.first_seen, person.last_seen],
+            params![person.id.0, person.name, person.summary, person.first_seen, person.last_seen],
         )?;
         Ok(person.id.clone())
     }
@@ -754,7 +814,7 @@ impl Store for SqliteStore {
     async fn get_person(&self, id: &PersonId) -> anyhow::Result<Option<Person>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT id, name, bio, first_seen, last_seen FROM people WHERE id = ?1",
+            "SELECT id, name, summary, first_seen, last_seen FROM people WHERE id = ?1",
             params![id.0],
             read_person,
         ) {
@@ -768,7 +828,7 @@ impl Store for SqliteStore {
         &self,
         id: &PersonId,
         name: Option<&str>,
-        bio: Option<&str>,
+        summary: Option<&str>,
     ) -> anyhow::Result<()> {
         let conn = self.lock()?;
         let tx = TxGuard::begin(&conn)?;
@@ -778,10 +838,10 @@ impl Store for SqliteStore {
                 params![name, id.0],
             )?;
         }
-        if let Some(bio) = bio {
+        if let Some(summary) = summary {
             conn.execute(
-                "UPDATE people SET bio = ?1 WHERE id = ?2",
-                params![bio, id.0],
+                "UPDATE people SET summary = ?1 WHERE id = ?2",
+                params![summary, id.0],
             )?;
         }
         tx.commit()?;
@@ -800,7 +860,7 @@ impl Store for SqliteStore {
     async fn list_people(&self) -> anyhow::Result<Vec<Person>> {
         let conn = self.lock()?;
         let mut stmt =
-            conn.prepare("SELECT id, name, bio, first_seen, last_seen FROM people ORDER BY name")?;
+            conn.prepare("SELECT id, name, summary, first_seen, last_seen FROM people ORDER BY name")?;
         let results = stmt
             .query_map([], read_person)?
             .filter_map(|r| r.ok())
@@ -827,7 +887,7 @@ impl Store for SqliteStore {
     ) -> anyhow::Result<Option<Person>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT p.id, p.name, p.bio, p.first_seen, p.last_seen
+            "SELECT p.id, p.name, p.summary, p.first_seen, p.last_seen
              FROM identities i JOIN people p ON p.id = i.person_id
              WHERE i.gateway_id = ?1 AND i.external_id = ?2",
             params![gateway_id, external_id],
@@ -1241,8 +1301,8 @@ impl Store for SqliteStore {
 fn read_person(row: &rusqlite::Row) -> rusqlite::Result<Person> {
     Ok(Person {
         id: PersonId(row.get("id")?),
-        name: row.get("name")?,
-        bio: row.get("bio")?,
+        name: row.get::<_, Option<String>>("name")?,
+        summary: row.get::<_, Option<String>>("summary")?,
         first_seen: row.get("first_seen")?,
         last_seen: row.get("last_seen")?,
     })
@@ -1292,7 +1352,7 @@ fn read_directive(row: &rusqlite::Row) -> rusqlite::Result<BehaviorDirective> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::personality::{CoreTraits, GrowthConfig, PersonalityState};
+    use crate::state::{ActorState, CoreTraits, GrowthConfig};
 
     fn test_store() -> SqliteStore {
         SqliteStore::open_in_memory(4).unwrap()
@@ -1414,7 +1474,7 @@ mod tests {
     async fn snapshots() {
         let store = test_store();
         let snapshot = ActorSnapshot {
-            personality: PersonalityState::new(CoreTraits::default()),
+            state: ActorState::new(CoreTraits::default()),
             config: GrowthConfig::default(),
             saved_at: 3000,
         };
@@ -1476,8 +1536,8 @@ mod tests {
     fn sample_person(id: &str, name: &str) -> Person {
         Person {
             id: PersonId(id.into()),
-            name: name.into(),
-            bio: String::new(),
+            name: Some(name.into()),
+            summary: None,
             first_seen: 1000,
             last_seen: 1000,
         }
@@ -1490,11 +1550,11 @@ mod tests {
         store.add_person(&sample_person("p2", "Bob")).await.unwrap();
 
         let alice = store.get_person(&PersonId("p1".into())).await.unwrap().unwrap();
-        assert_eq!(alice.name, "Alice");
+        assert_eq!(alice.name, Some("Alice".into()));
 
         store.update_person(&PersonId("p1".into()), None, Some("likes cats")).await.unwrap();
         let alice = store.get_person(&PersonId("p1".into())).await.unwrap().unwrap();
-        assert_eq!(alice.bio, "likes cats");
+        assert_eq!(alice.summary, Some("likes cats".into()));
 
         let all = store.list_people().await.unwrap();
         assert_eq!(all.len(), 2);

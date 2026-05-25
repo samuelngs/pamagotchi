@@ -239,6 +239,38 @@ impl Provider for OpenAiProvider {
         })
     }
 
+    async fn embed(&self, model: &str, input: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let url = format!("{}/embeddings", self.base_url);
+        let body = serde_json::json!({
+            "model": model,
+            "input": input,
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&body)
+            .send()
+            .await
+            .context("embedding request failed")?;
+
+        let status = response.status();
+        let body = response.text().await.context("failed to read embedding response")?;
+
+        if !status.is_success() {
+            if let Ok(err) = serde_json::from_str::<WireErrorResponse>(&body) {
+                bail!("Embedding API error ({}): {}", status, err.error.message);
+            }
+            bail!("Embedding API error ({}): {}", status, body);
+        }
+
+        let resp: WireEmbeddingResponse =
+            serde_json::from_str(&body).context("failed to parse embedding response")?;
+
+        Ok(resp.data.into_iter().map(|d| d.embedding).collect())
+    }
+
     async fn chat_stream(&self, request: &ChatRequest) -> anyhow::Result<ChatStream> {
         let url = format!("{}/chat/completions", self.base_url);
         let wire = self.build_request(request, true);
@@ -546,4 +578,14 @@ struct WireStreamToolCallDelta {
 struct WireStreamFunctionDelta {
     name: Option<String>,
     arguments: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct WireEmbeddingResponse {
+    data: Vec<WireEmbeddingData>,
+}
+
+#[derive(Deserialize)]
+struct WireEmbeddingData {
+    embedding: Vec<f32>,
 }

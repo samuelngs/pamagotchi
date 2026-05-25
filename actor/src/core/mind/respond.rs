@@ -4,7 +4,7 @@ use super::super::action::{
 use super::super::decision::MindDecision;
 use super::super::event::WakeEvent;
 use super::Mind;
-use crate::personality::Authority;
+use crate::state::Authority;
 use tracing::warn;
 
 impl Mind {

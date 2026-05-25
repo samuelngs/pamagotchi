@@ -1,8 +1,8 @@
 use super::mind::Mind;
-use super::state::{self, SharedState, StateHandle};
+use super::handle::{self, SharedState, StateHandle};
 use super::event::WakeEvent;
 use inference::InferenceRouter;
-use crate::personality::{GrowthConfig, PersonalityState};
+use crate::state::{ActorState, GrowthConfig};
 use gateway::GatewayRouter;
 use crate::store::Store;
 use std::sync::{Arc, RwLock};
@@ -18,7 +18,7 @@ pub struct Actor {
 }
 
 pub struct ActorBuilder {
-    personality: PersonalityState,
+    actor_state: ActorState,
     growth_config: GrowthConfig,
     store: Arc<dyn Store>,
     router: Arc<InferenceRouter>,
@@ -32,7 +32,7 @@ pub struct ActorBuilder {
 impl ActorBuilder {
     pub fn new(store: Arc<dyn Store>, router: Arc<InferenceRouter>) -> Self {
         Self {
-            personality: PersonalityState::new(Default::default()),
+            actor_state: ActorState::new(Default::default()),
             growth_config: GrowthConfig::default(),
             store,
             router,
@@ -44,8 +44,8 @@ impl ActorBuilder {
         }
     }
 
-    pub fn with_personality(mut self, personality: PersonalityState) -> Self {
-        self.personality = personality;
+    pub fn with_state(mut self, state: ActorState) -> Self {
+        self.actor_state = state;
         self
     }
 
@@ -84,16 +84,16 @@ impl ActorBuilder {
     }
 
     pub async fn build(self) -> anyhow::Result<Actor> {
-        let (mut personality, mut growth_config) = (self.personality, self.growth_config);
+        let (mut actor_state, mut growth_config) = (self.actor_state, self.growth_config);
 
         if let Some(snapshot) = self.store.load_latest_snapshot().await? {
             info!(saved_at = snapshot.saved_at, "restoring from snapshot");
-            personality = snapshot.personality;
+            actor_state = snapshot.state;
             growth_config = snapshot.config;
         }
 
         let shared = Arc::new(SharedState {
-            personality: RwLock::new(personality),
+            actor: RwLock::new(actor_state),
             config: RwLock::new(growth_config),
         });
 
@@ -104,7 +104,7 @@ impl ActorBuilder {
 
         let state_handle = StateHandle::new(shared.clone(), delta_tx);
 
-        let state_task = state::StateTask::new(shared.clone(), self.store.clone(), delta_rx);
+        let state_task = handle::StateTask::new(shared.clone(), self.store.clone(), delta_rx);
 
         let mind = Mind::new(
             event_rx,

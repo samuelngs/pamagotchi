@@ -5,7 +5,7 @@ use protocol::InboundMessage;
 use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
 use super::Mind;
-use crate::personality::Authority;
+use crate::state::Authority;
 use inference::RouteContext;
 
 use std::sync::{Arc, RwLock};
@@ -50,6 +50,7 @@ impl Mind {
             authority: Authority::Default,
             state: self.state.clone(),
             store: self.store.clone(),
+            router: self.router.clone(),
             endpoints,
             context: Some(self.gather_context(None)),
             inject_rx,
@@ -86,9 +87,9 @@ impl Mind {
             WakeEvent::IntentFired(intent) => intent.person.as_ref(),
             _ => None,
         };
-        let personality = self.state.read_personality();
+        let actor = self.state.read_state();
         person
-            .and_then(|p| personality.relationships.get(p))
+            .and_then(|p| actor.bonds.get(p))
             .map_or(Authority::Default, |r| r.authority.clone())
     }
 }

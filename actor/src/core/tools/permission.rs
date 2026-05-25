@@ -1,4 +1,4 @@
-use crate::personality::Authority;
+use crate::state::Authority;
 use crate::store::MemorySource;
 use protocol::MemoryId;
 use serde_json::Value;

@@ -103,6 +103,15 @@ impl InferenceRouter {
             .collect()
     }
 
+    pub fn has_embedding(&self) -> bool {
+        !self.embedding.is_empty()
+    }
+
+    pub async fn embed(&self, input: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let route = self.embedding.first().ok_or_else(|| anyhow::anyhow!("no embedding endpoint configured"))?;
+        route.provider.embed(&route.model, input).await
+    }
+
     fn find_chat(&self, level: Reasoning) -> Option<&ResolvedRoute> {
         self.find_chat_chain(level).first()
     }

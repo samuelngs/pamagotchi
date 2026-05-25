@@ -1,34 +1,34 @@
-use crate::personality::{GrowthConfig, PersonalityDelta, PersonalityState};
+use crate::state::{ActorState, Delta, GrowthConfig};
 use crate::store::{ActorSnapshot, Store};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 pub struct SharedState {
-    pub personality: RwLock<PersonalityState>,
+    pub actor: RwLock<ActorState>,
     pub config: RwLock<GrowthConfig>,
 }
 
 #[derive(Clone)]
 pub struct StateHandle {
     pub shared: Arc<SharedState>,
-    delta_tx: mpsc::Sender<PersonalityDelta>,
+    delta_tx: mpsc::Sender<Delta>,
 }
 
 impl StateHandle {
-    pub fn new(shared: Arc<SharedState>, delta_tx: mpsc::Sender<PersonalityDelta>) -> Self {
+    pub fn new(shared: Arc<SharedState>, delta_tx: mpsc::Sender<Delta>) -> Self {
         Self { shared, delta_tx }
     }
 
-    pub fn read_personality(&self) -> std::sync::RwLockReadGuard<'_, PersonalityState> {
-        self.shared.personality.read().unwrap()
+    pub fn read_state(&self) -> std::sync::RwLockReadGuard<'_, ActorState> {
+        self.shared.actor.read().unwrap()
     }
 
     pub fn read_config(&self) -> std::sync::RwLockReadGuard<'_, GrowthConfig> {
         self.shared.config.read().unwrap()
     }
 
-    pub async fn send_delta(&self, delta: PersonalityDelta) {
+    pub async fn send_delta(&self, delta: Delta) {
         self.delta_tx.send(delta).await.ok();
     }
 }
@@ -36,7 +36,7 @@ impl StateHandle {
 pub struct StateTask {
     shared: Arc<SharedState>,
     store: Arc<dyn Store>,
-    delta_rx: mpsc::Receiver<PersonalityDelta>,
+    delta_rx: mpsc::Receiver<Delta>,
     dirty: bool,
 }
 
@@ -44,7 +44,7 @@ impl StateTask {
     pub fn new(
         shared: Arc<SharedState>,
         store: Arc<dyn Store>,
-        delta_rx: mpsc::Receiver<PersonalityDelta>,
+        delta_rx: mpsc::Receiver<Delta>,
     ) -> Self {
         Self {
             shared,
@@ -80,15 +80,15 @@ impl StateTask {
         }
     }
 
-    fn apply_batch(&mut self, batch: Vec<PersonalityDelta>) {
+    fn apply_batch(&mut self, batch: Vec<Delta>) {
         let config = self.shared.config.read().unwrap().clone();
-        let mut personality = self.shared.personality.write().unwrap();
+        let mut state = self.shared.actor.write().unwrap();
         for delta in &batch {
-            personality.apply_delta(delta, &config);
+            state.apply_delta(delta, &config);
         }
-        drop(personality);
+        drop(state);
         self.dirty = true;
-        info!(count = batch.len(), "applied personality deltas");
+        info!(count = batch.len(), "applied state deltas");
     }
 
     async fn save_if_dirty(&mut self) {
@@ -96,10 +96,10 @@ impl StateTask {
             return;
         }
         let snapshot = {
-            let personality = self.shared.personality.read().unwrap().clone();
+            let state = self.shared.actor.read().unwrap().clone();
             let config = self.shared.config.read().unwrap().clone();
             ActorSnapshot {
-                personality,
+                state,
                 config,
                 saved_at: now(),
             }
@@ -107,10 +107,10 @@ impl StateTask {
         match self.store.save_snapshot(&snapshot).await {
             Ok(()) => {
                 self.dirty = false;
-                info!("saved personality snapshot");
+                info!("saved actor snapshot");
             }
             Err(e) => {
-                warn!(%e, "failed to save personality snapshot");
+                warn!(%e, "failed to save actor snapshot");
             }
         }
     }

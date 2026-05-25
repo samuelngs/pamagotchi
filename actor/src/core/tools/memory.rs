@@ -53,7 +53,7 @@ pub fn tools() -> Vec<Tool> {
                     "people": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Person IDs this memory involves"
+                        "description": "Person refs this memory involves"
                     }
                 },
                 "required": ["content", "kind"]
@@ -81,22 +81,40 @@ pub async fn recall(args: &Value, ctx: &SessionContext) -> String {
     let limit = args["limit"].as_u64().unwrap_or(3) as usize;
     let offset = args["offset"].as_u64().unwrap_or(0) as usize;
 
-    let recall = RecallQuery::by_text(query, limit).with_offset(offset);
+    let recall = match ctx.router.embed(&[query]).await {
+        Ok(vecs) if !vecs.is_empty() => RecallQuery::by_embedding(vecs.into_iter().next().unwrap(), limit).with_offset(offset),
+        _ => RecallQuery::by_text(query, limit).with_offset(offset),
+    };
     match ctx.store.recall(&recall).await {
-        Ok(memories) if memories.is_empty() => "No memories found.".into(),
+        Ok(memories) if memories.is_empty() => json!({"memories": []}).to_string(),
         Ok(memories) => {
-            let mut out = String::new();
+            let mut items = Vec::new();
             for m in &memories {
-                out.push_str(&format!(
-                    "[{}] ({}) {}\n",
-                    m.id.0,
-                    m.kind.as_str(),
-                    m.content
-                ));
+                let ts = chrono::DateTime::from_timestamp(m.created_at, 0)
+                    .map(|dt| dt.to_rfc3339())
+                    .unwrap_or_else(|| m.created_at.to_string());
+                let mut people = Vec::new();
+                for pid in &m.people {
+                    let mut entry = json!({"ref": pid.0});
+                    if let Ok(Some(p)) = ctx.store.get_person(pid).await {
+                        if let Some(name) = &p.name {
+                            entry["name"] = json!(name);
+                        }
+                    }
+                    people.push(entry);
+                }
+                items.push(json!({
+                    "id": m.id.0,
+                    "kind": m.kind.as_str(),
+                    "content": m.content,
+                    "created": ts,
+                    "importance": m.importance,
+                    "people": people,
+                }));
             }
-            out
+            json!({"memories": items}).to_string()
         }
-        Err(e) => format!("Error recalling memories: {e}"),
+        Err(e) => json!({"error": format!("{e}")}).to_string(),
     }
 }
 
@@ -115,6 +133,11 @@ pub async fn form(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
                 .collect()
         })
         .unwrap_or_default();
+
+    let embedding = match ctx.router.embed(&[&content]).await {
+        Ok(vecs) => vecs.into_iter().next(),
+        Err(_) => None,
+    };
 
     let memory = Memory {
         id: MemoryId(format!("mem-{}", super::util::uuid_v4())),
@@ -138,7 +161,7 @@ pub async fn form(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
         access_count: 0,
         tags: vec![],
         people,
-        embedding: None,
+        embedding,
     };
 
     match ctx.store.store_memory(&memory).await {

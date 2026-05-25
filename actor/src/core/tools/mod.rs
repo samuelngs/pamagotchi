@@ -3,6 +3,7 @@ pub mod decision;
 mod intent;
 mod memory;
 mod messaging;
+mod person;
 pub mod permission;
 mod reflection;
 mod time;
@@ -28,6 +29,7 @@ pub fn action_tools(_kind: &ActionKind) -> Vec<Tool> {
     let mut tools = Vec::new();
     tools.extend(memory::tools());
     tools.extend(messaging::tools());
+    tools.extend(person::tools());
     tools.extend(reflection::tools());
     tools.extend(intent::tools());
     tools.extend(time::tools());
@@ -51,7 +53,9 @@ pub async fn execute(
         "send_message" => messaging::send(args, ctx, state).await,
         "lookup_contacts" => messaging::lookup_contacts(args, ctx).await,
         "read_messages" => messaging::read(args, ctx).await,
-        "reflect" => reflection::reflect(args, ctx, state),
+        "update_person" => person::update(args, ctx).await,
+        "get_person" => person::get(args, ctx).await,
+        "reflect" => reflection::reflect(args, ctx, state).await,
         "note_thought" => reflection::note_thought(args, ctx, state).await,
         "create_intent" => intent::create(args).await,
         "update_intent" => intent::update(args).await,

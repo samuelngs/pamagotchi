@@ -1,7 +1,7 @@
 use super::super::action::{ActionContext, ActionId, ActionKind, ActionProgress};
 use super::super::decision::MindVerdict;
-use super::super::state::StateHandle;
-use crate::personality::{Authority, PersonalityDelta};
+use super::super::handle::StateHandle;
+use crate::state::{Authority, Delta};
 use crate::store::{Store, Thought};
 use gateway::GatewayRouter;
 use protocol::{ConversationId, InboundMessage, MemoryId};
@@ -16,6 +16,7 @@ pub struct SessionContext {
     pub authority: Authority,
     pub state: StateHandle,
     pub store: Arc<dyn Store>,
+    pub router: Arc<inference::InferenceRouter>,
     pub endpoints: Vec<inference::ResolvedInference>,
     pub context: Option<ActionContext>,
     pub inject_rx: mpsc::Receiver<InboundMessage>,
@@ -34,7 +35,7 @@ pub enum SessionKind {
 pub struct SessionState {
     pub responded: bool,
     pub composing_released: bool,
-    pub delta: PersonalityDelta,
+    pub delta: Delta,
     pub thoughts: Vec<Thought>,
     pub memories_formed: Vec<MemoryId>,
     pub injected_messages: Vec<InboundMessage>,

@@ -205,27 +205,35 @@ pub async fn read(args: &Value, ctx: &SessionContext) -> String {
     let before = args["before"].as_i64();
 
     match ctx.store.get_messages(&conv, limit, before).await {
-        Ok(messages) if messages.is_empty() => "No messages found.".into(),
+        Ok(messages) if messages.is_empty() => json!({"messages": []}).to_string(),
         Ok(messages) => {
-            let mut out = String::new();
+            let mut items = Vec::new();
             for m in &messages {
-                let who = m
-                    .person
-                    .as_ref()
-                    .map_or("unknown", |p| p.0.as_str());
-                out.push_str(&format!(
-                    "[{}] {}: {}\n",
-                    m.timestamp,
-                    if matches!(m.role, MessageRole::Assistant) {
-                        "you"
-                    } else {
-                        who
-                    },
-                    m.content
-                ));
+                let ts = chrono::DateTime::from_timestamp(m.timestamp, 0)
+                    .map(|dt| dt.to_rfc3339())
+                    .unwrap_or_else(|| m.timestamp.to_string());
+                let from = if matches!(m.role, MessageRole::Assistant) {
+                    json!({"role": "self"})
+                } else {
+                    let mut f = json!({"role": "user"});
+                    if let Some(pid) = &m.person {
+                        f["ref"] = json!(pid.0);
+                        if let Ok(Some(p)) = ctx.store.get_person(pid).await {
+                            if let Some(name) = &p.name {
+                                f["name"] = json!(name);
+                            }
+                        }
+                    }
+                    f
+                };
+                items.push(json!({
+                    "time": ts,
+                    "from": from,
+                    "content": m.content,
+                }));
             }
-            out
+            json!({"messages": items}).to_string()
         }
-        Err(e) => format!("Error reading messages: {e}"),
+        Err(e) => json!({"error": format!("{e}")}).to_string(),
     }
 }

@@ -1,4 +1,4 @@
 pub mod core;
 pub mod identity;
-pub mod personality;
+pub mod state;
 pub mod store;

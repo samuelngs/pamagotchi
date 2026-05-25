@@ -3,6 +3,7 @@ use serde::Serialize;
 #[derive(Serialize)]
 pub struct MindContext {
     pub identity: String,
+    pub now: String,
     pub person: Option<PersonContext>,
     pub actions: Vec<ActionBriefCtx>,
     pub thoughts: Vec<ThoughtCtx>,
@@ -10,14 +11,19 @@ pub struct MindContext {
 
 #[derive(Serialize)]
 pub struct PersonContext {
-    pub name: String,
+    pub ref_id: String,
+    pub name: Option<String>,
+    pub summary: Option<String>,
     pub authority: String,
     pub trust: i32,
     pub familiarity: i32,
+    pub last_seen: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct ActionPromptContext {
+    pub now: String,
+    pub age: String,
     pub identity_memories: Vec<String>,
     pub traits: TraitsCtx,
     pub beliefs: Vec<BeliefCtx>,
@@ -61,11 +67,15 @@ pub struct InterestCtx {
 
 #[derive(Serialize)]
 pub struct RelationshipCtx {
-    pub name: String,
+    pub ref_id: String,
+    pub name: Option<String>,
+    pub summary: Option<String>,
     pub trust: i32,
     pub familiarity: i32,
     pub interactions: u32,
     pub tone: String,
+    pub last_seen: Option<String>,
+    pub first_met: Option<String>,
 }
 
 #[derive(Serialize)]

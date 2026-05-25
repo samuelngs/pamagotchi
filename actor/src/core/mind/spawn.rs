@@ -112,6 +112,7 @@ impl Mind {
         let action_id = id.clone();
         let state_handle = self.state.clone();
         let store = self.store.clone();
+        let router = self.router.clone();
         let gateway = self.gateway.clone();
         let max_turns = self.max_turns;
         let progress = self
@@ -134,6 +135,7 @@ impl Mind {
                 authority: request.authority,
                 state: state_handle,
                 store,
+                router,
                 endpoints,
                 context,
                 inject_rx,

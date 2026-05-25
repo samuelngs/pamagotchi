@@ -6,7 +6,7 @@ use crate::identity::{
     ClaimStatus, Group, IdentityClaim, Identity, Person, Relation, SocialRelation,
 };
 use protocol::{ConversationId, GroupId, MemoryId, PersonId};
-use crate::personality::{Authority, BehaviorDirective};
+use crate::state::{Authority, BehaviorDirective};
 use async_trait::async_trait;
 
 #[async_trait]
@@ -50,7 +50,7 @@ pub trait Store: Send + Sync {
     // People
     async fn add_person(&self, person: &Person) -> anyhow::Result<PersonId>;
     async fn get_person(&self, id: &PersonId) -> anyhow::Result<Option<Person>>;
-    async fn update_person(&self, id: &PersonId, name: Option<&str>, bio: Option<&str>) -> anyhow::Result<()>;
+    async fn update_person(&self, id: &PersonId, name: Option<&str>, summary: Option<&str>) -> anyhow::Result<()>;
     async fn touch_person(&self, id: &PersonId) -> anyhow::Result<()>;
     async fn list_people(&self) -> anyhow::Result<Vec<Person>>;
 

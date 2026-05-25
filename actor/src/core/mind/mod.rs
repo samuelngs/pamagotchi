@@ -6,11 +6,11 @@ mod spawn;
 use super::action::ActionId;
 use super::event::WakeEvent;
 use super::registry::ActionRegistry;
-use super::state::StateHandle;
+use super::handle::StateHandle;
 use inference::InferenceRouter;
 use gateway::GatewayRouter;
 use crate::identity::{Identity, Person};
-use crate::personality::{Authority, Relationship};
+use crate::state::{Authority, Relationship};
 use crate::store::Store;
 use protocol::{InboundMessage, PersonId};
 use std::sync::Arc;
@@ -133,8 +133,8 @@ impl Mind {
     }
 
     fn find_owner(&self) -> Option<PersonId> {
-        let ps = self.state.read_personality();
-        ps.relationships
+        let actor = self.state.read_state();
+        actor.bonds
             .iter()
             .find(|(_, rel)| rel.authority == Authority::Owner)
             .map(|(id, _)| id.clone())
@@ -149,8 +149,8 @@ impl Mind {
         let now = chrono::Utc::now().timestamp();
         let person = Person {
             id: id.clone(),
-            name: String::new(),
-            bio: String::new(),
+            name: None,
+            summary: None,
             first_seen: now,
             last_seen: now,
         };
@@ -168,8 +168,8 @@ impl Mind {
         }
         let mut rel = Relationship::default();
         rel.authority = authority;
-        self.state.shared.personality.write().unwrap()
-            .relationships.insert(id.clone(), rel);
+        self.state.shared.actor.write().unwrap()
+            .bonds.insert(id.clone(), rel);
         Some(id)
     }
 

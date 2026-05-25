@@ -1,4 +1,4 @@
-use crate::personality::{Authority, PersonalityDelta};
+use crate::state::{Authority, Delta};
 use crate::store::Thought;
 use protocol::{ConversationId, InboundMessage, MemoryId};
 use serde::{Deserialize, Serialize};
@@ -146,7 +146,7 @@ impl ActionProgress {
 }
 
 pub struct ActionResult {
-    pub delta: Option<PersonalityDelta>,
+    pub delta: Option<Delta>,
     pub thoughts: Vec<Thought>,
     pub memories_formed: Vec<MemoryId>,
     pub unprocessed_messages: Vec<InboundMessage>,
