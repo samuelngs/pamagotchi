@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 relay.workspace = true
-character.workspace = true
+creature.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 clap.workspace = true

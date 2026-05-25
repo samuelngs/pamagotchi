@@ -2,9 +2,9 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use character::animate::{frame_index_at, AnimationFrame};
-use character::render::{render_to_string, render_to_string_quadrant};
-use character::{Creature, CreatureConfig};
+use creature::animate::{frame_index_at, AnimationFrame};
+use creature::render::{render_to_string, render_to_string_quadrant};
+use creature::{Creature, CreatureConfig};
 
 fn main() {
     let seed: u64 = std::env::args()
@@ -27,7 +27,7 @@ fn main() {
         .collect();
 
     if !animate {
-        println!("\n  seed={seed} — size = character row height\n");
+        println!("\n  seed={seed} — size = creature row height\n");
         for (i, creature) in creatures.iter().enumerate() {
             let size = sizes[i];
             let mode = if creature.grid.width > creature.grid.height {

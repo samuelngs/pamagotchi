@@ -313,14 +313,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "character"
-version = "0.1.0"
-dependencies = [
- "ctrlc",
- "rand 0.9.4",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -493,6 +485,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "creature"
+version = "0.1.0"
+dependencies = [
+ "ctrlc",
+ "rand 0.9.4",
 ]
 
 [[package]]
@@ -1911,8 +1911,8 @@ name = "pamagotchi"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "character",
  "clap",
+ "creature",
  "crossterm",
  "ratatui",
  "relay",

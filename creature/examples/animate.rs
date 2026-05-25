@@ -2,9 +2,9 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use character::animate::{cycle_duration, frame_index_at};
-use character::render::{render_row, render_to_string};
-use character::{Creature, CreatureConfig};
+use creature::animate::{cycle_duration, frame_index_at};
+use creature::render::{render_row, render_to_string};
+use creature::{Creature, CreatureConfig};
 
 fn main() {
     let single_seed: Option<u64> = std::env::args().nth(1).and_then(|s| s.parse().ok());

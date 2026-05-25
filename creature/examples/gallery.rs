@@ -1,5 +1,5 @@
-use character::{Creature, CreatureConfig};
-use character::render::render_row;
+use creature::{Creature, CreatureConfig};
+use creature::render::render_row;
 
 fn main() {
     let per_row = 5;

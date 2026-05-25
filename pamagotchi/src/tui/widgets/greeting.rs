@@ -1,4 +1,4 @@
-use super::character_view::CharacterView;
+use super::creature_view::CreatureView;
 use ratatui::prelude::*;
 
 const CREATURE_SIZE: u32 = 3;
@@ -8,14 +8,14 @@ pub struct Greeting;
 
 impl Greeting {
     pub fn height() -> u16 {
-        let (_, ch) = CharacterView::dimensions(CREATURE_SIZE);
+        let (_, ch) = CreatureView::dimensions(CREATURE_SIZE);
         1 + ch + 1
     }
 }
 
 impl Widget for Greeting {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let (cw, ch) = CharacterView::dimensions(CREATURE_SIZE);
+        let (cw, ch) = CreatureView::dimensions(CREATURE_SIZE);
         if area.height < 1 || area.width < cw {
             return;
         }
@@ -26,7 +26,7 @@ impl Widget for Greeting {
         }
         let remaining = area.height - 1;
         let creature_h = ch.min(remaining);
-        CharacterView {
+        CreatureView {
             seed: NAME,
             size: CREATURE_SIZE,
             animated: false,

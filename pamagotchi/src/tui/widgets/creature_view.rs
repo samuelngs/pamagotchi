@@ -1,7 +1,7 @@
-use character::{Creature, CreatureConfig};
+use creature::{Creature, CreatureConfig};
 use ratatui::prelude::*;
 
-pub struct CharacterView<'a> {
+pub struct CreatureView<'a> {
     pub seed: &'a str,
     pub size: u32,
     pub animated: bool,
@@ -9,7 +9,7 @@ pub struct CharacterView<'a> {
     pub color: Option<Color>,
 }
 
-impl CharacterView<'_> {
+impl CreatureView<'_> {
     pub fn dimensions(size: u32) -> (u16, u16) {
         let creature = Creature::generate(&CreatureConfig {
             size: size.max(3),
@@ -23,7 +23,7 @@ impl CharacterView<'_> {
     }
 }
 
-impl Widget for CharacterView<'_> {
+impl Widget for CreatureView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let creature = Creature::generate(&CreatureConfig {
             size: self.size.max(3),
@@ -34,12 +34,12 @@ impl Widget for CharacterView<'_> {
         let rendered = if self.animated {
             let frames = creature.idle_frames();
             if !frames.is_empty() {
-                let idx = character::animate::frame_index_at(&frames, self.elapsed_ms);
+                let idx = creature::animate::frame_index_at(&frames, self.elapsed_ms);
                 let grid = &frames[idx].grid;
                 if grid.width > grid.height {
-                    character::render::render_to_string_quadrant(grid, &creature.palette)
+                    creature::render::render_to_string_quadrant(grid, &creature.palette)
                 } else {
-                    character::render::render_to_string(grid, &creature.palette)
+                    creature::render::render_to_string(grid, &creature.palette)
                 }
             } else {
                 creature.render()

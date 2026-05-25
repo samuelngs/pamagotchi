@@ -1,5 +1,5 @@
 [workspace]
-members = ["actor", "inference", "gateway", "protocol", "pamagotchid", "relay", "pamagotchi", "character"]
+members = ["actor", "inference", "gateway", "protocol", "pamagotchid", "relay", "pamagotchi", "creature"]
 resolver = "2"
 
 [workspace.package]
@@ -21,7 +21,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 yaml_serde = "0.10"
 clap = { version = "4", features = ["derive"] }
-character = { path = "character" }
+creature = { path = "creature" }
 rand = "0.9"
 ratatui = "0.29"
 crossterm = "0.28"

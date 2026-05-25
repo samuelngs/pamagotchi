@@ -1,5 +1,5 @@
 mod button;
-mod character_view;
+mod creature_view;
 mod greeting;
 mod input_box;
 mod message_item;
