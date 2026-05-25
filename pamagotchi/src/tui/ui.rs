@@ -1,10 +1,12 @@
 use super::app::App;
+use super::focus::FocusId;
 use super::widgets::{Button, InputBox, MessageList, ShortKey};
 use ratatui::prelude::*;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     app.input_width = area.width as usize;
+    let input_focused = app.focus.is(FocusId::Input);
     let input_height = InputBox::height(app.input_line_count());
 
     let layout = Layout::vertical([
@@ -25,8 +27,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let input_box = InputBox {
         text: &app.input,
         cursor: app.cursor,
-        focused: true,
-        highlighted: true,
+        focused: input_focused,
+        highlighted: input_focused,
         scroll: app.input_scroll,
     };
     let cursor_pos = input_box.cursor_position(layout[1]);
@@ -39,6 +41,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Button {
             label: "quit",
             shortkey: Some(ShortKey::Esc),
+            focused: app.focus.is(FocusId::Quit),
         },
         Rect::new(layout[2].x, layout[2].y, layout[2].width, 1),
     );

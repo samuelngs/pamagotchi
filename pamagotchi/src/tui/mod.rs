@@ -1,11 +1,13 @@
 mod app;
 mod event;
+mod focus;
 pub mod theme;
 mod ui;
 mod widgets;
 
 use app::App;
 use event::EventHandler;
+use focus::FocusId;
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
@@ -47,34 +49,61 @@ async fn run_loop(
                 if key.kind != crossterm::event::KeyEventKind::Press {
                     continue;
                 }
+
                 match key.code {
                     KeyCode::Esc => break,
-                    KeyCode::Enter
-                        if key
-                            .modifiers
-                            .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
-                    {
-                        app.insert_newline();
+                    KeyCode::Tab => {
+                        app.focus.next();
+                        continue;
                     }
-                    KeyCode::Enter => app.submit_input().await,
-                    KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
-                        app.delete_word();
+                    KeyCode::BackTab => {
+                        app.focus.prev();
+                        continue;
                     }
-                    KeyCode::Backspace => app.delete_char(),
-                    KeyCode::Left => app.move_cursor_left(),
-                    KeyCode::Right => app.move_cursor_right(),
-                    KeyCode::Up => app.move_cursor_up(),
-                    KeyCode::Down => app.move_cursor_down(),
-                    KeyCode::PageUp => app.scroll_up(20),
-                    KeyCode::PageDown => app.scroll_down(20),
-                    KeyCode::Char('j') | KeyCode::Char('J')
-                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        app.insert_newline();
-                    }
-                    KeyCode::Char(c) => app.insert_char(c),
                     _ => {}
                 }
+
+                match app.focus.current() {
+                    FocusId::Input => match key.code {
+                        KeyCode::Enter
+                            if key
+                                .modifiers
+                                .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
+                        {
+                            app.insert_newline();
+                        }
+                        KeyCode::Enter => app.submit_input().await,
+                        KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                            app.delete_word();
+                        }
+                        KeyCode::Backspace => app.delete_char(),
+                        KeyCode::Left => app.move_cursor_left(),
+                        KeyCode::Right => app.move_cursor_right(),
+                        KeyCode::Up => app.move_cursor_up(),
+                        KeyCode::Down => {
+                            if app.cursor_at_last_line() {
+                                app.focus.next();
+                            } else {
+                                app.move_cursor_down();
+                            }
+                        }
+                        KeyCode::PageUp => app.scroll_up(20),
+                        KeyCode::PageDown => app.scroll_down(20),
+                        KeyCode::Char('j') | KeyCode::Char('J')
+                            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
+                            app.insert_newline();
+                        }
+                        KeyCode::Char(c) => app.insert_char(c),
+                        _ => {}
+                    },
+                    FocusId::Quit => match key.code {
+                        KeyCode::Enter => break,
+                        KeyCode::Up => app.focus.set(FocusId::Input),
+                        _ => {}
+                    },
+                }
+
                 app.ensure_cursor_visible();
             }
             event::Event::Tick => {

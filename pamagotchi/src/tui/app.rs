@@ -1,3 +1,4 @@
+use super::focus::FocusManager;
 use relay::{RelayReceiver, RelaySender};
 
 pub struct ChatMessage {
@@ -14,6 +15,7 @@ pub struct App {
     pub messages: Vec<ChatMessage>,
     pub messages_scroll: usize,
     pub composing: bool,
+    pub focus: FocusManager,
     pub relay_tx: Option<RelaySender>,
     pub relay_rx: Option<RelayReceiver>,
 }
@@ -29,6 +31,7 @@ impl App {
             messages: Vec::new(),
             messages_scroll: 0,
             composing: false,
+            focus: FocusManager::new(),
             relay_tx: None,
             relay_rx: None,
         }
@@ -153,6 +156,10 @@ impl App {
             let next_line_len = next_line_end - next_line_start;
             self.cursor = next_line_start + col.min(next_line_len);
         }
+    }
+
+    pub fn cursor_at_last_line(&self) -> bool {
+        !self.input[self.cursor..].contains('\n')
     }
 
     pub fn ensure_cursor_visible(&mut self) {

@@ -23,6 +23,7 @@ impl ShortKey {
 pub struct Button<'a> {
     pub label: &'a str,
     pub shortkey: Option<ShortKey>,
+    pub focused: bool,
 }
 
 impl Button<'_> {
@@ -39,9 +40,11 @@ impl Button<'_> {
 
 impl Widget for Button<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let bg = theme::INPUT_BG_DIM;
-        let fg = Color::DarkGray;
-        let keycap_bg = theme::KEYCAP_BG_DIM;
+        let (bg, fg, keycap_bg) = if self.focused {
+            (theme::INPUT_BG, theme::ACCENT, theme::KEYCAP_BG)
+        } else {
+            (theme::INPUT_BG_DIM, Color::DarkGray, theme::KEYCAP_BG_DIM)
+        };
 
         let w = self.width();
         let btn_area = Rect::new(area.x, area.y, w.min(area.width), 1);
