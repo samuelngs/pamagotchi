@@ -57,6 +57,9 @@ async fn run_loop(
                         app.insert_newline();
                     }
                     KeyCode::Enter => app.submit_input().await,
+                    KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                        app.delete_word();
+                    }
                     KeyCode::Backspace => app.delete_char(),
                     KeyCode::Left => app.move_cursor_left(),
                     KeyCode::Right => app.move_cursor_right(),

@@ -89,6 +89,24 @@ impl App {
         }
     }
 
+    pub fn delete_word(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let before = &self.input[..self.cursor];
+        let end = before.trim_end_matches(|c: char| c.is_whitespace() && c != '\n').len();
+        if end == 0 {
+            self.input.drain(0..self.cursor);
+            self.cursor = 0;
+            return;
+        }
+        let start = before[..end]
+            .rfind(|c: char| c.is_whitespace())
+            .map_or(0, |pos| pos + 1);
+        self.input.drain(start..self.cursor);
+        self.cursor = start;
+    }
+
     pub fn move_cursor_left(&mut self) {
         if self.cursor > 0 {
             self.cursor = self.input[..self.cursor]
