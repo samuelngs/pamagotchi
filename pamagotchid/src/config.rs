@@ -136,7 +136,7 @@ impl Config {
             .with_context(|| format!("failed to read config: {}", path.display()))?;
         let expanded = expand_env_vars(&raw);
         let config: Config =
-            serde_yml::from_str(&expanded).context("failed to parse config yaml")?;
+            yaml_serde::from_str(&expanded).context("failed to parse config yaml")?;
         config.validate()?;
         Ok(config)
     }
@@ -153,7 +153,7 @@ impl Config {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let yaml = serde_yml::to_string(self).context("failed to serialize config")?;
+        let yaml = yaml_serde::to_string(self).context("failed to serialize config")?;
         std::fs::write(path, yaml).context("failed to write config")?;
         Ok(())
     }
@@ -200,7 +200,7 @@ inference:
     options:
       model: gpt-4o
 "#;
-        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         config.validate().unwrap();
         assert_eq!(config.inference.len(), 1);
         let ProviderConfig::OpenAi(ref opts) = config.inference[0].provider;
@@ -243,7 +243,7 @@ inference:
 max_turns: 10
 max_concurrency: 3
 "#;
-        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         config.validate().unwrap();
 
         assert_eq!(config.inference.len(), 3);
@@ -272,7 +272,7 @@ inference:
     options:
       model: gpt-4o-mini
 "#;
-        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         assert!(config.validate().is_err());
     }
 
@@ -281,7 +281,7 @@ inference:
         let yaml = r#"
 inference: []
 "#;
-        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         assert!(config.validate().is_err());
     }
 
@@ -322,8 +322,8 @@ inference: []
             }],
             ..Config::default()
         };
-        let yaml = serde_yml::to_string(&config).unwrap();
-        let parsed: Config = serde_yml::from_str(&yaml).unwrap();
+        let yaml = yaml_serde::to_string(&config).unwrap();
+        let parsed: Config = yaml_serde::from_str(&yaml).unwrap();
         assert_eq!(parsed.inference.len(), 1);
         assert_eq!(parsed.inference[0].id, "default");
     }
@@ -338,7 +338,7 @@ inference:
     options:
       model: gpt-4o
 "#;
-        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         assert_eq!(config.inference[0].reasoning, Reasoning::Basic);
     }
 }

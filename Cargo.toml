@@ -19,7 +19,7 @@ anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-serde_yml = "0.0.12"
+yaml_serde = "0.10"
 clap = { version = "4", features = ["derive"] }
 character = { path = "character" }
 rand = "0.9"
