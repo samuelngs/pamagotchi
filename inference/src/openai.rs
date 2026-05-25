@@ -9,10 +9,41 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OpenAiOptions {
+    pub model: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<u32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_p: Option<f32>,
+
+    #[serde(default = "default_true")]
+    pub tool_choice_required: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 pub struct OpenAiProvider {
     client: Client,
     base_url: String,
     api_key: String,
+    supports_tool_choice_required: bool,
 }
 
 impl OpenAiProvider {
@@ -21,7 +52,13 @@ impl OpenAiProvider {
             client: Client::new(),
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_key: api_key.into(),
+            supports_tool_choice_required: true,
         }
+    }
+
+    pub fn with_tool_choice_required(mut self, supported: bool) -> Self {
+        self.supports_tool_choice_required = supported;
+        self
     }
 
     fn build_request(&self, request: &ChatRequest, stream: bool) -> WireRequest {
@@ -53,6 +90,7 @@ impl OpenAiProvider {
                     WireMessage::Assistant {
                         role: "assistant",
                         content: msg.text.clone(),
+                        reasoning_content: msg.reasoning_content.clone(),
                         tool_calls: if tool_calls.is_empty() {
                             None
                         } else {
@@ -90,7 +128,14 @@ impl OpenAiProvider {
         let tool_choice = if request.tools.is_empty() {
             None
         } else {
-            Some(match request.tool_choice {
+            let effective = if !self.supports_tool_choice_required
+                && matches!(request.tool_choice, ToolChoice::Required)
+            {
+                &ToolChoice::Auto
+            } else {
+                &request.tool_choice
+            };
+            Some(match effective {
                 ToolChoice::Auto => serde_json::Value::String("auto".into()),
                 ToolChoice::None => serde_json::Value::String("none".into()),
                 ToolChoice::Required => serde_json::Value::String("required".into()),
@@ -184,6 +229,7 @@ impl Provider for OpenAiProvider {
         Ok(ChatResponse {
             message: AssistantMessage {
                 text: choice.message.content,
+                reasoning_content: choice.message.reasoning_content,
                 tool_calls,
             },
             finish_reason: parse_finish_reason(
@@ -272,19 +318,25 @@ async fn stream_sse(
                     }
                 }
 
+                if let Some(reasoning) = choice.delta.reasoning_content {
+                    if !reasoning.is_empty() {
+                        tx.send(Ok(StreamEvent::ReasoningDelta(reasoning))).await?;
+                    }
+                }
+
                 if let Some(tool_calls) = choice.delta.tool_calls {
                     for tc in &tool_calls {
-                        if let Some(ref id) = tc.id {
-                            let name = tc
-                                .function
-                                .as_ref()
-                                .and_then(|f| f.name.as_deref())
-                                .unwrap_or_default()
-                                .to_string();
+                        let name = tc
+                            .function
+                            .as_ref()
+                            .and_then(|f| f.name.clone());
+                        let id = tc.id.clone();
+
+                        if id.is_some() || name.is_some() {
                             tx.send(Ok(StreamEvent::ToolCallBegin {
                                 index: tc.index,
-                                id: id.clone(),
-                                name,
+                                id: id.unwrap_or_default(),
+                                name: name.unwrap_or_default(),
                             }))
                             .await?;
                         }
@@ -380,6 +432,8 @@ enum WireMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        reasoning_content: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         tool_calls: Option<Vec<WireToolCall>>,
     },
     Tool {
@@ -430,6 +484,7 @@ struct WireChoice {
 #[derive(Deserialize)]
 struct WireResponseMessage {
     content: Option<String>,
+    reasoning_content: Option<String>,
     tool_calls: Option<Vec<WireResponseToolCall>>,
 }
 
@@ -476,6 +531,7 @@ struct WireStreamChoice {
 #[derive(Deserialize)]
 struct WireStreamDelta {
     content: Option<String>,
+    reasoning_content: Option<String>,
     tool_calls: Option<Vec<WireStreamToolCallDelta>>,
 }
 

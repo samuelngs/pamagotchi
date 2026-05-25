@@ -18,6 +18,7 @@ impl Message {
     pub fn assistant(content: impl Into<String>) -> Self {
         Self::Assistant(AssistantMessage {
             text: Some(content.into()),
+            reasoning_content: None,
             tool_calls: vec![],
         })
     }
@@ -39,6 +40,7 @@ impl From<AssistantMessage> for Message {
 #[derive(Clone)]
 pub struct AssistantMessage {
     pub text: Option<String>,
+    pub reasoning_content: Option<String>,
     pub tool_calls: Vec<ToolCall>,
 }
 

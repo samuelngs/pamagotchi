@@ -3,6 +3,7 @@ use tokio::sync::mpsc;
 
 pub enum StreamEvent {
     TextDelta(String),
+    ReasoningDelta(String),
     ToolCallBegin { index: usize, id: String, name: String },
     ToolCallDelta { index: usize, arguments_delta: String },
     FinishReason(FinishReason),
@@ -24,6 +25,7 @@ impl ChatStream {
 
     pub async fn collect(mut self) -> anyhow::Result<ChatResponse> {
         let mut text = String::new();
+        let mut reasoning = String::new();
         let mut tool_calls: Vec<PartialToolCall> = vec![];
         let mut finish_reason = FinishReason::Stop;
         let mut usage = Usage {
@@ -34,12 +36,17 @@ impl ChatStream {
         while let Some(event) = self.rx.recv().await {
             match event? {
                 StreamEvent::TextDelta(delta) => text.push_str(&delta),
+                StreamEvent::ReasoningDelta(delta) => reasoning.push_str(&delta),
                 StreamEvent::ToolCallBegin { index, id, name } => {
                     if tool_calls.len() <= index {
                         tool_calls.resize_with(index + 1, PartialToolCall::default);
                     }
-                    tool_calls[index].id = id;
-                    tool_calls[index].name = name;
+                    if !id.is_empty() {
+                        tool_calls[index].id = id;
+                    }
+                    if !name.is_empty() {
+                        tool_calls[index].name = name;
+                    }
                 }
                 StreamEvent::ToolCallDelta {
                     index,
@@ -68,6 +75,7 @@ impl ChatStream {
         Ok(ChatResponse {
             message: AssistantMessage {
                 text: if text.is_empty() { None } else { Some(text) },
+                reasoning_content: if reasoning.is_empty() { None } else { Some(reasoning) },
                 tool_calls,
             },
             finish_reason,
