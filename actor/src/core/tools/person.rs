@@ -114,7 +114,7 @@ pub async fn get(args: &Value, ctx: &SessionContext) -> String {
 }
 
 fn resolve_person_ref(args: &Value, ctx: &SessionContext) -> Option<PersonId> {
-    if let Some(r) = args["ref"].as_str() {
+    if let Some(r) = args["ref"].as_str().filter(|s| !s.is_empty()) {
         return Some(PersonId(r.to_string()));
     }
     ctx.messages.first().and_then(|m| m.person.clone())
