@@ -1,15 +1,13 @@
 mod app;
 mod event;
 mod focus;
+mod screens;
 pub mod theme;
-mod ui;
 mod widgets;
 
-use app::App;
-use event::EventHandler;
-use focus::FocusId;
+use app::{App, Screen};
+use screens::ScreenAction;
 
-use crossterm::event::{KeyCode, KeyModifiers};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
@@ -25,7 +23,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    let mut events = EventHandler::new(100);
+    let mut events = event::EventHandler::new(100);
 
     let result = run_loop(&mut terminal, &mut app, &mut events).await;
 
@@ -39,81 +37,25 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
 async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
-    events: &mut EventHandler,
+    events: &mut event::EventHandler,
 ) -> anyhow::Result<()> {
     loop {
-        terminal.draw(|frame| ui::render(frame, app))?;
+        terminal.draw(|frame| screens::render(frame, app))?;
 
         match events.next().await? {
             event::Event::Key(key) => {
                 if key.kind != crossterm::event::KeyEventKind::Press {
                     continue;
                 }
-
-                match key.code {
-                    KeyCode::Esc => break,
-                    KeyCode::Tab => {
-                        app.focus.next();
-                        continue;
+                match screens::handle_key(app, key).await {
+                    ScreenAction::Quit => break,
+                    ScreenAction::Navigate(screen) => app.screen = screen,
+                    ScreenAction::Back => {
+                        app.screen = Screen::Chat;
+                        app.focus.set(focus::FocusId::Settings);
                     }
-                    KeyCode::BackTab => {
-                        app.focus.prev();
-                        continue;
-                    }
-                    _ => {}
+                    ScreenAction::None => {}
                 }
-
-                match app.focus.current() {
-                    FocusId::Input => match key.code {
-                        KeyCode::Enter
-                            if key
-                                .modifiers
-                                .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
-                        {
-                            app.insert_newline();
-                        }
-                        KeyCode::Enter => app.submit_input().await,
-                        KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
-                            app.delete_word();
-                        }
-                        KeyCode::Backspace => app.delete_char(),
-                        KeyCode::Left => app.move_cursor_left(),
-                        KeyCode::Right => app.move_cursor_right(),
-                        KeyCode::Up => app.move_cursor_up(),
-                        KeyCode::Down => {
-                            if app.cursor_at_last_line() {
-                                app.focus.next();
-                            } else {
-                                app.move_cursor_down();
-                            }
-                        }
-                        KeyCode::PageUp => app.scroll_up(20),
-                        KeyCode::PageDown => app.scroll_down(20),
-                        KeyCode::Char('j') | KeyCode::Char('J')
-                            if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                        {
-                            app.insert_newline();
-                        }
-                        KeyCode::Char(c) => app.insert_char(c),
-                        _ => {}
-                    },
-                    FocusId::Quit => match key.code {
-                        KeyCode::Enter => break,
-                        KeyCode::Up => app.focus.set(FocusId::Input),
-                        KeyCode::Left => app.focus.prev(),
-                        KeyCode::Right => app.focus.next(),
-                        _ => {}
-                    },
-                    FocusId::Gateway => match key.code {
-                        KeyCode::Enter => { /* TODO: open gateway manager */ }
-                        KeyCode::Up => app.focus.set(FocusId::Input),
-                        KeyCode::Left => app.focus.prev(),
-                        KeyCode::Right => app.focus.next(),
-                        _ => {}
-                    },
-                }
-
-                app.ensure_cursor_visible();
             }
             event::Event::Tick => {
                 app.poll_relay();

@@ -1,6 +1,12 @@
 use super::focus::FocusManager;
 use relay::{RelayReceiver, RelaySender};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Chat,
+    Settings,
+}
+
 pub struct ChatMessage {
     pub content: String,
     pub is_self: bool,
@@ -8,6 +14,7 @@ pub struct ChatMessage {
 
 pub struct App {
     pub port: u16,
+    pub screen: Screen,
     pub input: String,
     pub cursor: usize,
     pub input_scroll: usize,
@@ -24,6 +31,7 @@ impl App {
     pub fn new(port: u16) -> Self {
         Self {
             port,
+            screen: Screen::Chat,
             input: String::new(),
             cursor: 0,
             input_scroll: 0,
