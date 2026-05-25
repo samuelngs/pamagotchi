@@ -25,6 +25,8 @@ pub struct ActorBuilder {
     gateway: Arc<GatewayRouter>,
     max_concurrency: usize,
     max_turns: usize,
+    max_action_attempts: usize,
+    escalate_after: usize,
     event_buffer: usize,
     event_channel: Option<(mpsc::Sender<WakeEvent>, mpsc::Receiver<WakeEvent>)>,
 }
@@ -39,6 +41,8 @@ impl ActorBuilder {
             gateway: Arc::new(GatewayRouter::new()),
             max_concurrency: 5,
             max_turns: 5,
+            max_action_attempts: 3,
+            escalate_after: 1,
             event_buffer: 256,
             event_channel: None,
         }
@@ -61,6 +65,12 @@ impl ActorBuilder {
 
     pub fn with_max_turns(mut self, max: usize) -> Self {
         self.max_turns = max;
+        self
+    }
+
+    pub fn with_retry(mut self, max_attempts: usize, escalate_after: usize) -> Self {
+        self.max_action_attempts = max_attempts;
+        self.escalate_after = escalate_after;
         self
     }
 
@@ -115,6 +125,8 @@ impl ActorBuilder {
             self.gateway,
             self.max_concurrency,
             self.max_turns,
+            self.max_action_attempts,
+            self.escalate_after,
         );
 
         let state_join = tokio::spawn(async move {

@@ -4,6 +4,7 @@ use super::super::handle::StateHandle;
 use crate::state::{Authority, Delta};
 use crate::store::{Store, Thought};
 use gateway::GatewayRouter;
+use inference::Reasoning;
 use protocol::{ConversationId, InboundMessage, MemoryId};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -21,9 +22,12 @@ pub struct SessionContext {
     pub store: Arc<dyn Store>,
     pub router: Arc<inference::InferenceRouter>,
     pub endpoints: Vec<inference::ResolvedInference>,
+    pub reasoning: Reasoning,
     pub inject_rx: mpsc::Receiver<InboundMessage>,
     pub progress: Arc<RwLock<RunningState>>,
     pub max_turns: usize,
+    pub max_action_attempts: usize,
+    pub escalate_after: usize,
     pub gateway: Arc<GatewayRouter>,
     pub session_start: std::time::Instant,
 }

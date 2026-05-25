@@ -5,7 +5,8 @@ use super::tools::{
     self, SessionContext, SessionKind, SessionState, ToolOutcome,
 };
 use inference::{
-    AssistantMessage, ChatRequest, FinishReason, Message, StreamEvent, ToolCall,
+    AssistantMessage, ChatRequest, FinishReason, Message,
+    RouteContext, StreamEvent, ToolCall,
 };
 use crate::store::{MessageRole, StoredMessage};
 use protocol::{ConversationId, PersonId};
@@ -29,28 +30,12 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
         ctx.gateway.acquire_composing(pid, eid).await;
     }
 
-    let system_prompt = match build_prompt(&ctx).await {
-        Ok(p) => p,
-        Err(e) => {
-            warn!(%e, action = %ctx.action_id, "failed to build prompt");
-            if let Some((ref pid, ref eid)) = composing_target {
-                ctx.gateway.release_composing(pid, eid).await;
-            }
-            return default_result(&ctx.kind);
-        }
-    };
+    let expects_response = matches!(&ctx.kind, SessionKind::Action(k) if k.expects_response());
+    let max_attempts = if expects_response { ctx.max_action_attempts } else { 1 };
+    let escalate_after = ctx.escalate_after;
 
-    info!(action = %ctx.action_id, system_prompt_len = system_prompt.len(), "system prompt built");
-    tracing::debug!(action = %ctx.action_id, system_prompt = %system_prompt, "system prompt content");
-
-    let mut llm_messages = vec![Message::system(system_prompt)];
-    ingest_messages(&ctx, &mut llm_messages).await;
-
-    let tool_defs = match &ctx.kind {
-        SessionKind::Mind => tools::mind_tools(),
-        SessionKind::Action(kind) => tools::action_tools(kind),
-    };
-
+    let mut attempt = 0;
+    let mut mind_verdict: Option<MindVerdict> = None;
     let mut state = SessionState {
         responded: false,
         composing_released: false,
@@ -60,51 +45,131 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
         injected_messages: vec![],
     };
 
-    let mut mind_verdict: Option<MindVerdict> = None;
+    loop {
+        attempt += 1;
 
-    for turn in 0..ctx.max_turns {
-        log_turn_start(&ctx, turn, &llm_messages);
-
-        let mut stream = match try_open_stream(&ctx, &llm_messages, &tool_defs).await {
-            Some(s) => s,
-            None => break,
-        };
-
-        let collected = collect_stream(&mut stream, &mut ctx, &mut state).await;
-        info!(action = %ctx.action_id, turn, "LLM stream ended");
-
-        let tool_calls = finalize_tool_calls(collected.partial_tools);
-
-        info!(
-            action = %ctx.action_id, turn,
-            finish = ?collected.finish, tool_calls = tool_calls.len(),
-            text_len = collected.text.len(), "LLM turn complete"
-        );
-
-        if !collected.text.is_empty() {
-            info!(action = %ctx.action_id, thought = %collected.text, "internal monologue");
+        if attempt > 1 && expects_response {
+            let new_reasoning = if attempt > escalate_after {
+                let escalated = ctx.reasoning.escalate();
+                if escalated != ctx.reasoning {
+                    info!(
+                        action = %ctx.action_id, attempt,
+                        from = ?ctx.reasoning, to = ?escalated,
+                        "escalating reasoning tier"
+                    );
+                    ctx.reasoning = escalated;
+                    ctx.endpoints = ctx.router.resolve_chain(&RouteContext::Action(escalated));
+                }
+                escalated
+            } else {
+                ctx.reasoning
+            };
+            info!(
+                action = %ctx.action_id, attempt,
+                reasoning = ?new_reasoning,
+                "retrying action with warning"
+            );
         }
 
-        if tool_calls.is_empty() { break; }
+        let retry_warning = if attempt > 1 {
+            Some("IMPORTANT: Your previous attempt failed to call send_message. You MUST use send_message to respond. Text outside of tool calls is silent inner thought that no one can see or hear.")
+        } else {
+            None
+        };
 
-        llm_messages.push(Message::Assistant(AssistantMessage {
-            text: if collected.text.is_empty() { None } else { Some(collected.text) },
-            reasoning_content: if collected.reasoning.is_empty() { None } else { Some(collected.reasoning) },
-            tool_calls: tool_calls.clone(),
-        }));
+        let system_prompt = match build_prompt(&ctx).await {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(%e, action = %ctx.action_id, "failed to build prompt");
+                break;
+            }
+        };
 
-        let got_decision = execute_tools(
-            &tool_calls, turn, &ctx, &mut state, &mut llm_messages, &mut mind_verdict,
-        ).await;
+        info!(action = %ctx.action_id, system_prompt_len = system_prompt.len(), "system prompt built");
+        tracing::debug!(action = %ctx.action_id, system_prompt = %system_prompt, "system prompt content");
 
-        if got_decision { break; }
+        let mut llm_messages = vec![Message::system(system_prompt)];
+        if let Some(warning) = retry_warning {
+            llm_messages.push(Message::system(warning));
+        }
+        if attempt == 1 {
+            ingest_messages(&ctx, &mut llm_messages).await;
+        } else {
+            for inbound in &ctx.messages {
+                llm_messages.push(Message::user(&inbound.display_content()));
+            }
+        }
 
-        inject_pending_messages(&ctx, &mut state, &mut llm_messages).await;
+        let tool_defs = match &ctx.kind {
+            SessionKind::Mind => tools::mind_tools(),
+            SessionKind::Action(kind) => tools::action_tools(kind),
+        };
 
-        if matches!(collected.finish, FinishReason::Stop | FinishReason::Length) { break; }
+        state.responded = false;
+
+        for turn in 0..ctx.max_turns {
+            log_turn_start(&ctx, turn, &llm_messages);
+
+            let mut stream = match try_open_stream(&ctx, &llm_messages, &tool_defs).await {
+                Some(s) => s,
+                None => break,
+            };
+
+            let collected = collect_stream(&mut stream, &mut ctx, &mut state).await;
+            info!(action = %ctx.action_id, turn, "LLM stream ended");
+
+            let tool_calls = finalize_tool_calls(collected.partial_tools);
+
+            info!(
+                action = %ctx.action_id, turn,
+                finish = ?collected.finish, tool_calls = tool_calls.len(),
+                text_len = collected.text.len(), "LLM turn complete"
+            );
+
+            if !collected.text.is_empty() {
+                info!(action = %ctx.action_id, thought = %collected.text, "internal monologue");
+            }
+
+            if tool_calls.is_empty() { break; }
+
+            llm_messages.push(Message::Assistant(AssistantMessage {
+                text: if collected.text.is_empty() { None } else { Some(collected.text) },
+                reasoning_content: if collected.reasoning.is_empty() { None } else { Some(collected.reasoning) },
+                tool_calls: tool_calls.clone(),
+            }));
+
+            let got_decision = execute_tools(
+                &tool_calls, turn, &ctx, &mut state, &mut llm_messages, &mut mind_verdict,
+            ).await;
+
+            if got_decision { break; }
+
+            inject_pending_messages(&ctx, &mut state, &mut llm_messages).await;
+
+            if matches!(collected.finish, FinishReason::Stop | FinishReason::Length) { break; }
+        }
+
+        if state.responded || !expects_response || attempt >= max_attempts {
+            break;
+        }
+
+        warn!(
+            action = %ctx.action_id, attempt,
+            max = max_attempts,
+            "action did not call send_message, retrying"
+        );
     }
 
-    cleanup_composing(&ctx, &composing_target, &mind_verdict, &state).await;
+    if let Some((ref pid, ref eid)) = composing_target {
+        let should_release = match &ctx.kind {
+            SessionKind::Mind => !matches!(mind_verdict, Some(MindVerdict::Respond { .. })),
+            SessionKind::Action(_) => !state.composing_released,
+        };
+        if should_release {
+            ctx.gateway.release_composing(pid, eid).await;
+        }
+    }
+
     build_result(ctx, state, mind_verdict)
 }
 
@@ -234,24 +299,6 @@ async fn inject_pending_messages(
     }
 }
 
-async fn cleanup_composing(
-    ctx: &SessionContext, target: &Option<(String, String)>,
-    verdict: &Option<MindVerdict>, state: &SessionState,
-) {
-    match &ctx.kind {
-        SessionKind::Mind => {
-            if !matches!(verdict, Some(MindVerdict::Respond { .. })) {
-                if let Some((pid, eid)) = target { ctx.gateway.release_composing(pid, eid).await; }
-            }
-        }
-        SessionKind::Action(_) => {
-            if !state.composing_released {
-                if let Some((pid, eid)) = target { ctx.gateway.release_composing(pid, eid).await; }
-            }
-        }
-    }
-}
-
 fn build_result(mut ctx: SessionContext, state: SessionState, verdict: Option<MindVerdict>) -> SessionResult {
     match ctx.kind {
         SessionKind::Mind => SessionResult::Mind(verdict.unwrap_or(MindVerdict::Respond { style_directive: None })),
@@ -265,18 +312,6 @@ fn build_result(mut ctx: SessionContext, state: SessionState, verdict: Option<Mi
                 had_injections: !state.injected_messages.is_empty(),
             })
         }
-    }
-}
-
-fn default_result(kind: &SessionKind) -> SessionResult {
-    match kind {
-        SessionKind::Mind => SessionResult::Mind(MindVerdict::Respond { style_directive: None }),
-        SessionKind::Action(_) => SessionResult::Action(Outcome {
-            responded: false,
-            delta: None,
-            pending_messages: vec![],
-            had_injections: false,
-        }),
     }
 }
 

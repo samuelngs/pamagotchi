@@ -6,7 +6,7 @@ use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
 use super::Mind;
 use crate::state::Authority;
-use inference::RouteContext;
+use inference::{Reasoning, RouteContext};
 
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -62,9 +62,12 @@ impl Mind {
             store: self.store.clone(),
             router: self.router.clone(),
             endpoints,
+            reasoning: Reasoning::Basic,
             inject_rx,
             progress: Arc::new(RwLock::new(RunningState::new())),
             max_turns: 5,
+            max_action_attempts: 1,
+            escalate_after: 1,
             gateway: self.gateway.clone(),
             session_start: std::time::Instant::now(),
         };

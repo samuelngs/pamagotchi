@@ -48,6 +48,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         .with_gateway(gw_router)
         .with_max_concurrency(config.max_concurrency)
         .with_max_turns(config.max_turns)
+        .with_retry(config.retry.max_attempts, config.retry.escalate_after)
         .with_event_channel(event_tx, event_rx)
         .build()
         .await?;

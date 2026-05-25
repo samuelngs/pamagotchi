@@ -19,6 +19,27 @@ pub struct Config {
 
     #[serde(default = "default_max_concurrency")]
     pub max_concurrency: usize,
+
+    #[serde(default)]
+    pub retry: RetryConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetryConfig {
+    #[serde(default = "default_max_attempts")]
+    pub max_attempts: usize,
+
+    #[serde(default = "default_escalate_after")]
+    pub escalate_after: usize,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: default_max_attempts(),
+            escalate_after: default_escalate_after(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,6 +107,14 @@ fn default_max_concurrency() -> usize {
     5
 }
 
+fn default_max_attempts() -> usize {
+    3
+}
+
+fn default_escalate_after() -> usize {
+    1
+}
+
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {
@@ -126,6 +155,7 @@ impl Default for Config {
             inference: Vec::new(),
             max_turns: default_max_turns(),
             max_concurrency: default_max_concurrency(),
+            retry: RetryConfig::default(),
         }
     }
 }

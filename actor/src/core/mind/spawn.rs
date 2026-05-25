@@ -66,7 +66,10 @@ impl Mind {
         let gateway = self.gateway.clone();
         let max_turns = self.max_turns;
 
-        let endpoints = self.router.resolve_chain(&RouteContext::Action(Reasoning::Standard));
+        let reasoning = Reasoning::Standard;
+        let endpoints = self.router.resolve_chain(&RouteContext::Action(reasoning));
+        let max_action_attempts = self.max_action_attempts;
+        let escalate_after = self.escalate_after;
 
         let handle = tokio::spawn(async move {
             info!(%action_id, kind = ?kind, task = %task_desc, "action started");
@@ -84,9 +87,12 @@ impl Mind {
                 store,
                 router,
                 endpoints,
+                reasoning,
                 inject_rx: launch.inject_rx,
                 progress: launch.progress,
                 max_turns,
+                max_action_attempts,
+                escalate_after,
                 gateway,
                 session_start: std::time::Instant::now(),
             };

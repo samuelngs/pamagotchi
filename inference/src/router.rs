@@ -34,6 +34,15 @@ impl Reasoning {
             Self::Expert => 3,
         }
     }
+
+    pub fn escalate(self) -> Self {
+        match self {
+            Self::Basic => Self::Standard,
+            Self::Standard => Self::Advanced,
+            Self::Advanced => Self::Expert,
+            Self::Expert => Self::Expert,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

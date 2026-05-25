@@ -25,6 +25,8 @@ pub struct Mind {
     pub(super) router: Arc<InferenceRouter>,
     pub(super) gateway: Arc<GatewayRouter>,
     pub(super) max_turns: usize,
+    pub(super) max_action_attempts: usize,
+    pub(super) escalate_after: usize,
 }
 
 impl Mind {
@@ -37,6 +39,8 @@ impl Mind {
         gateway: Arc<GatewayRouter>,
         max_concurrency: usize,
         max_turns: usize,
+        max_action_attempts: usize,
+        escalate_after: usize,
     ) -> Self {
         Self {
             event_rx,
@@ -47,6 +51,8 @@ impl Mind {
             router,
             gateway,
             max_turns,
+            max_action_attempts,
+            escalate_after,
         }
     }
 
