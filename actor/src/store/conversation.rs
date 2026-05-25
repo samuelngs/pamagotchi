@@ -1,9 +1,6 @@
-use crate::identity::{GroupId, PersonId};
+use protocol::{ConversationId, GroupId, PersonId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ConversationId(pub String);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MessageRole {
@@ -46,7 +43,7 @@ pub struct StoredMessage {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConversationSummary {
     pub id: ConversationId,
-    pub platform_id: Option<String>,
+    pub gateway_id: Option<String>,
     pub person: Option<PersonId>,
     pub group: Option<GroupId>,
     pub summary: Option<String>,

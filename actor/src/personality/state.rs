@@ -1,7 +1,8 @@
 use super::{
-    AffectState, Belief, CoreTraits, GrowthConfig, Interest, PersonId, PersonalityDelta,
+    AffectState, Belief, CoreTraits, GrowthConfig, Interest, PersonalityDelta,
     Relationship,
 };
+use protocol::PersonId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

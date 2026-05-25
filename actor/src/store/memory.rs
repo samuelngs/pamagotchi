@@ -1,9 +1,5 @@
-use crate::identity::PersonId;
-use super::ConversationId;
+use protocol::{ConversationId, MemoryId, PersonId};
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct MemoryId(pub String);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MemoryKind {

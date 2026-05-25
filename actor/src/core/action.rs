@@ -1,6 +1,6 @@
 use crate::personality::{Authority, PersonalityDelta};
-use crate::store::{ConversationId, MemoryId, Thought};
-use super::event::InboundMessage;
+use crate::store::Thought;
+use protocol::{ConversationId, InboundMessage, MemoryId};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::{Arc, RwLock};
@@ -32,6 +32,16 @@ pub enum ActionKind {
 }
 
 impl ActionKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Respond => "respond",
+            Self::Research => "research",
+            Self::Consolidate => "consolidate",
+            Self::Outreach => "outreach",
+            Self::Ruminate => "ruminate",
+        }
+    }
+
     pub fn default_priority(&self) -> u8 {
         match self {
             Self::Respond => 80,
@@ -117,15 +127,6 @@ impl ActionRequest {
     }
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum ActionStatus {
-    Pending,
-    Running,
-    Completed,
-    Cancelled,
-}
-
 pub struct ActionProgress {
     pub responded: bool,
     pub thoughts_count: usize,
@@ -152,6 +153,15 @@ pub struct ActionResult {
     pub injected_messages: Vec<InboundMessage>,
 }
 
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum ActionStatus {
+    Pending,
+    Running,
+    Completed,
+    Cancelled,
+}
+
 pub struct ActionState {
     pub id: ActionId,
     pub kind: ActionKind,
@@ -164,54 +174,4 @@ pub struct ActionState {
     pub handle: Option<JoinHandle<()>>,
     pub progress: Arc<RwLock<ActionProgress>>,
     pub inject_tx: Option<mpsc::Sender<InboundMessage>>,
-}
-
-pub struct MindDecision {
-    pub spawn: Vec<ActionRequest>,
-    pub cancel: Vec<ActionId>,
-    pub supplement: Vec<(ActionId, SupplementContext)>,
-    pub inject: Vec<(ActionId, InboundMessage)>,
-}
-
-impl MindDecision {
-    pub fn drop() -> Self {
-        Self {
-            spawn: vec![],
-            cancel: vec![],
-            supplement: vec![],
-            inject: vec![],
-        }
-    }
-
-    pub fn spawn_one(request: ActionRequest) -> Self {
-        Self {
-            spawn: vec![request],
-            cancel: vec![],
-            supplement: vec![],
-            inject: vec![],
-        }
-    }
-
-    pub fn cancel_and_spawn(cancel: Vec<ActionId>, request: ActionRequest) -> Self {
-        Self {
-            spawn: vec![request],
-            cancel,
-            supplement: vec![],
-            inject: vec![],
-        }
-    }
-
-    pub fn inject_one(action_id: ActionId, message: InboundMessage) -> Self {
-        Self {
-            spawn: vec![],
-            cancel: vec![],
-            supplement: vec![],
-            inject: vec![(action_id, message)],
-        }
-    }
-}
-
-pub struct SupplementContext {
-    pub messages: Vec<InboundMessage>,
-    pub note: String,
 }

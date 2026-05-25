@@ -1,4 +1,4 @@
-use crate::identity::PersonId;
+use protocol::PersonId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]

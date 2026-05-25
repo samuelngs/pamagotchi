@@ -6,8 +6,8 @@ mod sqlite;
 mod store;
 mod thought;
 
-pub use conversation::{ConversationId, ConversationSummary, MessageRole, StoredMessage};
-pub use memory::{Memory, MemoryId, MemoryKind, MemorySource, MemoryUpdate};
+pub use conversation::{ConversationSummary, MessageRole, StoredMessage};
+pub use memory::{Memory, MemoryKind, MemorySource, MemoryUpdate};
 pub use query::{RecallQuery, TimeRange};
 pub use snapshot::ActorSnapshot;
 pub use sqlite::{SqliteConfig, SqliteStore};

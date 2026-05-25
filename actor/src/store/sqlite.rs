@@ -1,12 +1,13 @@
 use super::{
-    ActorSnapshot, ConversationId, ConversationSummary, Memory, MemoryId, MemoryKind,
+    ActorSnapshot, ConversationSummary, Memory, MemoryKind,
     MemorySource, MemoryUpdate, MessageRole, RecallQuery, StoredMessage, Store, Thought,
     ThoughtKind,
 };
 use crate::identity::{
-    Alias, ClaimEvidence, ClaimStatus, Group, GroupContext, GroupId, IdentityClaim, Person,
-    PersonId, Relation, SocialRelation,
+    Alias, ClaimEvidence, ClaimStatus, Group, GroupContext, IdentityClaim, Person,
+    Relation, SocialRelation,
 };
+use protocol::{ConversationId, GroupId, MemoryId, PersonId};
 use crate::personality::{Authority, BehaviorDirective, DirectiveScope, Label};
 use rusqlite::{params, Connection};
 use sqlite_vec::sqlite3_vec_init;
@@ -90,7 +91,7 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
 
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
-            platform_id TEXT,
+            gateway_id TEXT,
             person_id TEXT,
             group_id TEXT,
             summary TEXT,
@@ -144,10 +145,10 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
         CREATE TABLE IF NOT EXISTS aliases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             person_id TEXT NOT NULL,
-            platform_id TEXT NOT NULL,
+            gateway_id TEXT NOT NULL,
             external_id TEXT NOT NULL,
             display_name TEXT NOT NULL,
-            UNIQUE(platform_id, external_id)
+            UNIQUE(gateway_id, external_id)
         );
         CREATE INDEX IF NOT EXISTS idx_aliases_person ON aliases(person_id);
 
@@ -173,10 +174,10 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
         CREATE TABLE IF NOT EXISTS groups (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            platform_id TEXT NOT NULL,
+            gateway_id TEXT NOT NULL,
             external_id TEXT NOT NULL,
             context TEXT NOT NULL DEFAULT 'social',
-            UNIQUE(platform_id, external_id)
+            UNIQUE(gateway_id, external_id)
         );
 
         CREATE TABLE IF NOT EXISTS group_members (
@@ -573,7 +574,7 @@ impl Store for SqliteStore {
     async fn append_message(
         &self,
         conv: &ConversationId,
-        platform_id: Option<&str>,
+        gateway_id: Option<&str>,
         group: Option<&GroupId>,
         msg: &StoredMessage,
     ) -> anyhow::Result<()> {
@@ -583,15 +584,15 @@ impl Store for SqliteStore {
         let group_id = group.map(|g| &g.0);
 
         conn.execute(
-            "INSERT INTO conversations (id, platform_id, person_id, group_id, started_at, last_message_at, message_count)
+            "INSERT INTO conversations (id, gateway_id, person_id, group_id, started_at, last_message_at, message_count)
              VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)
              ON CONFLICT(id) DO UPDATE SET
                 last_message_at = ?5,
                 message_count = message_count + 1,
-                platform_id = COALESCE(conversations.platform_id, excluded.platform_id),
+                gateway_id = COALESCE(conversations.gateway_id, excluded.gateway_id),
                 person_id = COALESCE(conversations.person_id, excluded.person_id),
                 group_id = COALESCE(conversations.group_id, excluded.group_id)",
-            params![conv.0, platform_id, person_id, group_id, msg.timestamp],
+            params![conv.0, gateway_id, person_id, group_id, msg.timestamp],
         )?;
 
         let metadata_json = serde_json::to_string(&msg.metadata)?;
@@ -658,7 +659,7 @@ impl Store for SqliteStore {
     async fn list_conversations(&self) -> anyhow::Result<Vec<ConversationSummary>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT id, platform_id, person_id, group_id, summary, message_count, started_at, last_message_at
+            "SELECT id, gateway_id, person_id, group_id, summary, message_count, started_at, last_message_at
              FROM conversations ORDER BY last_message_at DESC",
         )?;
         let results = stmt
@@ -667,7 +668,7 @@ impl Store for SqliteStore {
                 let group_id: Option<String> = row.get("group_id")?;
                 Ok(ConversationSummary {
                     id: ConversationId(row.get("id")?),
-                    platform_id: row.get("platform_id")?,
+                    gateway_id: row.get("gateway_id")?,
                     person: person_id.map(PersonId),
                     group: group_id.map(GroupId),
                     summary: row.get("summary")?,
@@ -812,24 +813,24 @@ impl Store for SqliteStore {
     async fn add_alias(&self, person: &PersonId, alias: &Alias) -> anyhow::Result<()> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO aliases (person_id, platform_id, external_id, display_name)
+            "INSERT INTO aliases (person_id, gateway_id, external_id, display_name)
              VALUES (?1, ?2, ?3, ?4)",
-            params![person.0, alias.platform_id, alias.external_id, alias.display_name],
+            params![person.0, alias.gateway_id, alias.external_id, alias.display_name],
         )?;
         Ok(())
     }
 
     async fn resolve_alias(
         &self,
-        platform_id: &str,
+        gateway_id: &str,
         external_id: &str,
     ) -> anyhow::Result<Option<Person>> {
         let conn = self.lock()?;
         match conn.query_row(
             "SELECT p.id, p.name, p.bio, p.first_seen, p.last_seen
              FROM aliases a JOIN people p ON p.id = a.person_id
-             WHERE a.platform_id = ?1 AND a.external_id = ?2",
-            params![platform_id, external_id],
+             WHERE a.gateway_id = ?1 AND a.external_id = ?2",
+            params![gateway_id, external_id],
             read_person,
         ) {
             Ok(p) => Ok(Some(p)),
@@ -841,12 +842,12 @@ impl Store for SqliteStore {
     async fn get_aliases(&self, person: &PersonId) -> anyhow::Result<Vec<Alias>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT platform_id, external_id, display_name FROM aliases WHERE person_id = ?1",
+            "SELECT gateway_id, external_id, display_name FROM aliases WHERE person_id = ?1",
         )?;
         let results = stmt
             .query_map(params![person.0], |row| {
                 Ok(Alias {
-                    platform_id: row.get("platform_id")?,
+                    gateway_id: row.get("gateway_id")?,
                     external_id: row.get("external_id")?,
                     display_name: row.get("display_name")?,
                 })
@@ -1034,11 +1035,11 @@ impl Store for SqliteStore {
         let conn = self.lock()?;
         let tx = TxGuard::begin(&conn)?;
         conn.execute(
-            "INSERT INTO groups (id, name, platform_id, external_id, context) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO groups (id, name, gateway_id, external_id, context) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 group.id.0,
                 group.name,
-                group.platform_id,
+                group.gateway_id,
                 group.external_id,
                 group.context.as_str(),
             ],
@@ -1056,20 +1057,20 @@ impl Store for SqliteStore {
     async fn get_group(&self, id: &GroupId) -> anyhow::Result<Option<Group>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT id, name, platform_id, external_id, context FROM groups WHERE id = ?1",
+            "SELECT id, name, gateway_id, external_id, context FROM groups WHERE id = ?1",
             params![id.0],
             |row| {
                 let context_str: String = row.get("context")?;
                 Ok((
                     row.get::<_, String>("id")?,
                     row.get::<_, String>("name")?,
-                    row.get::<_, String>("platform_id")?,
+                    row.get::<_, String>("gateway_id")?,
                     row.get::<_, String>("external_id")?,
                     context_str,
                 ))
             },
         ) {
-            Ok((gid, name, platform_id, external_id, context)) => {
+            Ok((gid, name, gateway_id, external_id, context)) => {
                 let mut stmt = conn.prepare(
                     "SELECT person_id FROM group_members WHERE group_id = ?1",
                 )?;
@@ -1082,7 +1083,7 @@ impl Store for SqliteStore {
                 Ok(Some(Group {
                     id: GroupId(gid),
                     name,
-                    platform_id,
+                    gateway_id,
                     external_id,
                     context: GroupContext::parse(&context),
                     members,
@@ -1507,7 +1508,7 @@ mod tests {
         let store = test_store();
         store.add_person(&sample_person("p1", "Alice")).await.unwrap();
         store.add_alias(&PersonId("p1".into()), &Alias {
-            platform_id: "discord".into(),
+            gateway_id: "discord".into(),
             external_id: "discord-123".into(),
             display_name: "alice#1234".into(),
         }).await.unwrap();
@@ -1556,7 +1557,7 @@ mod tests {
         store.add_person(&sample_person("p2", "Alice Alt")).await.unwrap();
 
         store.add_alias(&PersonId("p2".into()), &Alias {
-            platform_id: "telegram".into(),
+            gateway_id: "telegram".into(),
             external_id: "tg-alice".into(),
             display_name: "alice_t".into(),
         }).await.unwrap();
@@ -1604,7 +1605,7 @@ mod tests {
         store.add_group(&Group {
             id: GroupId("g1".into()),
             name: "Family Chat".into(),
-            platform_id: "discord".into(),
+            gateway_id: "discord".into(),
             external_id: "discord-family".into(),
             context: GroupContext::Family,
             members: vec![PersonId("p1".into()), PersonId("p2".into())],

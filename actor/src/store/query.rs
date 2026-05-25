@@ -1,5 +1,5 @@
 use super::MemoryKind;
-use crate::identity::PersonId;
+use protocol::PersonId;
 
 pub struct RecallQuery {
     pub text: Option<String>,

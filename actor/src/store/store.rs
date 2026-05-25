@@ -1,10 +1,11 @@
 use super::{
-    ActorSnapshot, ConversationId, ConversationSummary, Memory, MemoryId, MemoryUpdate,
+    ActorSnapshot, ConversationSummary, Memory, MemoryUpdate,
     RecallQuery, StoredMessage, Thought,
 };
 use crate::identity::{
-    Alias, Group, GroupId, IdentityClaim, Person, PersonId, Relation, SocialRelation,
+    Alias, ClaimStatus, Group, IdentityClaim, Person, Relation, SocialRelation,
 };
+use protocol::{ConversationId, GroupId, MemoryId, PersonId};
 use crate::personality::{Authority, BehaviorDirective, Label};
 use async_trait::async_trait;
 
@@ -25,7 +26,7 @@ pub trait Store: Send + Sync {
     async fn append_message(
         &self,
         conv: &ConversationId,
-        platform_id: Option<&str>,
+        gateway_id: Option<&str>,
         group: Option<&GroupId>,
         msg: &StoredMessage,
     ) -> anyhow::Result<()>;
@@ -55,14 +56,14 @@ pub trait Store: Send + Sync {
 
     // Aliases
     async fn add_alias(&self, person: &PersonId, alias: &Alias) -> anyhow::Result<()>;
-    async fn resolve_alias(&self, platform_id: &str, external_id: &str) -> anyhow::Result<Option<Person>>;
+    async fn resolve_alias(&self, gateway_id: &str, external_id: &str) -> anyhow::Result<Option<Person>>;
     async fn get_aliases(&self, person: &PersonId) -> anyhow::Result<Vec<Alias>>;
     async fn merge_people(&self, keep: &PersonId, merge: &PersonId) -> anyhow::Result<()>;
 
     // Identity claims
     async fn create_claim(&self, claim: &IdentityClaim) -> anyhow::Result<()>;
     async fn get_pending_claims(&self) -> anyhow::Result<Vec<IdentityClaim>>;
-    async fn resolve_claim(&self, claim_id: &str, status: &crate::identity::ClaimStatus) -> anyhow::Result<()>;
+    async fn resolve_claim(&self, claim_id: &str, status: &ClaimStatus) -> anyhow::Result<()>;
 
     // Social graph
     async fn add_relation(&self, a: &PersonId, b: &PersonId, relation: &Relation) -> anyhow::Result<()>;

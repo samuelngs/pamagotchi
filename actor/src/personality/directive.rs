@@ -1,4 +1,4 @@
-use crate::identity::{GroupId, PersonId};
+use protocol::{GroupId, PersonId};
 use super::{Authority, Label};
 use serde::{Deserialize, Serialize};
 

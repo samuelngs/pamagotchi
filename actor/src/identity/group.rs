@@ -1,14 +1,11 @@
-use super::PersonId;
+use protocol::{GroupId, PersonId};
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct GroupId(pub String);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Group {
     pub id: GroupId,
     pub name: String,
-    pub platform_id: String,
+    pub gateway_id: String,
     pub external_id: String,
     pub context: GroupContext,
     pub members: Vec<PersonId>,

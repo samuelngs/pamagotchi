@@ -1,5 +1,4 @@
-use crate::identity::PersonId;
-use super::MemoryId;
+use protocol::{MemoryId, PersonId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -18,4 +18,3 @@ pub use relationship::{Authority, Label, Relationship};
 pub use state::{GrowthEvent, PersonalityState};
 pub use traits::CoreTraits;
 
-pub use crate::identity::PersonId;

@@ -1,5 +1,5 @@
 use super::action::{ActionId, ActionState, ActionStatus};
-use crate::store::ConversationId;
+use protocol::ConversationId;
 use std::collections::HashMap;
 
 pub(crate) struct ActionRegistry {

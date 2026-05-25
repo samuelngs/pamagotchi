@@ -1,7 +1,5 @@
+use protocol::PersonId;
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PersonId(pub String);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Person {
