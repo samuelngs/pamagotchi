@@ -1,0 +1,29 @@
+[package]
+name = "pamagotchid"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "pamagotchid"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pamagotchid"
+path = "src/main.rs"
+
+[dependencies]
+actor.workspace = true
+inference.workspace = true
+gateway.workspace = true
+protocol.workspace = true
+relay.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+rand.workspace = true
