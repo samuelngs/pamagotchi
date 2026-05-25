@@ -77,6 +77,10 @@ pub fn tools() -> Vec<Tool> {
                     "growth_note": {
                         "type": "string",
                         "description": "A brief note about personal growth from this interaction"
+                    },
+                    "comm_style": {
+                        "type": "string",
+                        "description": "Updated communication style profile for this person — tone, length, formality, language patterns, emoji use. Overwrites previous profile. Only set when you have a clear picture from multiple interactions."
                     }
                 }
             }),
@@ -165,6 +169,17 @@ pub async fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionStat
 
     if let Some(note) = args["growth_note"].as_str() {
         state.delta.growth_note = Some(note.to_string());
+    }
+
+    if let Some(style) = args["comm_style"].as_str() {
+        let person_id = ctx.messages.first().and_then(|m| m.person.clone());
+        if let Some(pid) = person_id {
+            if let Err(e) = ctx.store.update_comm_style(&pid, style).await {
+                info!(action = %ctx.action_id, %e, "failed to update comm_style");
+            } else {
+                info!(action = %ctx.action_id, person = %pid.0, "comm_style updated");
+            }
+        }
     }
 
     info!(action = %ctx.action_id, "reflection applied");

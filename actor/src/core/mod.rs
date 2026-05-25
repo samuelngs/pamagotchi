@@ -9,11 +9,9 @@ mod registry;
 mod session;
 mod tools;
 
-pub use action::{
-    ActionId, ActionKind, ActionRequest, ActionResult, ActionTiming,
-};
+pub use action::{Action, ActionId, ActionKind, Outcome};
 pub use actor::{Actor, ActorBuilder};
-pub use decision::{MindDecision, MindVerdict, SupplementContext};
+pub use decision::{MindDecision, MindVerdict};
 pub use event::{FiredIntent, WakeEvent};
 pub use handle::{SharedState, StateHandle};
 pub use mind::Mind;

@@ -1,128 +1,72 @@
-use super::super::action::{
-    ActionBrief, ActionContext, ActionId, ActionKind, ActionProgress,
-    ActionRequest, ActionState, ActionStatus, ActionTiming,
-};
+use super::super::action::ActionId;
 use super::super::decision::MindDecision;
 use super::super::event::WakeEvent;
-use protocol::InboundMessage;
 use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
 use super::Mind;
 use inference::{Reasoning, RouteContext};
-use std::sync::{Arc, RwLock};
-use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 impl Mind {
     pub(super) async fn execute_decision(&mut self, decision: MindDecision) {
-        for id in &decision.cancel {
-            if self.registry.cancel(id) {
-                info!(%id, "cancelled action");
+        match decision {
+            MindDecision::Drop => {}
+            MindDecision::Spawn(action) => {
+                let id = self.registry.schedule(action);
+                self.launch_action(&id).await;
             }
-        }
-
-        for (id, msg) in decision.inject {
-            if let Some(action) = self.registry.get(&id) {
-                if let Some(tx) = &action.inject_tx {
-                    match tx.try_send(msg) {
-                        Ok(()) => info!(%id, "injected message into running action"),
-                        Err(e) => warn!(%id, %e, "failed to inject message"),
-                    }
+            MindDecision::Inject(id, msg) => {
+                if !self.registry.inject(&id, msg) {
+                    warn!(%id, "failed to inject message");
                 }
             }
-        }
-
-        for request in decision.spawn {
-            self.spawn_action(request).await;
-        }
-
-        for (id, ctx) in &decision.supplement {
-            tracing::debug!(%id, note = %ctx.note, "supplementing action");
-        }
-    }
-
-    async fn spawn_action(&mut self, mut request: ActionRequest) {
-        let id = self.registry.next_id();
-        let depends_on = match &request.timing {
-            ActionTiming::Immediate => vec![],
-            ActionTiming::After(dep) => vec![dep.clone()],
-            ActionTiming::AfterAll(deps) => deps.clone(),
-        };
-
-        let is_pending = !depends_on.is_empty()
-            && !depends_on.iter().all(|d| {
-                self.registry
-                    .get(d)
-                    .map_or(true, |a| matches!(a.status, ActionStatus::Completed))
-            });
-
-        let status = if is_pending {
-            ActionStatus::Pending
-        } else {
-            ActionStatus::Running
-        };
-
-        let kind = request.kind.clone();
-        let task_desc = request.task.clone();
-        let conversation = request.conversation.clone();
-        let priority = request.priority;
-
-        let progress = Arc::new(RwLock::new(ActionProgress::new()));
-
-        let state = ActionState {
-            id: id.clone(),
-            kind: kind.clone(),
-            task: task_desc.clone(),
-            conversation,
-            priority,
-            status,
-            has_responded: false,
-            depends_on,
-            handle: None,
-            progress: progress.clone(),
-            inject_tx: None,
-        };
-
-        self.registry.insert(state);
-
-        if !is_pending {
-            if request.context.is_none() {
-                request.context = Some(self.gather_context(None));
+            MindDecision::CancelAndSpawn(cancel_ids, action) => {
+                for cid in &cancel_ids {
+                    if self.registry.cancel(cid) {
+                        info!(%cid, "cancelled action");
+                    }
+                }
+                let id = self.registry.schedule(action);
+                self.launch_action(&id).await;
             }
-            self.launch_action(id, kind, task_desc, request).await;
-        } else {
-            info!(%id, task = %task_desc, "queued pending action");
         }
     }
 
-    async fn launch_action(
-        &mut self,
-        id: ActionId,
-        kind: ActionKind,
-        task_desc: String,
-        request: ActionRequest,
-    ) {
-        let (inject_tx, inject_rx) = mpsc::channel::<InboundMessage>(32);
+    pub(super) async fn launch_action(&mut self, id: &ActionId) {
+        let launch = match self.registry.launch(id) {
+            Some(l) => l,
+            None => return,
+        };
 
-        if let Some(action) = self.registry.get_mut(&id) {
-            action.inject_tx = Some(inject_tx);
-        }
+        let action = match self.registry.get(id) {
+            Some(a) => a,
+            None => return,
+        };
+
+        let kind = action.kind.clone();
+        let task_desc = action.task.clone();
+        let conversation = action.conversation.clone();
+        let authority = action.authority.clone();
+        let style_directive = action.style_directive.clone();
+        let cancelled_note = action.cancelled_note.clone();
+        let action_id = id.clone();
+
+        let concurrent_summaries: Vec<(String, String, String)> = self
+            .registry
+            .running()
+            .iter()
+            .filter(|a| a.id != action_id)
+            .map(|a| (a.id.0.clone(), format!("{:?}", a.kind), a.task.clone()))
+            .collect();
 
         let event_tx = self.event_tx.clone();
-        let action_id = id.clone();
         let state_handle = self.state.clone();
         let store = self.store.clone();
         let router = self.router.clone();
         let gateway = self.gateway.clone();
         let max_turns = self.max_turns;
-        let progress = self
-            .registry
-            .get(&id)
-            .map(|a| a.progress.clone())
-            .unwrap_or_else(|| Arc::new(RwLock::new(ActionProgress::new())));
 
         let endpoints = self.router.resolve_chain(&RouteContext::Action(Reasoning::Standard));
-        let context = request.context;
 
         let handle = tokio::spawn(async move {
             info!(%action_id, kind = ?kind, task = %task_desc, "action started");
@@ -130,43 +74,44 @@ impl Mind {
             let ctx = SessionContext {
                 action_id: action_id.clone(),
                 kind: SessionKind::Action(kind),
-                messages: request.messages,
-                conversation: request.conversation,
-                authority: request.authority,
+                messages: launch.messages,
+                conversation,
+                authority,
+                style_directive,
+                cancelled_note,
+                concurrent_summaries,
                 state: state_handle,
                 store,
                 router,
                 endpoints,
-                context,
-                inject_rx,
-                progress,
+                inject_rx: launch.inject_rx,
+                progress: launch.progress,
                 max_turns,
                 gateway,
                 session_start: std::time::Instant::now(),
             };
 
-            let result = match session::run_session(ctx).await {
-                SessionResult::Action(result) => result,
+            let outcome = match session::run_session(ctx).await {
+                SessionResult::Action(outcome) => outcome,
                 SessionResult::Mind(_) => {
                     warn!(%action_id, "action session returned mind result");
-                    super::super::action::ActionResult {
+                    super::super::action::Outcome {
+                        responded: false,
                         delta: None,
-                        thoughts: vec![],
-                        memories_formed: vec![],
-                        unprocessed_messages: vec![],
-                        injected_messages: vec![],
+                        pending_messages: vec![],
+                        had_injections: false,
                     }
                 }
             };
 
-            if result.delta.is_some() {
+            if outcome.delta.is_some() {
                 info!(%action_id, "action produced personality delta");
             }
 
             event_tx
                 .send(WakeEvent::ActionCompleted {
                     action_id: action_id.clone(),
-                    result,
+                    outcome,
                 })
                 .await
                 .ok();
@@ -174,27 +119,6 @@ impl Mind {
             info!(%action_id, "action completed");
         });
 
-        if let Some(action) = self.registry.get_mut(&id) {
-            action.handle = Some(handle);
-        }
-    }
-
-    pub(super) fn gather_context(&self, cancelled_note: Option<String>) -> ActionContext {
-        let concurrent_actions: Vec<ActionBrief> = self
-            .registry
-            .running_actions()
-            .iter()
-            .map(|a| ActionBrief {
-                id: a.id.clone(),
-                kind: a.kind.clone(),
-                task: a.task.clone(),
-                conversation: a.conversation.clone(),
-            })
-            .collect();
-
-        ActionContext {
-            cancelled_note,
-            concurrent_actions,
-        }
+        self.registry.set_handle(id, handle);
     }
 }

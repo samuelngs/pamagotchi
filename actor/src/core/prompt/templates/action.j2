@@ -42,6 +42,11 @@ Current mood: {{ mood }}, {{ energy }}.
 {% endif %}
 
 {% endif %}
+{% if style %}
+## How they talk
+{{ style }}
+
+{% endif %}
 {% if directives %}
 ## Active directives
 {% for d in directives %}

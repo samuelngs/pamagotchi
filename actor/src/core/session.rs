@@ -1,4 +1,4 @@
-use super::action::ActionResult;
+use super::action::Outcome;
 use super::decision::MindVerdict;
 use super::prompt;
 use super::tools::{
@@ -20,7 +20,7 @@ pub struct OutboundMessage {
 
 pub enum SessionResult {
     Mind(MindVerdict),
-    Action(ActionResult),
+    Action(Outcome),
 }
 
 pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
@@ -111,7 +111,8 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
 async fn build_prompt(ctx: &SessionContext) -> anyhow::Result<String> {
     prompt::build_system_prompt(
         &ctx.state, &ctx.store, &ctx.kind, &ctx.messages,
-        ctx.conversation.as_ref(), ctx.context.as_ref(), &ctx.authority,
+        ctx.conversation.as_ref(), ctx,
+        &ctx.authority,
     ).await
 }
 
@@ -239,7 +240,7 @@ async fn cleanup_composing(
 ) {
     match &ctx.kind {
         SessionKind::Mind => {
-            if !matches!(verdict, Some(MindVerdict::Respond)) {
+            if !matches!(verdict, Some(MindVerdict::Respond { .. })) {
                 if let Some((pid, eid)) = target { ctx.gateway.release_composing(pid, eid).await; }
             }
         }
@@ -253,14 +254,15 @@ async fn cleanup_composing(
 
 fn build_result(mut ctx: SessionContext, state: SessionState, verdict: Option<MindVerdict>) -> SessionResult {
     match ctx.kind {
-        SessionKind::Mind => SessionResult::Mind(verdict.unwrap_or(MindVerdict::Respond)),
+        SessionKind::Mind => SessionResult::Mind(verdict.unwrap_or(MindVerdict::Respond { style_directive: None })),
         SessionKind::Action(_) => {
-            let mut unprocessed = vec![];
-            while let Ok(msg) = ctx.inject_rx.try_recv() { unprocessed.push(msg); }
-            SessionResult::Action(ActionResult {
+            let mut pending = vec![];
+            while let Ok(msg) = ctx.inject_rx.try_recv() { pending.push(msg); }
+            SessionResult::Action(Outcome {
+                responded: state.responded,
                 delta: if tools::has_changes(&state.delta) { Some(state.delta) } else { None },
-                thoughts: state.thoughts, memories_formed: state.memories_formed,
-                unprocessed_messages: unprocessed, injected_messages: state.injected_messages,
+                pending_messages: pending,
+                had_injections: !state.injected_messages.is_empty(),
             })
         }
     }
@@ -268,10 +270,12 @@ fn build_result(mut ctx: SessionContext, state: SessionState, verdict: Option<Mi
 
 fn default_result(kind: &SessionKind) -> SessionResult {
     match kind {
-        SessionKind::Mind => SessionResult::Mind(MindVerdict::Respond),
-        SessionKind::Action(_) => SessionResult::Action(ActionResult {
-            delta: None, thoughts: vec![], memories_formed: vec![],
-            unprocessed_messages: vec![], injected_messages: vec![],
+        SessionKind::Mind => SessionResult::Mind(MindVerdict::Respond { style_directive: None }),
+        SessionKind::Action(_) => SessionResult::Action(Outcome {
+            responded: false,
+            delta: None,
+            pending_messages: vec![],
+            had_injections: false,
         }),
     }
 }
@@ -291,14 +295,12 @@ fn log_turn_start(ctx: &SessionContext, turn: usize, msgs: &[Message]) {
 }
 
 fn update_progress(
-    progress: &std::sync::Arc<std::sync::RwLock<super::action::ActionProgress>>,
+    progress: &std::sync::Arc<std::sync::RwLock<super::action::RunningState>>,
     state: &SessionState, tool_name: &str,
 ) {
     if let Ok(mut p) = progress.write() {
         p.responded = state.responded;
-        p.thoughts_count = state.thoughts.len();
-        p.memories_formed = state.memories_formed.len();
-        p.last_activity = tool_name.to_string();
+        p.last_tool = tool_name.to_string();
     }
 }
 

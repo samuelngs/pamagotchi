@@ -138,6 +138,7 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
             id TEXT PRIMARY KEY,
             name TEXT,
             summary TEXT,
+            comm_style TEXT,
             first_seen INTEGER NOT NULL,
             last_seen INTEGER NOT NULL
         );
@@ -804,9 +805,9 @@ impl Store for SqliteStore {
     async fn add_person(&self, person: &Person) -> anyhow::Result<PersonId> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO people (id, name, summary, first_seen, last_seen)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![person.id.0, person.name, person.summary, person.first_seen, person.last_seen],
+            "INSERT INTO people (id, name, summary, comm_style, first_seen, last_seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![person.id.0, person.name, person.summary, person.comm_style, person.first_seen, person.last_seen],
         )?;
         Ok(person.id.clone())
     }
@@ -814,7 +815,7 @@ impl Store for SqliteStore {
     async fn get_person(&self, id: &PersonId) -> anyhow::Result<Option<Person>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT id, name, summary, first_seen, last_seen FROM people WHERE id = ?1",
+            "SELECT id, name, summary, comm_style, first_seen, last_seen FROM people WHERE id = ?1",
             params![id.0],
             read_person,
         ) {
@@ -848,6 +849,15 @@ impl Store for SqliteStore {
         Ok(())
     }
 
+    async fn update_comm_style(&self, id: &PersonId, style: &str) -> anyhow::Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE people SET comm_style = ?1 WHERE id = ?2",
+            params![style, id.0],
+        )?;
+        Ok(())
+    }
+
     async fn touch_person(&self, id: &PersonId) -> anyhow::Result<()> {
         let conn = self.lock()?;
         conn.execute(
@@ -860,7 +870,7 @@ impl Store for SqliteStore {
     async fn list_people(&self) -> anyhow::Result<Vec<Person>> {
         let conn = self.lock()?;
         let mut stmt =
-            conn.prepare("SELECT id, name, summary, first_seen, last_seen FROM people ORDER BY name")?;
+            conn.prepare("SELECT id, name, summary, comm_style, first_seen, last_seen FROM people ORDER BY name")?;
         let results = stmt
             .query_map([], read_person)?
             .filter_map(|r| r.ok())
@@ -887,7 +897,7 @@ impl Store for SqliteStore {
     ) -> anyhow::Result<Option<Person>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT p.id, p.name, p.summary, p.first_seen, p.last_seen
+            "SELECT p.id, p.name, p.summary, p.comm_style, p.first_seen, p.last_seen
              FROM identities i JOIN people p ON p.id = i.person_id
              WHERE i.gateway_id = ?1 AND i.external_id = ?2",
             params![gateway_id, external_id],
@@ -1303,6 +1313,7 @@ fn read_person(row: &rusqlite::Row) -> rusqlite::Result<Person> {
         id: PersonId(row.get("id")?),
         name: row.get::<_, Option<String>>("name")?,
         summary: row.get::<_, Option<String>>("summary")?,
+        comm_style: row.get::<_, Option<String>>("comm_style")?,
         first_seen: row.get("first_seen")?,
         last_seen: row.get("last_seen")?,
     })
@@ -1538,6 +1549,7 @@ mod tests {
             id: PersonId(id.into()),
             name: Some(name.into()),
             summary: None,
+            comm_style: None,
             first_seen: 1000,
             last_seen: 1000,
         }

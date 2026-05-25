@@ -1,7 +1,5 @@
 use crate::state::{Authority, Delta};
-use crate::store::Thought;
-use protocol::{ConversationId, InboundMessage, MemoryId};
-use serde::{Deserialize, Serialize};
+use protocol::{ConversationId, InboundMessage};
 use std::fmt;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -22,7 +20,7 @@ impl fmt::Display for ActionId {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum ActionKind {
     Respond,
     Research,
@@ -51,127 +49,152 @@ impl ActionKind {
             Self::Ruminate => 10,
         }
     }
+
+    pub fn expects_response(&self) -> bool {
+        matches!(self, Self::Respond | Self::Outreach)
+    }
 }
 
-pub enum ActionTiming {
-    Immediate,
-    After(ActionId),
-    AfterAll(Vec<ActionId>),
-}
-
-pub struct ActionContext {
-    pub cancelled_note: Option<String>,
-    pub concurrent_actions: Vec<ActionBrief>,
-}
-
-pub struct ActionBrief {
+pub struct Action {
     pub id: ActionId,
     pub kind: ActionKind,
     pub task: String,
     pub conversation: Option<ConversationId>,
-}
-
-pub struct ActionRequest {
-    pub kind: ActionKind,
-    pub task: String,
-    pub conversation: Option<ConversationId>,
     pub priority: u8,
-    pub messages: Vec<InboundMessage>,
-    pub timing: ActionTiming,
-    pub context: Option<ActionContext>,
     pub authority: Authority,
+    pub style_directive: Option<String>,
+    pub cancelled_note: Option<String>,
+    pub source_messages: Vec<InboundMessage>,
+    pub phase: Phase,
 }
 
-impl ActionRequest {
+pub enum Phase {
+    Queued {
+        blocked_by: Vec<ActionId>,
+    },
+    Running {
+        handle: Option<JoinHandle<()>>,
+        inject_tx: mpsc::Sender<InboundMessage>,
+        progress: Arc<RwLock<RunningState>>,
+    },
+    Done {
+        outcome: Outcome,
+    },
+}
+
+pub struct RunningState {
+    pub responded: bool,
+    pub last_tool: String,
+}
+
+impl RunningState {
+    pub fn new() -> Self {
+        Self {
+            responded: false,
+            last_tool: String::new(),
+        }
+    }
+}
+
+pub struct Outcome {
+    pub responded: bool,
+    pub delta: Option<Delta>,
+    pub pending_messages: Vec<InboundMessage>,
+    pub had_injections: bool,
+}
+
+pub struct LaunchContext {
+    pub messages: Vec<InboundMessage>,
+    pub inject_rx: mpsc::Receiver<InboundMessage>,
+    pub progress: Arc<RwLock<RunningState>>,
+}
+
+pub enum FollowUp {
+    Requeue(Vec<InboundMessage>),
+    ReemitPending(Vec<InboundMessage>),
+}
+
+impl Action {
     pub fn respond(
         messages: Vec<InboundMessage>,
         conversation: ConversationId,
         authority: Authority,
+        style_directive: Option<String>,
     ) -> Self {
         Self {
+            id: ActionId::new(),
             kind: ActionKind::Respond,
             task: "Respond to message".into(),
             conversation: Some(conversation),
             priority: ActionKind::Respond.default_priority(),
-            messages,
-            timing: ActionTiming::Immediate,
-            context: None,
             authority,
+            style_directive,
+            cancelled_note: None,
+            source_messages: messages,
+            phase: Phase::Queued { blocked_by: vec![] },
         }
     }
 
     pub fn ruminate() -> Self {
         Self {
+            id: ActionId::new(),
             kind: ActionKind::Ruminate,
             task: "Idle rumination".into(),
             conversation: None,
             priority: ActionKind::Ruminate.default_priority(),
-            messages: vec![],
-            timing: ActionTiming::Immediate,
-            context: None,
             authority: Authority::Default,
+            style_directive: None,
+            cancelled_note: None,
+            source_messages: vec![],
+            phase: Phase::Queued { blocked_by: vec![] },
         }
     }
 
     pub fn consolidate() -> Self {
         Self {
+            id: ActionId::new(),
             kind: ActionKind::Consolidate,
             task: "Memory consolidation".into(),
             conversation: None,
             priority: ActionKind::Consolidate.default_priority(),
-            messages: vec![],
-            timing: ActionTiming::Immediate,
-            context: None,
             authority: Authority::Default,
+            style_directive: None,
+            cancelled_note: None,
+            source_messages: vec![],
+            phase: Phase::Queued { blocked_by: vec![] },
         }
     }
-}
 
-pub struct ActionProgress {
-    pub responded: bool,
-    pub thoughts_count: usize,
-    pub memories_formed: usize,
-    pub last_activity: String,
-}
-
-impl ActionProgress {
-    pub fn new() -> Self {
+    pub fn outreach(task: String, conversation: Option<ConversationId>, authority: Authority) -> Self {
         Self {
-            responded: false,
-            thoughts_count: 0,
-            memories_formed: 0,
-            last_activity: String::new(),
+            id: ActionId::new(),
+            kind: ActionKind::Outreach,
+            task,
+            conversation,
+            priority: ActionKind::Outreach.default_priority(),
+            authority,
+            style_directive: None,
+            cancelled_note: None,
+            source_messages: vec![],
+            phase: Phase::Queued { blocked_by: vec![] },
         }
     }
-}
 
-pub struct ActionResult {
-    pub delta: Option<Delta>,
-    pub thoughts: Vec<Thought>,
-    pub memories_formed: Vec<MemoryId>,
-    pub unprocessed_messages: Vec<InboundMessage>,
-    pub injected_messages: Vec<InboundMessage>,
-}
+    pub fn is_running(&self) -> bool {
+        matches!(self.phase, Phase::Running { .. })
+    }
 
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum ActionStatus {
-    Pending,
-    Running,
-    Completed,
-    Cancelled,
-}
+    pub fn is_queued(&self) -> bool {
+        matches!(self.phase, Phase::Queued { .. })
+    }
 
-pub struct ActionState {
-    pub id: ActionId,
-    pub kind: ActionKind,
-    pub task: String,
-    pub conversation: Option<ConversationId>,
-    pub priority: u8,
-    pub status: ActionStatus,
-    pub has_responded: bool,
-    pub depends_on: Vec<ActionId>,
-    pub handle: Option<JoinHandle<()>>,
-    pub progress: Arc<RwLock<ActionProgress>>,
-    pub inject_tx: Option<mpsc::Sender<InboundMessage>>,
+    pub fn responded(&self) -> bool {
+        match &self.phase {
+            Phase::Running { progress, .. } => {
+                progress.read().map_or(false, |p| p.responded)
+            }
+            Phase::Done { outcome } => outcome.responded,
+            _ => false,
+        }
+    }
 }

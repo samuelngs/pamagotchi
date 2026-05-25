@@ -6,6 +6,7 @@ pub struct Person {
     pub id: PersonId,
     pub name: Option<String>,
     pub summary: Option<String>,
+    pub comm_style: Option<String>,
     pub first_seen: i64,
     pub last_seen: i64,
 }

@@ -1,5 +1,5 @@
 use protocol::{ConversationId, InboundMessage, PersonId};
-use super::action::{ActionId, ActionResult};
+use super::action::{ActionId, Outcome};
 
 #[derive(Clone, Debug)]
 pub struct FiredIntent {
@@ -20,7 +20,7 @@ pub enum WakeEvent {
     },
     ActionCompleted {
         action_id: ActionId,
-        result: ActionResult,
+        outcome: Outcome,
     },
     Shutdown,
 }

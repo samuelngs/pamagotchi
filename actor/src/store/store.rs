@@ -51,6 +51,7 @@ pub trait Store: Send + Sync {
     async fn add_person(&self, person: &Person) -> anyhow::Result<PersonId>;
     async fn get_person(&self, id: &PersonId) -> anyhow::Result<Option<Person>>;
     async fn update_person(&self, id: &PersonId, name: Option<&str>, summary: Option<&str>) -> anyhow::Result<()>;
+    async fn update_comm_style(&self, id: &PersonId, style: &str) -> anyhow::Result<()>;
     async fn touch_person(&self, id: &PersonId) -> anyhow::Result<()>;
     async fn list_people(&self) -> anyhow::Result<Vec<Person>>;
 

@@ -97,6 +97,7 @@ pub async fn get(args: &Value, ctx: &SessionContext) -> String {
                 "ref": person.id.0,
                 "name": person.name,
                 "summary": person.summary,
+                "comm_style": person.comm_style,
                 "first_seen": first_seen,
                 "last_seen": last_seen,
             }).to_string()

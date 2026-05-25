@@ -1,9 +1,9 @@
 mod context;
 
 use context::*;
-use super::action::{ActionContext, ActionKind};
+use super::action::ActionKind;
 use super::handle::StateHandle;
-use super::tools::SessionKind;
+use super::tools::{SessionContext, SessionKind};
 use crate::state::{ActorState, Authority};
 use crate::store::{MemoryKind, RecallQuery, Store};
 use protocol::{ConversationId, InboundMessage};
@@ -24,14 +24,14 @@ pub async fn build_system_prompt(
     kind: &SessionKind,
     messages: &[InboundMessage],
     conversation: Option<&ConversationId>,
-    action_ctx: Option<&ActionContext>,
+    session_ctx: &SessionContext,
     authority: &Authority,
 ) -> anyhow::Result<String> {
     let env = make_env();
     match kind {
-        SessionKind::Mind => build_mind(&env, state, store, messages, action_ctx).await,
+        SessionKind::Mind => build_mind(&env, state, store, messages, &session_ctx.concurrent_summaries).await,
         SessionKind::Action(action_kind) => {
-            build_action(&env, state, store, action_kind, messages, conversation, action_ctx, authority).await
+            build_action(&env, state, store, action_kind, messages, conversation, session_ctx, authority).await
         }
     }
 }
@@ -41,12 +41,19 @@ async fn build_mind(
     state: &StateHandle,
     store: &Arc<dyn Store>,
     messages: &[InboundMessage],
-    action_ctx: Option<&ActionContext>,
+    concurrent_summaries: &[(String, String, String)],
 ) -> anyhow::Result<String> {
     let identity = recall_identity_name(store).await;
     let now = format_now();
     let person = resolve_person_for_mind(state, store, messages).await;
-    let actions = extract_actions(action_ctx);
+    let actions: Vec<ActionBriefCtx> = concurrent_summaries
+        .iter()
+        .map(|(id, kind, task)| ActionBriefCtx {
+            id: id.clone(),
+            kind: kind.clone(),
+            task: task.clone(),
+        })
+        .collect();
     let thoughts = fetch_thoughts(store).await;
 
     let ctx = MindContext { identity, now, person, actions, thoughts };
@@ -61,7 +68,7 @@ async fn build_action(
     kind: &ActionKind,
     messages: &[InboundMessage],
     conversation: Option<&ConversationId>,
-    action_ctx: Option<&ActionContext>,
+    session_ctx: &SessionContext,
     authority: &Authority,
 ) -> anyhow::Result<String> {
     let actor = state.read_state().clone();
@@ -117,16 +124,18 @@ async fn build_action(
     let person_id = messages.first().and_then(|m| m.person.as_ref());
     let now_unix = now_ts.timestamp();
 
-    let relationship = if let Some(pid) = person_id {
+    let style_directive = session_ctx.style_directive.clone();
+
+    let (relationship, comm_style) = if let Some(pid) = person_id {
         let info = resolve_person_info(store, pid).await;
-        actor.bonds.get(pid).map(|rel| {
+        let rel_ctx = actor.bonds.get(pid).map(|rel| {
             let tone = if rel.emotional_valence > 0.3 { "warm" }
                 else if rel.emotional_valence < -0.3 { "strained" }
                 else { "neutral" };
             RelationshipCtx {
                 ref_id: pid.0.clone(),
-                name: info.name,
-                summary: info.summary,
+                name: info.name.clone(),
+                summary: info.summary.clone(),
                 trust: pct(rel.trust),
                 familiarity: pct(rel.familiarity),
                 interactions: rel.interaction_count,
@@ -134,9 +143,16 @@ async fn build_action(
                 last_seen: info.last_seen.map(|ts| relative_duration(ts, now_unix)),
                 first_met: info.first_seen.map(|ts| relative_duration(ts, now_unix)),
             }
-        })
+        });
+        let interaction_count = actor.bonds.get(pid).map_or(0, |r| r.interaction_count);
+        let style = if interaction_count >= 10 && info.comm_style.is_some() {
+            info.comm_style
+        } else {
+            style_directive
+        };
+        (rel_ctx, style)
     } else {
-        None
+        (None, style_directive)
     };
 
     let directives = if let Some(pid) = person_id {
@@ -146,8 +162,16 @@ async fn build_action(
     };
 
     let thoughts = fetch_thoughts(store).await;
-    let cancelled_note = action_ctx.and_then(|c| c.cancelled_note.clone());
-    let concurrent_actions = extract_actions(action_ctx);
+    let cancelled_note = session_ctx.cancelled_note.clone();
+    let concurrent_actions: Vec<ActionBriefCtx> = session_ctx
+        .concurrent_summaries
+        .iter()
+        .map(|(id, kind, task)| ActionBriefCtx {
+            id: id.clone(),
+            kind: kind.clone(),
+            task: task.clone(),
+        })
+        .collect();
 
     let ctx = ActionPromptContext {
         now,
@@ -163,6 +187,7 @@ async fn build_action(
         thoughts,
         cancelled_note,
         concurrent_actions,
+        style: comm_style,
         authority: authority.as_str().to_string(),
         kind: kind.as_str().to_string(),
     };
@@ -231,6 +256,7 @@ async fn resolve_person_for_mind(state: &StateHandle, store: &Arc<dyn Store>, me
 struct PersonInfo {
     name: Option<String>,
     summary: Option<String>,
+    comm_style: Option<String>,
     first_seen: Option<i64>,
     last_seen: Option<i64>,
 }
@@ -240,21 +266,12 @@ async fn resolve_person_info(store: &Arc<dyn Store>, person_id: &protocol::Perso
         Ok(Some(p)) => PersonInfo {
             name: p.name,
             summary: p.summary,
+            comm_style: p.comm_style,
             first_seen: Some(p.first_seen),
             last_seen: Some(p.last_seen),
         },
-        _ => PersonInfo { name: None, summary: None, first_seen: None, last_seen: None },
+        _ => PersonInfo { name: None, summary: None, comm_style: None, first_seen: None, last_seen: None },
     }
-}
-
-fn extract_actions(action_ctx: Option<&ActionContext>) -> Vec<ActionBriefCtx> {
-    action_ctx.map_or(vec![], |ctx| {
-        ctx.concurrent_actions.iter().map(|a| ActionBriefCtx {
-            id: a.id.0.clone(),
-            kind: format!("{:?}", a.kind),
-            task: a.task.clone(),
-        }).collect()
-    })
 }
 
 async fn load_directives(

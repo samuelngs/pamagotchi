@@ -1,9 +1,8 @@
 mod evaluate;
-mod event;
 mod respond;
 mod spawn;
 
-use super::action::ActionId;
+use super::action::{ActionId, FollowUp};
 use super::event::WakeEvent;
 use super::registry::ActionRegistry;
 use super::handle::StateHandle;
@@ -59,18 +58,21 @@ impl Mind {
                     self.shutdown().await;
                     break;
                 }
-                Some(WakeEvent::ActionCompleted { action_id, result }) => {
-                    self.registry.mark_completed(&action_id);
-                    self.handle_action_completed(&action_id, &result).await;
-                    let event = WakeEvent::ActionCompleted { action_id, result };
-                    let verdict = self.evaluate(&event).await;
-                    let decision = self.build_decision(verdict, &event);
-                    self.execute_decision(decision).await;
-                    self.registry.gc();
+                Some(WakeEvent::ActionCompleted { action_id, outcome }) => {
+                    self.handle_completed(&action_id, outcome).await;
                 }
                 Some(mut event) => {
                     if let WakeEvent::Message(ref mut msg) = event {
                         self.resolve_person(msg).await;
+                    }
+                    if let WakeEvent::Message(ref msg) = event {
+                        if let Some(target) = self.registry.unreplied_in(&msg.conversation) {
+                            let target_id = target.id.clone();
+                            if self.registry.inject(&target_id, msg.clone()) {
+                                info!(%target_id, "injected message into running action");
+                                continue;
+                            }
+                        }
                     }
                     let verdict = self.evaluate(&event).await;
                     let decision = self.build_decision(verdict, &event);
@@ -85,6 +87,44 @@ impl Mind {
             }
         }
         info!("mind stopped");
+    }
+
+    async fn handle_completed(&mut self, action_id: &ActionId, outcome: super::action::Outcome) {
+        self.registry.complete(action_id, outcome);
+
+        if let Some(action) = self.registry.get(action_id) {
+            if let super::action::Phase::Done { outcome } = &action.phase {
+                if let Some(ref delta) = outcome.delta {
+                    self.state.send_delta(delta.clone()).await;
+                    info!(%action_id, "forwarded personality delta");
+                }
+            }
+        }
+
+        let follow_ups = self.registry.follow_ups(action_id);
+        for fu in follow_ups {
+            match fu {
+                FollowUp::Requeue(msgs) => {
+                    for msg in msgs {
+                        info!(%action_id, "re-queuing source message after failed respond");
+                        self.event_tx.send(WakeEvent::Message(msg)).await.ok();
+                    }
+                }
+                FollowUp::ReemitPending(msgs) => {
+                    for msg in msgs {
+                        info!(%action_id, "re-emitting pending message");
+                        self.event_tx.send(WakeEvent::Message(msg)).await.ok();
+                    }
+                }
+            }
+        }
+
+        let ready = self.registry.ready();
+        for id in ready {
+            self.launch_action(&id).await;
+        }
+
+        self.registry.gc();
     }
 
     async fn resolve_person(&self, msg: &mut InboundMessage) {
@@ -151,6 +191,7 @@ impl Mind {
             id: id.clone(),
             name: None,
             summary: None,
+            comm_style: None,
             first_seen: now,
             last_seen: now,
         };
@@ -189,7 +230,7 @@ impl Mind {
         info!("mind shutting down, cancelling all actions");
         let running: Vec<ActionId> = self
             .registry
-            .running_actions()
+            .running()
             .iter()
             .map(|a| a.id.clone())
             .collect();

@@ -1,4 +1,4 @@
-use super::super::action::{ActionContext, ActionId, ActionKind, ActionProgress};
+use super::super::action::{ActionId, ActionKind, RunningState};
 use super::super::decision::MindVerdict;
 use super::super::handle::StateHandle;
 use crate::state::{Authority, Delta};
@@ -14,13 +14,15 @@ pub struct SessionContext {
     pub messages: Vec<InboundMessage>,
     pub conversation: Option<ConversationId>,
     pub authority: Authority,
+    pub style_directive: Option<String>,
+    pub cancelled_note: Option<String>,
+    pub concurrent_summaries: Vec<(String, String, String)>,
     pub state: StateHandle,
     pub store: Arc<dyn Store>,
     pub router: Arc<inference::InferenceRouter>,
     pub endpoints: Vec<inference::ResolvedInference>,
-    pub context: Option<ActionContext>,
     pub inject_rx: mpsc::Receiver<InboundMessage>,
-    pub progress: Arc<RwLock<ActionProgress>>,
+    pub progress: Arc<RwLock<RunningState>>,
     pub max_turns: usize,
     pub gateway: Arc<GatewayRouter>,
     pub session_start: std::time::Instant,
@@ -31,7 +33,6 @@ pub enum SessionKind {
     Action(ActionKind),
 }
 
-#[allow(dead_code)]
 pub struct SessionState {
     pub responded: bool,
     pub composing_released: bool,

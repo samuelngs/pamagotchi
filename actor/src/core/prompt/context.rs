@@ -35,6 +35,7 @@ pub struct ActionPromptContext {
     pub thoughts: Vec<ThoughtCtx>,
     pub cancelled_note: Option<String>,
     pub concurrent_actions: Vec<ActionBriefCtx>,
+    pub style: Option<String>,
     pub authority: String,
     pub kind: String,
 }

@@ -1,4 +1,4 @@
-use super::super::action::{ActionId, ActionProgress};
+use super::super::action::{ActionId, RunningState};
 use super::super::decision::{MindDecision, MindVerdict};
 use super::super::event::WakeEvent;
 use protocol::InboundMessage;
@@ -19,7 +19,7 @@ impl Mind {
             _ => vec![],
         };
 
-        let event_desc = super::event::describe(event);
+        let event_desc = describe(event);
 
         let eval_messages = if messages.is_empty() {
             vec![InboundMessage {
@@ -42,19 +42,28 @@ impl Mind {
 
         let endpoints = self.router.resolve_chain(&RouteContext::Mind);
 
+        let concurrent_summaries: Vec<(String, String, String)> = self
+            .registry
+            .running()
+            .iter()
+            .map(|a| (a.id.0.clone(), format!("{:?}", a.kind), a.task.clone()))
+            .collect();
+
         let ctx = SessionContext {
             action_id: ActionId::new(),
             kind: SessionKind::Mind,
             messages: eval_messages,
             conversation: None,
             authority: Authority::Default,
+            style_directive: None,
+            cancelled_note: None,
+            concurrent_summaries,
             state: self.state.clone(),
             store: self.store.clone(),
             router: self.router.clone(),
             endpoints,
-            context: Some(self.gather_context(None)),
             inject_rx,
-            progress: Arc::new(RwLock::new(ActionProgress::new())),
+            progress: Arc::new(RwLock::new(RunningState::new())),
             max_turns: 5,
             gateway: self.gateway.clone(),
             session_start: std::time::Instant::now(),
@@ -64,7 +73,7 @@ impl Mind {
             SessionResult::Mind(verdict) => verdict,
             SessionResult::Action(_) => {
                 warn!("mind session returned action result, defaulting to respond");
-                MindVerdict::Respond
+                MindVerdict::Respond { style_directive: None }
             }
         }
     }
@@ -72,12 +81,12 @@ impl Mind {
     pub(super) fn build_decision(&self, verdict: MindVerdict, event: &WakeEvent) -> MindDecision {
         if matches!(self.resolve_authority(event), Authority::Blocked) {
             tracing::info!("blocked person — dropping silently");
-            return MindDecision::drop();
+            return MindDecision::Drop;
         }
 
         match verdict {
-            MindVerdict::Drop | MindVerdict::Defer => MindDecision::drop(),
-            MindVerdict::Respond => self.respond_to(event),
+            MindVerdict::Drop | MindVerdict::Defer => MindDecision::Drop,
+            MindVerdict::Respond { style_directive } => self.respond_to(event, style_directive),
         }
     }
 
@@ -91,5 +100,47 @@ impl Mind {
         person
             .and_then(|p| actor.bonds.get(p))
             .map_or(Authority::Default, |r| r.authority.clone())
+    }
+}
+
+fn describe(event: &WakeEvent) -> String {
+    match event {
+        WakeEvent::Message(msg) => {
+            format!(
+                "New message in conversation {}:\n{}",
+                msg.conversation.0,
+                msg.display_content()
+            )
+        }
+        WakeEvent::IdleTick { elapsed_secs } => {
+            format!("Idle tick. {:.0} seconds since last activity.", elapsed_secs)
+        }
+        WakeEvent::IntentFired(intent) => {
+            let conv = intent
+                .conversation
+                .as_ref()
+                .map_or("none".to_string(), |c| c.0.clone());
+            format!(
+                "Scheduled intent fired: {} (conversation: {})",
+                intent.task, conv
+            )
+        }
+        WakeEvent::ActionCompleted { action_id, outcome } => {
+            let has_delta = outcome.delta.is_some();
+            format!(
+                "Action {} completed. responded={} personality_delta={}",
+                action_id, outcome.responded, has_delta
+            )
+        }
+        WakeEvent::TypingUpdate {
+            person, typing, ..
+        } => {
+            format!(
+                "{} {} typing.",
+                person.0,
+                if *typing { "started" } else { "stopped" }
+            )
+        }
+        WakeEvent::Shutdown => unreachable!(),
     }
 }
