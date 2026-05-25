@@ -2,9 +2,10 @@
 pub enum FocusId {
     Input,
     Quit,
+    Gateway,
 }
 
-const ORDER: &[FocusId] = &[FocusId::Input, FocusId::Quit];
+const ORDER: &[FocusId] = &[FocusId::Input, FocusId::Quit, FocusId::Gateway];
 
 pub struct FocusManager {
     index: usize,

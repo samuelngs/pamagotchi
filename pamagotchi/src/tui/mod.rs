@@ -100,6 +100,15 @@ async fn run_loop(
                     FocusId::Quit => match key.code {
                         KeyCode::Enter => break,
                         KeyCode::Up => app.focus.set(FocusId::Input),
+                        KeyCode::Left => app.focus.prev(),
+                        KeyCode::Right => app.focus.next(),
+                        _ => {}
+                    },
+                    FocusId::Gateway => match key.code {
+                        KeyCode::Enter => { /* TODO: open gateway manager */ }
+                        KeyCode::Up => app.focus.set(FocusId::Input),
+                        KeyCode::Left => app.focus.prev(),
+                        KeyCode::Right => app.focus.next(),
                         _ => {}
                     },
                 }

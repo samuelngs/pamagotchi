@@ -33,8 +33,7 @@ impl Button<'_> {
             .shortkey
             .as_ref()
             .map_or(0, |k| k.display_width() + 2);
-        let gap = if self.shortkey.is_some() { 1 } else { 0 };
-        1 + label_w + gap + key_w
+        1 + label_w + 1 + key_w
     }
 }
 

@@ -37,12 +37,20 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         frame.set_cursor_position(pos);
     }
 
-    frame.render_widget(
-        Button {
-            label: "quit",
-            shortkey: Some(ShortKey::Esc),
-            focused: app.focus.is(FocusId::Quit),
-        },
-        Rect::new(layout[2].x, layout[2].y, layout[2].width, 1),
-    );
+    let quit_btn = Button {
+        label: "quit",
+        shortkey: Some(ShortKey::Esc),
+        focused: app.focus.is(FocusId::Quit),
+    };
+    let quit_w = quit_btn.width();
+    frame.render_widget(quit_btn, Rect::new(layout[2].x, layout[2].y, quit_w, 1));
+
+    let gw_btn = Button {
+        label: "settings",
+        shortkey: None,
+        focused: app.focus.is(FocusId::Gateway),
+    };
+    let gw_x = layout[2].x + quit_w + 1;
+    let gw_w = gw_btn.width();
+    frame.render_widget(gw_btn, Rect::new(gw_x, layout[2].y, gw_w, 1));
 }
