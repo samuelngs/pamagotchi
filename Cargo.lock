@@ -2082,6 +2082,7 @@ version = "0.1.0"
 dependencies = [
  "actor",
  "anyhow",
+ "base64",
  "clap",
  "gateway",
  "inference",

@@ -34,11 +34,11 @@ impl MediaKind {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "image" => Some(Self::Image),
-            "video" => Some(Self::Video),
-            "audio" => Some(Self::Audio),
-            "sticker" => Some(Self::Sticker),
-            "file" => Some(Self::File),
+            "image" | "Image" => Some(Self::Image),
+            "video" | "Video" => Some(Self::Video),
+            "audio" | "Audio" => Some(Self::Audio),
+            "sticker" | "Sticker" => Some(Self::Sticker),
+            "file" | "File" => Some(Self::File),
             _ => None,
         }
     }
@@ -72,5 +72,13 @@ mod tests {
 
         assert_eq!(attachment.kind, MediaKind::Image);
         assert_eq!(attachment.asset_id, None);
+    }
+
+    #[test]
+    fn media_kind_parse_accepts_wire_and_human_names() {
+        assert_eq!(MediaKind::parse("image"), Some(MediaKind::Image));
+        assert_eq!(MediaKind::parse("Image"), Some(MediaKind::Image));
+        assert_eq!(MediaKind::parse("file"), Some(MediaKind::File));
+        assert_eq!(MediaKind::parse("File"), Some(MediaKind::File));
     }
 }

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::{MediaAssetId, MediaKind};
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GatewayConnectionState {
     NotConfigured,
@@ -74,6 +76,21 @@ pub enum GatewayVarKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaAssetView {
+    pub id: MediaAssetId,
+    pub kind: MediaKind,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+
+    pub size: u64,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubscriptionTopic {
     Chat,
     Gateways,
@@ -87,6 +104,15 @@ pub enum ClientRequest {
     },
     SendChatMessage {
         content: String,
+    },
+    CreateMediaAsset {
+        request_id: String,
+        kind: String,
+        data_base64: String,
+        #[serde(default)]
+        mime: Option<String>,
+        #[serde(default)]
+        filename: Option<String>,
     },
     ListGateways {
         request_id: String,
@@ -149,6 +175,10 @@ pub enum ServerEvent {
     GatewaySetupInstructionsChanged {
         id: String,
         setup: Option<GatewaySetupInstructions>,
+    },
+    MediaAssetCreated {
+        request_id: String,
+        asset: MediaAssetView,
     },
     RequestOk {
         request_id: String,
@@ -277,5 +307,28 @@ mod tests {
         assert_eq!(json["gateways"][0]["vars"][0]["kind"], "String");
         assert_eq!(json["gateways"][0]["vars"][0]["required"], true);
         assert_eq!(json["gateways"][0]["vars"][0]["secret"], true);
+    }
+
+    #[test]
+    fn serializes_media_asset_created_event() {
+        let event = ServerEvent::MediaAssetCreated {
+            request_id: "req-media".into(),
+            asset: MediaAssetView {
+                id: MediaAssetId("media-1".into()),
+                kind: MediaKind::Image,
+                mime: Some("image/png".into()),
+                filename: Some("image.png".into()),
+                size: 3,
+                sha256: "abc".into(),
+            },
+        };
+
+        let json = serde_json::to_value(event).unwrap();
+
+        assert_eq!(json["type"], "MediaAssetCreated");
+        assert_eq!(json["request_id"], "req-media");
+        assert_eq!(json["asset"]["id"], "media-1");
+        assert_eq!(json["asset"]["kind"], "Image");
+        assert_eq!(json["asset"]["mime"], "image/png");
     }
 }

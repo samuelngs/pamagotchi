@@ -149,7 +149,9 @@ impl App {
                         gw.setup_instructions = setup;
                     }
                 }
-                ServerEvent::RequestOk { .. } | ServerEvent::RequestError { .. } => {}
+                ServerEvent::MediaAssetCreated { .. }
+                | ServerEvent::RequestOk { .. }
+                | ServerEvent::RequestError { .. } => {}
             }
         }
     }

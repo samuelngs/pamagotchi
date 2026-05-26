@@ -13,7 +13,7 @@ use inference::{
 use media::MediaStore;
 use protocol::{
     ClientRequest, ConversationId, GatewayKindView, GatewayVarKind, GatewayVarSpec, GatewayView,
-    InboundMessage, ServerEvent,
+    InboundMessage, MediaAssetView, MediaKind, ServerEvent,
 };
 use relay::{ApiClientRequest, ApiServer, ApiServerHandle};
 use std::path::PathBuf;
@@ -250,6 +250,83 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
             };
             if let Err(e) = ctx.inbound_tx.send(inbound).await {
                 warn!(%e, client_id = message.client_id, "failed to forward api chat message");
+            }
+        }
+        ClientRequest::CreateMediaAsset {
+            request_id,
+            kind,
+            data_base64,
+            mime,
+            filename,
+        } => {
+            let Some(kind) = MediaKind::parse(&kind) else {
+                let _ = ctx
+                    .api_handle
+                    .send_to(
+                        message.client_id,
+                        ServerEvent::RequestError {
+                            request_id: Some(request_id),
+                            message: format!("unknown media kind: {kind}"),
+                        },
+                    )
+                    .await;
+                return;
+            };
+
+            let bytes = match decode_base64(&data_base64) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    let _ = ctx
+                        .api_handle
+                        .send_to(
+                            message.client_id,
+                            ServerEvent::RequestError {
+                                request_id: Some(request_id),
+                                message: format!("invalid base64 media data: {e}"),
+                            },
+                        )
+                        .await;
+                    return;
+                }
+            };
+
+            let new_asset = media::NewMediaAsset {
+                kind,
+                mime,
+                filename,
+                metadata: serde_json::json!({
+                    "source": "api",
+                    "client_id": message.client_id,
+                }),
+            };
+
+            match ctx.media_store.put_bytes(&bytes, new_asset) {
+                Ok(asset) => {
+                    let view = media_asset_view(asset);
+                    let _ = ctx
+                        .api_handle
+                        .send_to(
+                            message.client_id,
+                            ServerEvent::MediaAssetCreated {
+                                request_id,
+                                asset: view,
+                            },
+                        )
+                        .await;
+                }
+                Err(e) => {
+                    warn!(%e, "failed to create media asset");
+                    let _ = ctx
+                        .api_handle
+                        .send_to(
+                            message.client_id,
+                            ServerEvent::RequestError {
+                                request_id: Some(request_id),
+                                message: format!("failed to create media asset: {e}"),
+                            },
+                        )
+                        .await;
+                }
             }
         }
         ClientRequest::ListGateways { request_id } => {
@@ -567,6 +644,27 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
     }
 }
 
+fn decode_base64(input: &str) -> anyhow::Result<Vec<u8>> {
+    use base64::Engine as _;
+
+    let data = input.split_once(',').map(|(_, data)| data).unwrap_or(input);
+    base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(data))
+        .map_err(Into::into)
+}
+
+fn media_asset_view(asset: media::MediaAsset) -> MediaAssetView {
+    MediaAssetView {
+        id: asset.id,
+        kind: asset.kind,
+        mime: asset.mime,
+        filename: asset.filename,
+        size: asset.size,
+        sha256: asset.sha256,
+    }
+}
+
 fn gateway_view(entry: &GatewayEntry, gw_router: &GatewayRouter) -> GatewayView {
     let adapter = gw_router.get(&entry.id);
     let (connection_state, setup_instructions) = if let Some(ref adapter) = adapter {
@@ -750,5 +848,19 @@ fn build_provider(
             };
             Ok((Arc::new(retry), opts.model.clone(), sampling))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_base64_accepts_plain_and_data_url_inputs() {
+        assert_eq!(decode_base64("aGVsbG8=").unwrap(), b"hello");
+        assert_eq!(
+            decode_base64("data:image/png;base64,aGVsbG8=").unwrap(),
+            b"hello"
+        );
     }
 }

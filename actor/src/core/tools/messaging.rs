@@ -1,7 +1,7 @@
 use super::context::{SessionContext, SessionState};
 use crate::store::{MessageRole, StoredMessage};
 use inference::Tool;
-use protocol::{ConversationId, MediaAttachment, MediaKind};
+use protocol::{ConversationId, MediaAssetId, MediaAttachment, MediaKind};
 use serde_json::{Value, json};
 use tracing::warn;
 
@@ -27,7 +27,11 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "media_url": {
                         "type": "string",
-                        "description": "URL of media to attach"
+                        "description": "URL of media to attach. Some gateways require media_asset_id instead."
+                    },
+                    "media_asset_id": {
+                        "type": "string",
+                        "description": "Stored media asset ID to attach. Required for WhatsApp media sends."
                     },
                     "media_type": {
                         "type": "string",
@@ -92,8 +96,23 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
     let gateway_id = args["gateway_id"].as_str();
     let external_id = args["external_id"].as_str();
 
-    let media = match (args["media_url"].as_str(), args["media_type"].as_str()) {
-        (Some(url), Some(kind_str)) => match MediaKind::parse(kind_str) {
+    let media = match (
+        args["media_asset_id"].as_str(),
+        args["media_url"].as_str(),
+        args["media_type"].as_str(),
+    ) {
+        (Some(asset_id), _, Some(kind_str)) => match MediaKind::parse(kind_str) {
+            Some(kind) => Some(MediaAttachment {
+                kind,
+                asset_id: Some(MediaAssetId(asset_id.to_string())),
+                url: None,
+                mime: args["mime_type"].as_str().map(String::from),
+                filename: args["filename"].as_str().map(String::from),
+                size: None,
+            }),
+            None => return format!("Unknown media type: {kind_str}"),
+        },
+        (_, Some(url), Some(kind_str)) => match MediaKind::parse(kind_str) {
             Some(kind) => Some(MediaAttachment {
                 kind,
                 asset_id: None,
