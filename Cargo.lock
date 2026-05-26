@@ -1077,6 +1077,7 @@ dependencies = [
  "whatsapp-rust-sqlite-storage",
  "whatsapp-rust-tokio-transport",
  "whatsapp-rust-ureq-http-client",
+ "yaml_serde",
 ]
 
 [[package]]
@@ -1961,8 +1962,10 @@ dependencies = [
  "clap",
  "creature",
  "crossterm",
+ "protocol",
  "ratatui",
  "relay",
+ "serde_json",
  "tokio",
 ]
 
@@ -2332,6 +2335,7 @@ name = "relay"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "protocol",
  "serde",
  "serde_json",
  "tokio",

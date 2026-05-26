@@ -1,7 +1,4 @@
-use super::{
-    AffectState, Belief, CoreTraits, Delta, GrowthConfig, Interest,
-    Relationship,
-};
+use super::{AffectState, Belief, CoreTraits, Delta, GrowthConfig, Interest, Relationship};
 use protocol::PersonId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,7 +87,11 @@ impl ActorState {
     }
 
     fn apply_belief_change(&mut self, change: &super::BeliefChange, rate: f32) {
-        if let Some(belief) = self.beliefs.iter_mut().find(|b| b.topic == change.topic && b.about == change.about) {
+        if let Some(belief) = self
+            .beliefs
+            .iter_mut()
+            .find(|b| b.topic == change.topic && b.about == change.about)
+        {
             if let Some(ref stance) = change.new_stance {
                 belief.stance = stance.clone();
             }
@@ -139,9 +140,7 @@ impl ActorState {
 
     pub fn merge_relationship(&mut self, keep: &PersonId, merge: &PersonId) {
         if let Some(merged_rel) = self.bonds.remove(merge) {
-            self.bonds
-                .entry(keep.clone())
-                .or_insert(merged_rel);
+            self.bonds.entry(keep.clone()).or_insert(merged_rel);
         }
         let merge_some = Some(merge.clone());
         let keep_some = Some(keep.clone());
@@ -204,4 +203,3 @@ fn now() -> i64 {
         .unwrap_or_default()
         .as_secs() as i64
 }
-

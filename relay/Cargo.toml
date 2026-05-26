@@ -9,6 +9,7 @@ name = "relay"
 path = "src/lib.rs"
 
 [dependencies]
+protocol.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true

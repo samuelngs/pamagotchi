@@ -1,8 +1,8 @@
+use super::context::{SessionContext, SessionState};
+use crate::store::{Memory, MemoryKind, MemorySource, RecallQuery};
 use inference::Tool;
 use protocol::{MemoryId, PersonId};
-use crate::store::{Memory, MemoryKind, MemorySource, RecallQuery};
-use serde_json::{json, Value};
-use super::context::{SessionContext, SessionState};
+use serde_json::{Value, json};
 
 pub fn tools() -> Vec<Tool> {
     vec![
@@ -82,7 +82,9 @@ pub async fn recall(args: &Value, ctx: &SessionContext) -> String {
     let offset = args["offset"].as_u64().unwrap_or(0) as usize;
 
     let recall = match ctx.router.embed(&[query]).await {
-        Ok(vecs) if !vecs.is_empty() => RecallQuery::by_embedding(vecs.into_iter().next().unwrap(), limit).with_offset(offset),
+        Ok(vecs) if !vecs.is_empty() => {
+            RecallQuery::by_embedding(vecs.into_iter().next().unwrap(), limit).with_offset(offset)
+        }
         _ => RecallQuery::by_text(query, limit).with_offset(offset),
     };
     match ctx.store.recall(&recall).await {

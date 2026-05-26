@@ -3,21 +3,30 @@ pub enum FocusId {
     Input,
     Quit,
     Settings,
+    GatewayList,
+    GatewayBack,
+    GatewayAdd,
+    GatewayAddKind,
+    GatewayDetailBack,
+    GatewayDetailRemove,
+    GatewayDetailRestart,
 }
 
 const ORDER: &[FocusId] = &[FocusId::Input, FocusId::Quit, FocusId::Settings];
 
 pub struct FocusManager {
-    index: usize,
+    current: FocusId,
 }
 
 impl FocusManager {
     pub fn new() -> Self {
-        Self { index: 0 }
+        Self {
+            current: FocusId::Input,
+        }
     }
 
     pub fn current(&self) -> FocusId {
-        ORDER[self.index]
+        self.current
     }
 
     pub fn is(&self, id: FocusId) -> bool {
@@ -25,16 +34,30 @@ impl FocusManager {
     }
 
     pub fn next(&mut self) {
-        self.index = (self.index + 1) % ORDER.len();
+        self.next_in(ORDER);
     }
 
     pub fn prev(&mut self) {
-        self.index = (self.index + ORDER.len() - 1) % ORDER.len();
+        self.prev_in(ORDER);
     }
 
     pub fn set(&mut self, id: FocusId) {
-        if let Some(pos) = ORDER.iter().position(|&x| x == id) {
-            self.index = pos;
+        self.current = id;
+    }
+
+    pub fn next_in(&mut self, order: &[FocusId]) {
+        if order.is_empty() {
+            return;
         }
+        let pos = order.iter().position(|&x| x == self.current).unwrap_or(0);
+        self.current = order[(pos + 1) % order.len()];
+    }
+
+    pub fn prev_in(&mut self, order: &[FocusId]) {
+        if order.is_empty() {
+            return;
+        }
+        let pos = order.iter().position(|&x| x == self.current).unwrap_or(0);
+        self.current = order[(pos + order.len() - 1) % order.len()];
     }
 }

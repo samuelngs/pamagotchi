@@ -7,16 +7,46 @@ pub struct AnimationFrame {
 
 pub fn idle_frames(base: &Grid) -> Vec<AnimationFrame> {
     vec![
-        AnimationFrame { grid: base.clone(), duration_ms: 1200 },
-        AnimationFrame { grid: squint(base), duration_ms: 70 },
-        AnimationFrame { grid: base.clone(), duration_ms: 1800 },
-        AnimationFrame { grid: bounce(base, -1), duration_ms: 150 },
-        AnimationFrame { grid: base.clone(), duration_ms: 1200 },
-        AnimationFrame { grid: look(base, -1), duration_ms: 350 },
-        AnimationFrame { grid: base.clone(), duration_ms: 400 },
-        AnimationFrame { grid: look(base, 1), duration_ms: 350 },
-        AnimationFrame { grid: base.clone(), duration_ms: 800 },
-        AnimationFrame { grid: squint(base), duration_ms: 70 },
+        AnimationFrame {
+            grid: base.clone(),
+            duration_ms: 1200,
+        },
+        AnimationFrame {
+            grid: squint(base),
+            duration_ms: 70,
+        },
+        AnimationFrame {
+            grid: base.clone(),
+            duration_ms: 1800,
+        },
+        AnimationFrame {
+            grid: bounce(base, -1),
+            duration_ms: 150,
+        },
+        AnimationFrame {
+            grid: base.clone(),
+            duration_ms: 1200,
+        },
+        AnimationFrame {
+            grid: look(base, -1),
+            duration_ms: 350,
+        },
+        AnimationFrame {
+            grid: base.clone(),
+            duration_ms: 400,
+        },
+        AnimationFrame {
+            grid: look(base, 1),
+            duration_ms: 350,
+        },
+        AnimationFrame {
+            grid: base.clone(),
+            duration_ms: 800,
+        },
+        AnimationFrame {
+            grid: squint(base),
+            duration_ms: 70,
+        },
     ]
 }
 
@@ -44,9 +74,7 @@ fn squint(base: &Grid) -> Grid {
     let mut grid = base.clone();
     for y in 0..grid.height {
         for x in 0..grid.width {
-            if grid.get(x, y) == Some(Cell::Eye)
-                && grid.get(x, y + 1) == Some(Cell::Eye)
-            {
+            if grid.get(x, y) == Some(Cell::Eye) && grid.get(x, y + 1) == Some(Cell::Eye) {
                 grid.set(x, y, Cell::Body);
             }
         }
@@ -135,7 +163,11 @@ mod tests {
             .filter(|&(x, y)| squinted.get(x, y) == Some(Cell::Eye))
             .count();
 
-        assert_eq!(squint_eyes, orig_eyes / 2, "squint should halve eye cell count");
+        assert_eq!(
+            squint_eyes,
+            orig_eyes / 2,
+            "squint should halve eye cell count"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use inference::Tool;
 use super::super::decision::MindVerdict;
-use serde_json::{json, Value};
+use inference::Tool;
+use serde_json::{Value, json};
 
 pub fn tools() -> Vec<Tool> {
     vec![
@@ -38,7 +38,9 @@ pub fn tools() -> Vec<Tool> {
         },
         Tool {
             name: "defer".into(),
-            description: "Hold off on this event. Something else takes priority, or the timing isn't right.".into(),
+            description:
+                "Hold off on this event. Something else takes priority, or the timing isn't right."
+                    .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {

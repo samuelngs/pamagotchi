@@ -44,15 +44,21 @@ impl Default for Seed {
 }
 
 impl From<u64> for Seed {
-    fn from(n: u64) -> Self { Seed::Number(n) }
+    fn from(n: u64) -> Self {
+        Seed::Number(n)
+    }
 }
 
 impl From<&str> for Seed {
-    fn from(s: &str) -> Self { Seed::Text(s.to_string()) }
+    fn from(s: &str) -> Self {
+        Seed::Text(s.to_string())
+    }
 }
 
 impl From<String> for Seed {
-    fn from(s: String) -> Self { Seed::Text(s) }
+    fn from(s: String) -> Self {
+        Seed::Text(s)
+    }
 }
 
 const CANONICAL_W: u32 = 16;
@@ -89,10 +95,18 @@ impl Default for CreatureConfig {
 }
 
 fn fill_compact_holes(grid: &mut Grid) {
-    let is_filled =
-        |c: Option<Cell>| matches!(c, Some(Cell::Body | Cell::Eye | Cell::Pupil | Cell::Outline));
+    let is_filled = |c: Option<Cell>| {
+        matches!(
+            c,
+            Some(Cell::Body | Cell::Eye | Cell::Pupil | Cell::Outline)
+        )
+    };
 
-    fn row_span(grid: &Grid, y: u32, is_filled: impl Fn(Option<Cell>) -> bool) -> Option<(u32, u32)> {
+    fn row_span(
+        grid: &Grid,
+        y: u32,
+        is_filled: impl Fn(Option<Cell>) -> bool,
+    ) -> Option<(u32, u32)> {
         let f = (0..grid.width).find(|&x| is_filled(grid.get(x, y)))?;
         let l = (0..grid.width).rfind(|&x| is_filled(grid.get(x, y)))?;
         Some((f, l))
@@ -307,7 +321,10 @@ mod tests {
         };
         let creature = Creature::generate(&config);
         let h = grid_hash(&creature);
-        assert_eq!(h, 18020317725994607546, "golden hash changed — generation logic must have been modified");
+        assert_eq!(
+            h, 18020317725994607546,
+            "golden hash changed — generation logic must have been modified"
+        );
     }
 
     #[test]
@@ -327,15 +344,13 @@ mod tests {
 
                 // Eyes and pupils mirror, but pupil/eye might swap sides for visual effect
                 let symmetric = match (left, right) {
-                    (Some(Cell::Eye), Some(Cell::Pupil))
-                    | (Some(Cell::Pupil), Some(Cell::Eye)) => true,
+                    (Some(Cell::Eye), Some(Cell::Pupil)) | (Some(Cell::Pupil), Some(Cell::Eye)) => {
+                        true
+                    }
                     (a, b) => a == b,
                 };
 
-                assert!(
-                    symmetric,
-                    "asymmetry at ({x}, {y}): {left:?} vs {right:?}"
-                );
+                assert!(symmetric, "asymmetry at ({x}, {y}): {left:?} vs {right:?}");
             }
         }
     }
@@ -352,9 +367,7 @@ mod tests {
         let w = creature.grid.width;
         let h = creature.grid.height;
 
-        let is_filled = |c: Option<Cell>| {
-            matches!(c, Some(Cell::Body | Cell::Eye | Cell::Pupil))
-        };
+        let is_filled = |c: Option<Cell>| matches!(c, Some(Cell::Body | Cell::Eye | Cell::Pupil));
 
         let mut start = None;
         let mut total_filled = 0u32;
@@ -385,10 +398,18 @@ mod tests {
             }
             reached += 1;
 
-            if x > 0 { stack.push((x - 1, y)); }
-            if x + 1 < w { stack.push((x + 1, y)); }
-            if y > 0 { stack.push((x, y - 1)); }
-            if y + 1 < h { stack.push((x, y + 1)); }
+            if x > 0 {
+                stack.push((x - 1, y));
+            }
+            if x + 1 < w {
+                stack.push((x + 1, y));
+            }
+            if y > 0 {
+                stack.push((x, y - 1));
+            }
+            if y + 1 < h {
+                stack.push((x, y + 1));
+            }
         }
 
         assert_eq!(reached, total_filled, "body is not fully connected");

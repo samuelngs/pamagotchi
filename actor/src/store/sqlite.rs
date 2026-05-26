@@ -1,15 +1,14 @@
 use super::{
-    ActorSnapshot, ConversationSummary, Memory, MemoryKind,
-    MemorySource, MemoryUpdate, MessageRole, RecallQuery, StoredMessage, Store, Thought,
-    ThoughtKind,
+    ActorSnapshot, ConversationSummary, Memory, MemoryKind, MemorySource, MemoryUpdate,
+    MessageRole, RecallQuery, Store, StoredMessage, Thought, ThoughtKind,
 };
 use crate::identity::{
-    ClaimEvidence, ClaimStatus, Group, GroupContext, IdentityClaim, Identity, Person,
-    Relation, SocialRelation,
+    ClaimEvidence, ClaimStatus, Group, GroupContext, Identity, IdentityClaim, Person, Relation,
+    SocialRelation,
 };
-use protocol::{ConversationId, GroupId, MemoryId, PersonId};
 use crate::state::{Authority, BehaviorDirective, DirectiveScope};
-use rusqlite::{params, Connection};
+use protocol::{ConversationId, GroupId, MemoryId, PersonId};
+use rusqlite::{Connection, params};
 use sqlite_vec::sqlite3_vec_init;
 use std::collections::HashSet;
 use std::sync::{Mutex, Once};
@@ -213,17 +212,14 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
         "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
             content,
             content_rowid='rowid'
-        );"
+        );",
     )?;
 
     Ok(())
 }
 
 fn build_fts_query(input: &str) -> String {
-    let words: Vec<&str> = input
-        .split_whitespace()
-        .filter(|w| w.len() > 1)
-        .collect();
+    let words: Vec<&str> = input.split_whitespace().filter(|w| w.len() > 1).collect();
     if words.is_empty() {
         return input.to_string();
     }
@@ -396,9 +392,8 @@ impl Store for SqliteStore {
         )?;
         match stmt.query_row(params![id.0], read_memory) {
             Ok(mut memory) => {
-                let mut people_stmt = conn.prepare(
-                    "SELECT person_id FROM memory_people WHERE memory_id = ?1",
-                )?;
+                let mut people_stmt =
+                    conn.prepare("SELECT person_id FROM memory_people WHERE memory_id = ?1")?;
                 memory.people = people_stmt
                     .query_map(params![id.0], |row| Ok(PersonId(row.get::<_, String>(0)?)))?
                     .filter_map(|r| r.ok())
@@ -491,9 +486,8 @@ impl Store for SqliteStore {
 
         let person_filter = query.person.as_ref();
         let person_ids: HashSet<String> = if let Some(ref person) = person_filter {
-            let mut stmt = conn.prepare(
-                "SELECT memory_id FROM memory_people WHERE person_id = ?1",
-            )?;
+            let mut stmt =
+                conn.prepare("SELECT memory_id FROM memory_people WHERE person_id = ?1")?;
             stmt.query_map(params![person.0], |row| row.get::<_, String>(0))?
                 .filter_map(|r| r.ok())
                 .collect()
@@ -524,11 +518,15 @@ impl Store for SqliteStore {
                  ORDER BY bm25(memories_fts) ASC
                  LIMIT ?2",
             )?;
-            let results: Vec<_> = stmt.query_map(params![fts_query, fetch_limit], read_memory)?
+            let results: Vec<_> = stmt
+                .query_map(params![fts_query, fetch_limit], read_memory)?
                 .filter_map(|r| r.ok())
                 .collect();
             if results.is_empty() {
-                let escaped = text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+                let escaped = text
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_");
                 let pattern = format!("%{escaped}%");
                 let mut fallback = conn.prepare(
                     "SELECT id, kind, content, source, importance, sensitivity, emotional_valence,
@@ -537,7 +535,8 @@ impl Store for SqliteStore {
                      ORDER BY importance DESC, created_at DESC
                      LIMIT ?2",
                 )?;
-                fallback.query_map(params![pattern, fetch_limit], read_memory)?
+                fallback
+                    .query_map(params![pattern, fetch_limit], read_memory)?
                     .filter_map(|r| r.ok())
                     .collect::<Vec<_>>()
             } else {
@@ -595,15 +594,16 @@ impl Store for SqliteStore {
         }
         memories.truncate(query.limit);
 
-        let mut people_stmt = conn.prepare(
-            "SELECT person_id FROM memory_people WHERE memory_id = ?1",
-        )?;
+        let mut people_stmt =
+            conn.prepare("SELECT person_id FROM memory_people WHERE memory_id = ?1")?;
         let mut access_stmt = conn.prepare(
             "UPDATE memories SET accessed_at = unixepoch(), access_count = access_count + 1 WHERE id = ?1",
         )?;
         for memory in &mut memories {
             memory.people = people_stmt
-                .query_map(params![memory.id.0], |row| Ok(PersonId(row.get::<_, String>(0)?)))?
+                .query_map(params![memory.id.0], |row| {
+                    Ok(PersonId(row.get::<_, String>(0)?))
+                })?
                 .filter_map(|r| r.ok())
                 .collect();
             let _ = access_stmt.execute(params![memory.id.0]);
@@ -807,7 +807,14 @@ impl Store for SqliteStore {
         conn.execute(
             "INSERT INTO people (id, name, summary, comm_style, first_seen, last_seen)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![person.id.0, person.name, person.summary, person.comm_style, person.first_seen, person.last_seen],
+            params![
+                person.id.0,
+                person.name,
+                person.summary,
+                person.comm_style,
+                person.first_seen,
+                person.last_seen
+            ],
         )?;
         Ok(person.id.clone())
     }
@@ -869,8 +876,9 @@ impl Store for SqliteStore {
 
     async fn list_people(&self) -> anyhow::Result<Vec<Person>> {
         let conn = self.lock()?;
-        let mut stmt =
-            conn.prepare("SELECT id, name, summary, comm_style, first_seen, last_seen FROM people ORDER BY name")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, summary, comm_style, first_seen, last_seen FROM people ORDER BY name",
+        )?;
         let results = stmt
             .query_map([], read_person)?
             .filter_map(|r| r.ok())
@@ -885,7 +893,12 @@ impl Store for SqliteStore {
         conn.execute(
             "INSERT INTO identities (person_id, gateway_id, external_id, display_name)
              VALUES (?1, ?2, ?3, ?4)",
-            params![person.0, identity.gateway_id, identity.external_id, identity.display_name.as_deref()],
+            params![
+                person.0,
+                identity.gateway_id,
+                identity.external_id,
+                identity.display_name.as_deref()
+            ],
         )?;
         Ok(())
     }
@@ -933,14 +946,26 @@ impl Store for SqliteStore {
         }
         let conn = self.lock()?;
         let tx = TxGuard::begin(&conn)?;
-        conn.execute("UPDATE identities SET person_id = ?1 WHERE person_id = ?2", params![keep.0, merge.0])?;
-        conn.execute("UPDATE messages SET person_id = ?1 WHERE person_id = ?2", params![keep.0, merge.0])?;
-        conn.execute("UPDATE conversations SET person_id = ?1 WHERE person_id = ?2", params![keep.0, merge.0])?;
+        conn.execute(
+            "UPDATE identities SET person_id = ?1 WHERE person_id = ?2",
+            params![keep.0, merge.0],
+        )?;
+        conn.execute(
+            "UPDATE messages SET person_id = ?1 WHERE person_id = ?2",
+            params![keep.0, merge.0],
+        )?;
+        conn.execute(
+            "UPDATE conversations SET person_id = ?1 WHERE person_id = ?2",
+            params![keep.0, merge.0],
+        )?;
         conn.execute(
             "UPDATE OR IGNORE memory_people SET person_id = ?1 WHERE person_id = ?2",
             params![keep.0, merge.0],
         )?;
-        conn.execute("DELETE FROM memory_people WHERE person_id = ?1", params![merge.0])?;
+        conn.execute(
+            "DELETE FROM memory_people WHERE person_id = ?1",
+            params![merge.0],
+        )?;
         conn.execute(
             "UPDATE behavior_directives SET set_by = ?1 WHERE set_by = ?2",
             params![keep.0, merge.0],
@@ -953,7 +978,10 @@ impl Store for SqliteStore {
             "UPDATE OR IGNORE group_members SET person_id = ?1 WHERE person_id = ?2",
             params![keep.0, merge.0],
         )?;
-        conn.execute("DELETE FROM group_members WHERE person_id = ?1", params![merge.0])?;
+        conn.execute(
+            "DELETE FROM group_members WHERE person_id = ?1",
+            params![merge.0],
+        )?;
         conn.execute(
             "UPDATE OR IGNORE social_graph SET person_a = ?1 WHERE person_a = ?2",
             params![keep.0, merge.0],
@@ -963,7 +991,10 @@ impl Store for SqliteStore {
             params![keep.0, merge.0],
         )?;
         conn.execute("DELETE FROM social_graph WHERE person_a = person_b", [])?;
-        conn.execute("DELETE FROM social_graph WHERE person_a = ?1 OR person_b = ?1", params![merge.0])?;
+        conn.execute(
+            "DELETE FROM social_graph WHERE person_a = ?1 OR person_b = ?1",
+            params![merge.0],
+        )?;
         conn.execute(
             "UPDATE people SET first_seen = MIN(first_seen, (SELECT first_seen FROM people WHERE id = ?2)),
                              last_seen = MAX(last_seen, (SELECT last_seen FROM people WHERE id = ?2))
@@ -1030,11 +1061,7 @@ impl Store for SqliteStore {
         Ok(results)
     }
 
-    async fn resolve_claim(
-        &self,
-        claim_id: &str,
-        status: &ClaimStatus,
-    ) -> anyhow::Result<()> {
+    async fn resolve_claim(&self, claim_id: &str, status: &ClaimStatus) -> anyhow::Result<()> {
         let conn = self.lock()?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1141,13 +1168,10 @@ impl Store for SqliteStore {
             },
         ) {
             Ok((gid, name, gateway_id, external_id, context)) => {
-                let mut stmt = conn.prepare(
-                    "SELECT person_id FROM group_members WHERE group_id = ?1",
-                )?;
+                let mut stmt =
+                    conn.prepare("SELECT person_id FROM group_members WHERE group_id = ?1")?;
                 let members: Vec<PersonId> = stmt
-                    .query_map(params![gid], |row| {
-                        Ok(PersonId(row.get::<_, String>(0)?))
-                    })?
+                    .query_map(params![gid], |row| Ok(PersonId(row.get::<_, String>(0)?)))?
                     .filter_map(|r| r.ok())
                     .collect();
                 Ok(Some(Group {
@@ -1287,10 +1311,7 @@ impl Store for SqliteStore {
 
     async fn remove_directive(&self, id: &str) -> anyhow::Result<bool> {
         let conn = self.lock()?;
-        let rows = conn.execute(
-            "DELETE FROM behavior_directives WHERE id = ?1",
-            params![id],
-        )?;
+        let rows = conn.execute("DELETE FROM behavior_directives WHERE id = ?1", params![id])?;
         Ok(rows > 0)
     }
 
@@ -1393,10 +1414,17 @@ mod tests {
     #[tokio::test]
     async fn memory_store_and_recall_by_text() {
         let store = test_store();
-        let mem = sample_memory("m1", "deployment incident was stressful", vec![0.1, 0.2, 0.3, 0.4]);
+        let mem = sample_memory(
+            "m1",
+            "deployment incident was stressful",
+            vec![0.1, 0.2, 0.3, 0.4],
+        );
         store.store_memory(&mem).await.unwrap();
 
-        let results = store.recall(&RecallQuery::by_text("deployment", 10)).await.unwrap();
+        let results = store
+            .recall(&RecallQuery::by_text("deployment", 10))
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id.0, "m1");
     }
@@ -1404,8 +1432,14 @@ mod tests {
     #[tokio::test]
     async fn memory_recall_by_embedding() {
         let store = test_store();
-        store.store_memory(&sample_memory("m1", "first", vec![1.0, 0.0, 0.0, 0.0])).await.unwrap();
-        store.store_memory(&sample_memory("m2", "second", vec![0.0, 1.0, 0.0, 0.0])).await.unwrap();
+        store
+            .store_memory(&sample_memory("m1", "first", vec![1.0, 0.0, 0.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .store_memory(&sample_memory("m2", "second", vec![0.0, 1.0, 0.0, 0.0]))
+            .await
+            .unwrap();
 
         let results = store
             .recall(&RecallQuery::by_embedding(vec![0.9, 0.1, 0.0, 0.0], 1))
@@ -1418,19 +1452,35 @@ mod tests {
     #[tokio::test]
     async fn memory_get_loads_embedding() {
         let store = test_store();
-        store.store_memory(&sample_memory("m1", "test", vec![0.1, 0.2, 0.3, 0.4])).await.unwrap();
+        store
+            .store_memory(&sample_memory("m1", "test", vec![0.1, 0.2, 0.3, 0.4]))
+            .await
+            .unwrap();
 
-        let loaded = store.get_memory(&MemoryId("m1".into())).await.unwrap().unwrap();
+        let loaded = store
+            .get_memory(&MemoryId("m1".into()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(loaded.embedding.unwrap(), vec![0.1, 0.2, 0.3, 0.4]);
     }
 
     #[tokio::test]
     async fn memory_forget() {
         let store = test_store();
-        store.store_memory(&sample_memory("m1", "gone", vec![0.1, 0.2, 0.3, 0.4])).await.unwrap();
+        store
+            .store_memory(&sample_memory("m1", "gone", vec![0.1, 0.2, 0.3, 0.4]))
+            .await
+            .unwrap();
 
         assert!(store.forget(&MemoryId("m1".into())).await.unwrap());
-        assert!(store.get_memory(&MemoryId("m1".into())).await.unwrap().is_none());
+        assert!(
+            store
+                .get_memory(&MemoryId("m1".into()))
+                .await
+                .unwrap()
+                .is_none()
+        );
         assert!(!store.forget(&MemoryId("m1".into())).await.unwrap());
     }
 
@@ -1439,21 +1489,37 @@ mod tests {
         let store = test_store();
         let conv = ConversationId("c1".into());
 
-        store.append_message(&conv, None, None, &StoredMessage {
-            timestamp: 1000,
-            role: MessageRole::User,
-            content: "hello".into(),
-            person: Some(PersonId("sam".into())),
-            metadata: serde_json::Value::Null,
-        }).await.unwrap();
+        store
+            .append_message(
+                &conv,
+                None,
+                None,
+                &StoredMessage {
+                    timestamp: 1000,
+                    role: MessageRole::User,
+                    content: "hello".into(),
+                    person: Some(PersonId("sam".into())),
+                    metadata: serde_json::Value::Null,
+                },
+            )
+            .await
+            .unwrap();
 
-        store.append_message(&conv, None, None, &StoredMessage {
-            timestamp: 1001,
-            role: MessageRole::Assistant,
-            content: "hi there".into(),
-            person: None,
-            metadata: serde_json::Value::Null,
-        }).await.unwrap();
+        store
+            .append_message(
+                &conv,
+                None,
+                None,
+                &StoredMessage {
+                    timestamp: 1001,
+                    role: MessageRole::Assistant,
+                    content: "hi there".into(),
+                    person: None,
+                    metadata: serde_json::Value::Null,
+                },
+            )
+            .await
+            .unwrap();
 
         let msgs = store.get_messages(&conv, 10, None).await.unwrap();
         assert_eq!(msgs.len(), 2);
@@ -1468,13 +1534,16 @@ mod tests {
     #[tokio::test]
     async fn thoughts() {
         let store = test_store();
-        store.log_thought(&Thought {
-            timestamp: 2000,
-            kind: ThoughtKind::Reflection,
-            content: "Sam seemed stressed".into(),
-            memories_accessed: vec![MemoryId("m1".into())],
-            people: vec![PersonId("sam".into())],
-        }).await.unwrap();
+        store
+            .log_thought(&Thought {
+                timestamp: 2000,
+                kind: ThoughtKind::Reflection,
+                content: "Sam seemed stressed".into(),
+                memories_accessed: vec![MemoryId("m1".into())],
+                people: vec![PersonId("sam".into())],
+            })
+            .await
+            .unwrap();
 
         let thoughts = store.recent_thoughts(5).await.unwrap();
         assert_eq!(thoughts.len(), 1);
@@ -1498,36 +1567,42 @@ mod tests {
     #[tokio::test]
     async fn recall_filters() {
         let store = test_store();
-        store.store_memory(&Memory {
-            id: MemoryId("m1".into()),
-            kind: MemoryKind::Episodic,
-            content: "episodic thing".into(),
-            source: MemorySource::Reflection,
-            importance: 0.9,
-            sensitivity: 0.0,
-            emotional_valence: 0.0,
-            created_at: 1000,
-            accessed_at: 1000,
-            access_count: 0,
-            tags: vec![],
-            people: vec![],
-            embedding: None,
-        }).await.unwrap();
-        store.store_memory(&Memory {
-            id: MemoryId("m2".into()),
-            kind: MemoryKind::Semantic,
-            content: "semantic fact".into(),
-            source: MemorySource::Reflection,
-            importance: 0.3,
-            sensitivity: 0.0,
-            emotional_valence: 0.0,
-            created_at: 1000,
-            accessed_at: 1000,
-            access_count: 0,
-            tags: vec![],
-            people: vec![],
-            embedding: None,
-        }).await.unwrap();
+        store
+            .store_memory(&Memory {
+                id: MemoryId("m1".into()),
+                kind: MemoryKind::Episodic,
+                content: "episodic thing".into(),
+                source: MemorySource::Reflection,
+                importance: 0.9,
+                sensitivity: 0.0,
+                emotional_valence: 0.0,
+                created_at: 1000,
+                accessed_at: 1000,
+                access_count: 0,
+                tags: vec![],
+                people: vec![],
+                embedding: None,
+            })
+            .await
+            .unwrap();
+        store
+            .store_memory(&Memory {
+                id: MemoryId("m2".into()),
+                kind: MemoryKind::Semantic,
+                content: "semantic fact".into(),
+                source: MemorySource::Reflection,
+                importance: 0.3,
+                sensitivity: 0.0,
+                emotional_valence: 0.0,
+                created_at: 1000,
+                accessed_at: 1000,
+                access_count: 0,
+                tags: vec![],
+                people: vec![],
+                embedding: None,
+            })
+            .await
+            .unwrap();
 
         let results = store
             .recall(&RecallQuery::by_text("thing", 10).with_kind(MemoryKind::Episodic))
@@ -1558,14 +1633,28 @@ mod tests {
     #[tokio::test]
     async fn people_crud() {
         let store = test_store();
-        store.add_person(&sample_person("p1", "Alice")).await.unwrap();
+        store
+            .add_person(&sample_person("p1", "Alice"))
+            .await
+            .unwrap();
         store.add_person(&sample_person("p2", "Bob")).await.unwrap();
 
-        let alice = store.get_person(&PersonId("p1".into())).await.unwrap().unwrap();
+        let alice = store
+            .get_person(&PersonId("p1".into()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(alice.name, Some("Alice".into()));
 
-        store.update_person(&PersonId("p1".into()), None, Some("likes cats")).await.unwrap();
-        let alice = store.get_person(&PersonId("p1".into())).await.unwrap().unwrap();
+        store
+            .update_person(&PersonId("p1".into()), None, Some("likes cats"))
+            .await
+            .unwrap();
+        let alice = store
+            .get_person(&PersonId("p1".into()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(alice.summary, Some("likes cats".into()));
 
         let all = store.list_people().await.unwrap();
@@ -1575,14 +1664,27 @@ mod tests {
     #[tokio::test]
     async fn identity_resolution() {
         let store = test_store();
-        store.add_person(&sample_person("p1", "Alice")).await.unwrap();
-        store.add_identity(&PersonId("p1".into()), &Identity {
-            gateway_id: "discord".into(),
-            external_id: "discord-123".into(),
-            display_name: Some("alice#1234".into()),
-        }).await.unwrap();
+        store
+            .add_person(&sample_person("p1", "Alice"))
+            .await
+            .unwrap();
+        store
+            .add_identity(
+                &PersonId("p1".into()),
+                &Identity {
+                    gateway_id: "discord".into(),
+                    external_id: "discord-123".into(),
+                    display_name: Some("alice#1234".into()),
+                },
+            )
+            .await
+            .unwrap();
 
-        let found = store.resolve_identity("discord", "discord-123").await.unwrap().unwrap();
+        let found = store
+            .resolve_identity("discord", "discord-123")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(found.id.0, "p1");
 
         let not_found = store.resolve_identity("telegram", "unknown").await.unwrap();
@@ -1596,25 +1698,37 @@ mod tests {
     #[tokio::test]
     async fn identity_claims() {
         let store = test_store();
-        store.add_person(&sample_person("p1", "Alice Discord")).await.unwrap();
-        store.add_person(&sample_person("p2", "Alice Telegram")).await.unwrap();
+        store
+            .add_person(&sample_person("p1", "Alice Discord"))
+            .await
+            .unwrap();
+        store
+            .add_person(&sample_person("p2", "Alice Telegram"))
+            .await
+            .unwrap();
 
-        store.create_claim(&IdentityClaim {
-            id: "claim-1".into(),
-            claimant: PersonId("p2".into()),
-            claimed_person: PersonId("p1".into()),
-            evidence: ClaimEvidence::SelfDeclaration,
-            confidence: 0.1,
-            status: ClaimStatus::Pending,
-            created_at: 1000,
-            resolved_at: None,
-        }).await.unwrap();
+        store
+            .create_claim(&IdentityClaim {
+                id: "claim-1".into(),
+                claimant: PersonId("p2".into()),
+                claimed_person: PersonId("p1".into()),
+                evidence: ClaimEvidence::SelfDeclaration,
+                confidence: 0.1,
+                status: ClaimStatus::Pending,
+                created_at: 1000,
+                resolved_at: None,
+            })
+            .await
+            .unwrap();
 
         let pending = store.get_pending_claims().await.unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].id, "claim-1");
 
-        store.resolve_claim("claim-1", &ClaimStatus::Confirmed).await.unwrap();
+        store
+            .resolve_claim("claim-1", &ClaimStatus::Confirmed)
+            .await
+            .unwrap();
         let pending = store.get_pending_claims().await.unwrap();
         assert_eq!(pending.len(), 0);
     }
@@ -1622,30 +1736,63 @@ mod tests {
     #[tokio::test]
     async fn merge_people_reconnects_data() {
         let store = test_store();
-        store.add_person(&sample_person("p1", "Alice")).await.unwrap();
-        store.add_person(&sample_person("p2", "Alice Alt")).await.unwrap();
+        store
+            .add_person(&sample_person("p1", "Alice"))
+            .await
+            .unwrap();
+        store
+            .add_person(&sample_person("p2", "Alice Alt"))
+            .await
+            .unwrap();
 
-        store.add_identity(&PersonId("p2".into()), &Identity {
-            gateway_id: "telegram".into(),
-            external_id: "tg-alice".into(),
-            display_name: Some("alice_t".into()),
-        }).await.unwrap();
+        store
+            .add_identity(
+                &PersonId("p2".into()),
+                &Identity {
+                    gateway_id: "telegram".into(),
+                    external_id: "tg-alice".into(),
+                    display_name: Some("alice_t".into()),
+                },
+            )
+            .await
+            .unwrap();
 
         let conv = ConversationId("c1".into());
-        store.append_message(&conv, None, None, &StoredMessage {
-            timestamp: 1000,
-            role: MessageRole::User,
-            content: "from alt account".into(),
-            person: Some(PersonId("p2".into())),
-            metadata: serde_json::Value::Null,
-        }).await.unwrap();
+        store
+            .append_message(
+                &conv,
+                None,
+                None,
+                &StoredMessage {
+                    timestamp: 1000,
+                    role: MessageRole::User,
+                    content: "from alt account".into(),
+                    person: Some(PersonId("p2".into())),
+                    metadata: serde_json::Value::Null,
+                },
+            )
+            .await
+            .unwrap();
 
-        store.merge_people(&PersonId("p1".into()), &PersonId("p2".into())).await.unwrap();
+        store
+            .merge_people(&PersonId("p1".into()), &PersonId("p2".into()))
+            .await
+            .unwrap();
 
-        let resolved = store.resolve_identity("telegram", "tg-alice").await.unwrap().unwrap();
+        let resolved = store
+            .resolve_identity("telegram", "tg-alice")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.id.0, "p1");
 
-        assert!(store.get_person(&PersonId("p2".into())).await.unwrap().is_none());
+        assert!(
+            store
+                .get_person(&PersonId("p2".into()))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -1654,13 +1801,27 @@ mod tests {
         store.add_person(&sample_person("p1", "Sam")).await.unwrap();
         store.add_person(&sample_person("p2", "Mom")).await.unwrap();
 
-        store.add_relation(&PersonId("p2".into()), &PersonId("p1".into()), &Relation::Parent).await.unwrap();
+        store
+            .add_relation(
+                &PersonId("p2".into()),
+                &PersonId("p1".into()),
+                &Relation::Parent,
+            )
+            .await
+            .unwrap();
 
         let rels = store.get_relations(&PersonId("p1".into())).await.unwrap();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].relation.as_str(), "parent");
 
-        store.remove_relation(&PersonId("p2".into()), &PersonId("p1".into()), &Relation::Parent).await.unwrap();
+        store
+            .remove_relation(
+                &PersonId("p2".into()),
+                &PersonId("p1".into()),
+                &Relation::Parent,
+            )
+            .await
+            .unwrap();
         let rels = store.get_relations(&PersonId("p1".into())).await.unwrap();
         assert_eq!(rels.len(), 0);
     }
@@ -1671,27 +1832,51 @@ mod tests {
         store.add_person(&sample_person("p1", "Sam")).await.unwrap();
         store.add_person(&sample_person("p2", "Mom")).await.unwrap();
 
-        store.add_group(&Group {
-            id: GroupId("g1".into()),
-            name: "Family Chat".into(),
-            gateway_id: "discord".into(),
-            external_id: "discord-family".into(),
-            context: GroupContext::Family,
-            members: vec![PersonId("p1".into()), PersonId("p2".into())],
-        }).await.unwrap();
+        store
+            .add_group(&Group {
+                id: GroupId("g1".into()),
+                name: "Family Chat".into(),
+                gateway_id: "discord".into(),
+                external_id: "discord-family".into(),
+                context: GroupContext::Family,
+                members: vec![PersonId("p1".into()), PersonId("p2".into())],
+            })
+            .await
+            .unwrap();
 
-        let group = store.get_group(&GroupId("g1".into())).await.unwrap().unwrap();
+        let group = store
+            .get_group(&GroupId("g1".into()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(group.name, "Family Chat");
         assert_eq!(group.members.len(), 2);
 
-        store.add_person(&sample_person("p3", "Sister")).await.unwrap();
-        store.add_group_member(&GroupId("g1".into()), &PersonId("p3".into())).await.unwrap();
+        store
+            .add_person(&sample_person("p3", "Sister"))
+            .await
+            .unwrap();
+        store
+            .add_group_member(&GroupId("g1".into()), &PersonId("p3".into()))
+            .await
+            .unwrap();
 
-        let group = store.get_group(&GroupId("g1".into())).await.unwrap().unwrap();
+        let group = store
+            .get_group(&GroupId("g1".into()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(group.members.len(), 3);
 
-        store.remove_group_member(&GroupId("g1".into()), &PersonId("p3".into())).await.unwrap();
-        let group = store.get_group(&GroupId("g1".into())).await.unwrap().unwrap();
+        store
+            .remove_group_member(&GroupId("g1".into()), &PersonId("p3".into()))
+            .await
+            .unwrap();
+        let group = store
+            .get_group(&GroupId("g1".into()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(group.members.len(), 2);
     }
 
@@ -1718,7 +1903,11 @@ mod tests {
         };
         store.store_memory(&mem).await.unwrap();
 
-        let loaded = store.get_memory(&MemoryId("m1".into())).await.unwrap().unwrap();
+        let loaded = store
+            .get_memory(&MemoryId("m1".into()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(loaded.people.len(), 2);
 
         let results = store
@@ -1740,38 +1929,47 @@ mod tests {
         let sam = PersonId("sam".into());
         let mom = PersonId("mom".into());
 
-        store.add_directive(&BehaviorDirective {
-            id: "d1".into(),
-            scope: DirectiveScope::Global,
-            directive: "Never share private info between people".into(),
-            set_by: sam.clone(),
-            priority: 0,
-            active: true,
-            created_at: 1000,
-            expires_at: None,
-        }).await.unwrap();
+        store
+            .add_directive(&BehaviorDirective {
+                id: "d1".into(),
+                scope: DirectiveScope::Global,
+                directive: "Never share private info between people".into(),
+                set_by: sam.clone(),
+                priority: 0,
+                active: true,
+                created_at: 1000,
+                expires_at: None,
+            })
+            .await
+            .unwrap();
 
-        store.add_directive(&BehaviorDirective {
-            id: "d2".into(),
-            scope: DirectiveScope::Person(mom.clone()),
-            directive: "Be polite, no crude humor".into(),
-            set_by: sam.clone(),
-            priority: 10,
-            active: true,
-            created_at: 1000,
-            expires_at: None,
-        }).await.unwrap();
+        store
+            .add_directive(&BehaviorDirective {
+                id: "d2".into(),
+                scope: DirectiveScope::Person(mom.clone()),
+                directive: "Be polite, no crude humor".into(),
+                set_by: sam.clone(),
+                priority: 10,
+                active: true,
+                created_at: 1000,
+                expires_at: None,
+            })
+            .await
+            .unwrap();
 
-        store.add_directive(&BehaviorDirective {
-            id: "d3".into(),
-            scope: DirectiveScope::Authority(Authority::Default),
-            directive: "Be warm and respectful".into(),
-            set_by: sam.clone(),
-            priority: 5,
-            active: true,
-            created_at: 1000,
-            expires_at: None,
-        }).await.unwrap();
+        store
+            .add_directive(&BehaviorDirective {
+                id: "d3".into(),
+                scope: DirectiveScope::Authority(Authority::Default),
+                directive: "Be warm and respectful".into(),
+                set_by: sam.clone(),
+                priority: 5,
+                active: true,
+                created_at: 1000,
+                expires_at: None,
+            })
+            .await
+            .unwrap();
 
         let directives = store
             .get_directives_for_context(&mom, &Authority::Default, None)
@@ -1782,7 +1980,10 @@ mod tests {
         assert_eq!(directives[1].id, "d3");
         assert_eq!(directives[2].id, "d1");
 
-        store.update_directive("d2", None, Some(false), None, None).await.unwrap();
+        store
+            .update_directive("d2", None, Some(false), None, None)
+            .await
+            .unwrap();
         let directives = store
             .get_directives_for_context(&mom, &Authority::Default, None)
             .await

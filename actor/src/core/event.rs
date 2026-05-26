@@ -1,5 +1,5 @@
-use protocol::{ConversationId, InboundMessage, PersonId};
 use super::action::{ActionId, Outcome};
+use protocol::{ConversationId, InboundMessage, PersonId};
 
 #[derive(Clone, Debug)]
 pub struct FiredIntent {
@@ -11,7 +11,9 @@ pub struct FiredIntent {
 
 pub enum WakeEvent {
     Message(InboundMessage),
-    IdleTick { elapsed_secs: f64 },
+    IdleTick {
+        elapsed_secs: f64,
+    },
     IntentFired(FiredIntent),
     TypingUpdate {
         conversation: ConversationId,

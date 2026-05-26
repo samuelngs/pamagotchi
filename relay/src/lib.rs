@@ -1,3 +1,7 @@
+mod api;
+
+pub use api::{ApiClient, ApiClientRequest, ApiServer, ApiServerHandle};
+
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};

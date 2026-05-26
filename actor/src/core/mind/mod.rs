@@ -4,13 +4,13 @@ mod spawn;
 
 use super::action::{ActionId, FollowUp};
 use super::event::WakeEvent;
-use super::registry::ActionRegistry;
 use super::handle::StateHandle;
-use inference::InferenceRouter;
-use gateway::GatewayRouter;
+use super::registry::ActionRegistry;
 use crate::identity::{Identity, Person};
 use crate::state::{Authority, Relationship};
 use crate::store::Store;
+use gateway::GatewayRouter;
+use inference::InferenceRouter;
 use protocol::{InboundMessage, PersonId};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -147,10 +147,13 @@ impl Mind {
     async fn resolve_relay_person(&self, msg: &mut InboundMessage) {
         if let Some(owner_id) = self.find_owner() {
             let _ = self.store.touch_person(&owner_id).await;
-            self.ensure_identity_linked(&owner_id, &msg.gateway_id, &msg.external_id).await;
+            self.ensure_identity_linked(&owner_id, &msg.gateway_id, &msg.external_id)
+                .await;
             msg.person = Some(owner_id);
         } else {
-            let id = self.create_person_with_identity(msg, Authority::Owner).await;
+            let id = self
+                .create_person_with_identity(msg, Authority::Owner)
+                .await;
             if let Some(ref id) = id {
                 info!(person = %id.0, "created owner from first relay contact");
             }
@@ -159,7 +162,11 @@ impl Mind {
     }
 
     async fn resolve_gateway_person(&self, msg: &mut InboundMessage) {
-        match self.store.resolve_identity(&msg.gateway_id, &msg.external_id).await {
+        match self
+            .store
+            .resolve_identity(&msg.gateway_id, &msg.external_id)
+            .await
+        {
             Ok(Some(person)) => {
                 let _ = self.store.touch_person(&person.id).await;
                 msg.person = Some(person.id);
@@ -180,7 +187,8 @@ impl Mind {
 
     fn find_owner(&self) -> Option<PersonId> {
         let actor = self.state.read_state();
-        actor.bonds
+        actor
+            .bonds
             .iter()
             .find(|(_, rel)| rel.authority == Authority::Owner)
             .map(|(id, _)| id.clone())
@@ -215,8 +223,13 @@ impl Mind {
         }
         let mut rel = Relationship::default();
         rel.authority = authority;
-        self.state.shared.actor.write().unwrap()
-            .bonds.insert(id.clone(), rel);
+        self.state
+            .shared
+            .actor
+            .write()
+            .unwrap()
+            .bonds
+            .insert(id.clone(), rel);
         Some(id)
     }
 

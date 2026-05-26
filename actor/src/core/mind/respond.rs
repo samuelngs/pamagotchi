@@ -5,7 +5,11 @@ use super::Mind;
 use tracing::warn;
 
 impl Mind {
-    pub(super) fn respond_to(&self, event: &WakeEvent, style_directive: Option<String>) -> MindDecision {
+    pub(super) fn respond_to(
+        &self,
+        event: &WakeEvent,
+        style_directive: Option<String>,
+    ) -> MindDecision {
         let authority = self.resolve_authority(event);
 
         match event {
@@ -24,10 +28,7 @@ impl Mind {
                                 authority,
                                 style_directive,
                             );
-                            return MindDecision::CancelAndSpawn(
-                                vec![lowest.id.clone()],
-                                action,
-                            );
+                            return MindDecision::CancelAndSpawn(vec![lowest.id.clone()], action);
                         }
                     }
                     warn!("mind wants to respond but at capacity, dropping");

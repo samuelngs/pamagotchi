@@ -24,9 +24,9 @@ pub fn apply_outline(grid: &mut Grid) {
                 grid.get(x, y + 1),
             ];
 
-            let adjacent_to_filled = neighbors.iter().any(|c| {
-                matches!(c, Some(Cell::Body | Cell::Eye | Cell::Pupil))
-            });
+            let adjacent_to_filled = neighbors
+                .iter()
+                .any(|c| matches!(c, Some(Cell::Body | Cell::Eye | Cell::Pupil)));
 
             if adjacent_to_filled {
                 outline_positions.push((x, y));

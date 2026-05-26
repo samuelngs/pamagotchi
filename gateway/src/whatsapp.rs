@@ -1,7 +1,11 @@
-use crate::{GatewayAdapter, GatewayCapabilities};
-use protocol::{MediaAttachment, MediaKind};
-use protocol::{ConversationId, GroupId, InboundMessage};
+use crate::{
+    GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayRuntime,
+    GatewayRuntimeEvent, GatewaySetupInstructions,
+};
 use async_trait::async_trait;
+use protocol::{ConversationId, GroupId, InboundMessage};
+use protocol::{MediaAttachment, MediaKind};
+use qrcode::{QrCode, render::unicode};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -15,17 +19,29 @@ use whatsapp_rust_tokio_transport::TokioWebSocketTransportFactory;
 use whatsapp_rust_ureq_http_client::UreqHttpClient;
 
 pub struct WhatsAppAdapter {
+    id: String,
     client: Arc<Client>,
+    runtime: Arc<GatewayRuntime>,
 }
 
 impl WhatsAppAdapter {
-    pub async fn connect(
+    pub async fn connect_with_id(
+        id: impl Into<String>,
         db_path: &str,
         inbound_tx: mpsc::Sender<InboundMessage>,
+        gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
     ) -> anyhow::Result<Self> {
+        let id = id.into();
+        let runtime = Arc::new(GatewayRuntime::new(gateway_event_tx));
+        runtime
+            .emit_state(&id, GatewayConnectionState::Connecting)
+            .await;
+
         let backend = SqliteStore::new(db_path).await?;
 
         let tx = inbound_tx.clone();
+        let gateway_id = id.clone();
+        let runtime_for_events = runtime.clone();
         let mut bot = Bot::builder()
             .with_backend(Arc::new(backend))
             .with_transport_factory(TokioWebSocketTransportFactory::new())
@@ -33,8 +49,10 @@ impl WhatsAppAdapter {
             .with_runtime(TokioRuntime)
             .on_event(move |event: Arc<Event>, _client: Arc<Client>| {
                 let tx = tx.clone();
+                let gateway_id = gateway_id.clone();
+                let runtime = runtime_for_events.clone();
                 async move {
-                    handle_event(&event, &tx).await;
+                    handle_event(&gateway_id, &event, &tx, &runtime).await;
                 }
             })
             .build()
@@ -42,68 +60,80 @@ impl WhatsAppAdapter {
 
         let client = bot.client();
 
+        let runtime_for_run = runtime.clone();
+        let gateway_id_for_run = id.clone();
         tokio::spawn(async move {
             match bot.run().await {
                 Ok(handle) => {
                     if let Err(e) = handle.await {
                         error!("whatsapp disconnected: {e}");
+                        runtime_for_run
+                            .emit_state(
+                                &gateway_id_for_run,
+                                GatewayConnectionState::Error {
+                                    message: e.to_string(),
+                                },
+                            )
+                            .await;
                     }
                 }
-                Err(e) => error!("whatsapp failed to start: {e}"),
+                Err(e) => {
+                    error!("whatsapp failed to start: {e}");
+                    runtime_for_run
+                        .emit_state(
+                            &gateway_id_for_run,
+                            GatewayConnectionState::Error {
+                                message: e.to_string(),
+                            },
+                        )
+                        .await;
+                }
             }
         });
 
-        info!("whatsapp adapter connected");
+        info!(gateway = %id, "whatsapp adapter connected");
 
-        Ok(Self { client })
+        Ok(Self {
+            id,
+            client,
+            runtime,
+        })
     }
 }
 
-fn render_qr_compact(qr: &qrcode::QrCode) -> String {
-    use qrcode::Color;
-    let w = qr.width() as usize;
-    let margin = 2;
-    let total = w + margin * 2;
-    let mut out = String::new();
-    for row in (0..total).step_by(2) {
-        for col in 0..total {
-            let top = if row >= margin && row < margin + w && col >= margin && col < margin + w {
-                qr[(row - margin, col - margin)] == Color::Dark
-            } else {
-                false
-            };
-            let bot = if row + 1 >= margin && row + 1 < margin + w && col >= margin && col < margin + w {
-                qr[(row + 1 - margin, col - margin)] == Color::Dark
-            } else {
-                false
-            };
-            out.push(match (top, bot) {
-                (true, true) => '\u{2588}',
-                (true, false) => '\u{2580}',
-                (false, true) => '\u{2584}',
-                (false, false) => ' ',
-            });
-        }
-        out.push('\n');
-    }
-    out
-}
-
-async fn handle_event(event: &Event, tx: &mpsc::Sender<InboundMessage>) {
+async fn handle_event(
+    gateway_id: &str,
+    event: &Event,
+    tx: &mpsc::Sender<InboundMessage>,
+    runtime: &GatewayRuntime,
+) {
     match event {
         Event::PairingQrCode { code, .. } => {
             info!("whatsapp pairing QR code received");
-            if let Ok(qr) = qrcode::QrCode::new(code.as_bytes()) {
-                eprintln!("\n{}\n", render_qr_compact(&qr));
-            } else {
-                warn!("failed to generate QR code, raw: {code}");
-            }
+            let rendered = render_qr_compact(code);
+            let setup = Some(GatewaySetupInstructions::QrCode {
+                title: "Connect WhatsApp".into(),
+                body: "Scan this QR code from WhatsApp > Linked devices.".into(),
+                code: code.clone(),
+                rendered,
+            });
+            runtime
+                .emit_state(gateway_id, GatewayConnectionState::SetupRequired)
+                .await;
+            runtime.emit_setup(gateway_id, setup).await;
         }
         Event::Connected(_) => {
             info!("whatsapp connected");
+            runtime
+                .emit_state(gateway_id, GatewayConnectionState::Connected)
+                .await;
+            runtime.emit_setup(gateway_id, None).await;
         }
         Event::Disconnected(_) => {
             warn!("whatsapp disconnected");
+            runtime
+                .emit_state(gateway_id, GatewayConnectionState::Disconnected)
+                .await;
         }
         Event::Message(msg, info) => {
             if info.source.is_from_me {
@@ -123,9 +153,9 @@ async fn handle_event(event: &Event, tx: &mpsc::Sender<InboundMessage>) {
 
             let inbound = InboundMessage {
                 message_id: info.id.to_string(),
-                gateway_id: "whatsapp".into(),
+                gateway_id: gateway_id.to_string(),
                 external_id: chat.clone(),
-                conversation: ConversationId(format!("whatsapp:{chat}")),
+                conversation: ConversationId(format!("{gateway_id}:{chat}")),
                 group: if info.source.is_group {
                     Some(GroupId(chat))
                 } else {
@@ -148,6 +178,12 @@ async fn handle_event(event: &Event, tx: &mpsc::Sender<InboundMessage>) {
         }
         _ => {}
     }
+}
+
+fn render_qr_compact(code: &str) -> String {
+    QrCode::new(code.as_bytes())
+        .map(|qr| qr.render::<unicode::Dense1x2>().quiet_zone(false).build())
+        .unwrap_or_default()
 }
 
 fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment>) {
@@ -231,7 +267,20 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
 
 #[async_trait]
 impl GatewayAdapter for WhatsAppAdapter {
+    async fn connect(
+        id: String,
+        db_path: String,
+        inbound_tx: mpsc::Sender<InboundMessage>,
+        gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+    ) -> anyhow::Result<Self> {
+        Self::connect_with_id(id, &db_path, inbound_tx, gateway_event_tx).await
+    }
+
     fn gateway_id(&self) -> &str {
+        &self.id
+    }
+
+    fn kind(&self) -> &str {
         "whatsapp"
     }
 
@@ -247,6 +296,14 @@ impl GatewayAdapter for WhatsAppAdapter {
             composing: true,
             read_receipts: true,
         }
+    }
+
+    fn connection_state(&self) -> GatewayConnectionState {
+        self.runtime.connection_state()
+    }
+
+    fn setup_instructions(&self) -> Option<GatewaySetupInstructions> {
+        self.runtime.setup_instructions()
     }
 
     async fn send_message(

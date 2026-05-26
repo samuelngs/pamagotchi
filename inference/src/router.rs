@@ -1,5 +1,5 @@
-use crate::request::SamplingConfig;
 use crate::Provider;
+use crate::request::SamplingConfig;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -72,10 +72,7 @@ pub struct ResolvedInference {
 impl InferenceRouter {
     pub fn resolve(&self, ctx: &RouteContext) -> ResolvedInference {
         let route = match ctx {
-            RouteContext::Mind => self
-                .chat
-                .first()
-                .and_then(|(_, chain)| chain.first()),
+            RouteContext::Mind => self.chat.first().and_then(|(_, chain)| chain.first()),
             RouteContext::Embedding => self.embedding.first(),
             RouteContext::Action(level) => self.find_chat(*level),
         };
@@ -91,11 +88,7 @@ impl InferenceRouter {
 
     pub fn resolve_chain(&self, ctx: &RouteContext) -> Vec<ResolvedInference> {
         let chain: &[ResolvedRoute] = match ctx {
-            RouteContext::Mind => self
-                .chat
-                .first()
-                .map(|(_, c)| c.as_slice())
-                .unwrap_or(&[]),
+            RouteContext::Mind => self.chat.first().map(|(_, c)| c.as_slice()).unwrap_or(&[]),
             RouteContext::Embedding => &self.embedding,
             RouteContext::Action(level) => self.find_chat_chain(*level),
         };
@@ -117,7 +110,10 @@ impl InferenceRouter {
     }
 
     pub async fn embed(&self, input: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-        let route = self.embedding.first().ok_or_else(|| anyhow::anyhow!("no embedding endpoint configured"))?;
+        let route = self
+            .embedding
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("no embedding endpoint configured"))?;
         route.provider.embed(&route.model, input).await
     }
 

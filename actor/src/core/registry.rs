@@ -1,6 +1,4 @@
-use super::action::{
-    Action, ActionId, FollowUp, LaunchContext, Outcome, Phase, RunningState,
-};
+use super::action::{Action, ActionId, FollowUp, LaunchContext, Outcome, Phase, RunningState};
 use protocol::ConversationId;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -107,11 +105,9 @@ impl ActionRegistry {
     }
 
     pub fn unreplied_in(&self, conv: &ConversationId) -> Option<&Action> {
-        self.actions.values().find(|a| {
-            a.is_running()
-                && a.conversation.as_ref() == Some(conv)
-                && !a.responded()
-        })
+        self.actions
+            .values()
+            .find(|a| a.is_running() && a.conversation.as_ref() == Some(conv) && !a.responded())
     }
 
     pub fn lowest_priority_running(&self) -> Option<&Action> {

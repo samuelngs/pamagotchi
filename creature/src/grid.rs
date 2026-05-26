@@ -201,10 +201,18 @@ impl Grid {
     fn count_body_neighbors(&self, x: u32, y: u32) -> u32 {
         let mut count = 0;
         let is_body = |c: Option<Cell>| matches!(c, Some(Cell::Body));
-        if x > 0 && is_body(self.get(x - 1, y)) { count += 1; }
-        if is_body(self.get(x + 1, y)) { count += 1; }
-        if y > 0 && is_body(self.get(x, y - 1)) { count += 1; }
-        if is_body(self.get(x, y + 1)) { count += 1; }
+        if x > 0 && is_body(self.get(x - 1, y)) {
+            count += 1;
+        }
+        if is_body(self.get(x + 1, y)) {
+            count += 1;
+        }
+        if y > 0 && is_body(self.get(x, y - 1)) {
+            count += 1;
+        }
+        if is_body(self.get(x, y + 1)) {
+            count += 1;
+        }
         count
     }
 
@@ -237,7 +245,13 @@ impl Grid {
         }
     }
 
-    fn flood_fill_label(&self, labels: &mut [u32], start_x: usize, start_y: usize, label: u32) -> u32 {
+    fn flood_fill_label(
+        &self,
+        labels: &mut [u32],
+        start_x: usize,
+        start_y: usize,
+        label: u32,
+    ) -> u32 {
         let w = self.width as usize;
         let h = self.height as usize;
         let mut stack = vec![(start_x, start_y)];
@@ -251,10 +265,18 @@ impl Grid {
             labels[idx] = label;
             count += 1;
 
-            if x > 0 { stack.push((x - 1, y)); }
-            if x + 1 < w { stack.push((x + 1, y)); }
-            if y > 0 { stack.push((x, y - 1)); }
-            if y + 1 < h { stack.push((x, y + 1)); }
+            if x > 0 {
+                stack.push((x - 1, y));
+            }
+            if x + 1 < w {
+                stack.push((x + 1, y));
+            }
+            if y > 0 {
+                stack.push((x, y - 1));
+            }
+            if y + 1 < h {
+                stack.push((x, y + 1));
+            }
         }
         count
     }

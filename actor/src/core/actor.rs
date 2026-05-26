@@ -1,10 +1,10 @@
-use super::mind::Mind;
-use super::handle::{self, SharedState, StateHandle};
 use super::event::WakeEvent;
-use inference::InferenceRouter;
+use super::handle::{self, SharedState, StateHandle};
+use super::mind::Mind;
 use crate::state::{ActorState, GrowthConfig};
-use gateway::GatewayRouter;
 use crate::store::Store;
+use gateway::GatewayRouter;
+use inference::InferenceRouter;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -74,8 +74,8 @@ impl ActorBuilder {
         self
     }
 
-    pub fn with_gateway(mut self, gateway: GatewayRouter) -> Self {
-        self.gateway = Arc::new(gateway);
+    pub fn with_gateway(mut self, gateway: Arc<GatewayRouter>) -> Self {
+        self.gateway = gateway;
         self
     }
 

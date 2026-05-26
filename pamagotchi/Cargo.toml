@@ -10,9 +10,11 @@ path = "src/main.rs"
 
 [dependencies]
 relay.workspace = true
+protocol.workspace = true
 creature.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
 clap.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+serde_json.workspace = true

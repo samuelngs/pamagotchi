@@ -1,5 +1,5 @@
-use protocol::{GroupId, PersonId};
 use super::Authority;
+use protocol::{GroupId, PersonId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

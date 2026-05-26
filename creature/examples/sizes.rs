@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use creature::animate::{frame_index_at, AnimationFrame};
+use creature::animate::{AnimationFrame, frame_index_at};
 use creature::render::{render_to_string, render_to_string_quadrant};
 use creature::{Creature, CreatureConfig};
 
@@ -44,35 +44,32 @@ fn main() {
         return;
     }
 
-    let all_frames: Vec<Vec<AnimationFrame>> =
-        creatures.iter().map(|c| c.idle_frames()).collect();
+    let all_frames: Vec<Vec<AnimationFrame>> = creatures.iter().map(|c| c.idle_frames()).collect();
 
-    let render_frame = |frames: &[Vec<AnimationFrame>],
-                        creatures: &[Creature],
-                        elapsed: u64|
-     -> String {
-        let mut out = format!("\n  seed={seed} — animated sizes  (ctrl+c to quit)\n\n");
-        for (i, (flist, creature)) in frames.iter().zip(creatures.iter()).enumerate() {
-            let fi = frame_index_at(flist, elapsed);
-            let grid = &flist[fi].grid;
-            let size = sizes[i];
-            let mode = if grid.width > grid.height {
-                "quadrant"
-            } else {
-                "half-block"
-            };
-            out.push_str(&format!(
-                "--- size={size} ({}x{} px, {mode}) ---\n",
-                grid.width, grid.height
-            ));
-            if grid.width > grid.height {
-                out.push_str(&render_to_string_quadrant(grid, &creature.palette));
-            } else {
-                out.push_str(&render_to_string(grid, &creature.palette));
+    let render_frame =
+        |frames: &[Vec<AnimationFrame>], creatures: &[Creature], elapsed: u64| -> String {
+            let mut out = format!("\n  seed={seed} — animated sizes  (ctrl+c to quit)\n\n");
+            for (i, (flist, creature)) in frames.iter().zip(creatures.iter()).enumerate() {
+                let fi = frame_index_at(flist, elapsed);
+                let grid = &flist[fi].grid;
+                let size = sizes[i];
+                let mode = if grid.width > grid.height {
+                    "quadrant"
+                } else {
+                    "half-block"
+                };
+                out.push_str(&format!(
+                    "--- size={size} ({}x{} px, {mode}) ---\n",
+                    grid.width, grid.height
+                ));
+                if grid.width > grid.height {
+                    out.push_str(&render_to_string_quadrant(grid, &creature.palette));
+                } else {
+                    out.push_str(&render_to_string(grid, &creature.palette));
+                }
             }
-        }
-        out
-    };
+            out
+        };
 
     print!("\x1b[?25l\x1b[2J\x1b[H");
     io::stdout().flush().unwrap();

@@ -32,7 +32,11 @@ impl InputBox<'_> {
 
     fn text_width(&self, area: Rect) -> usize {
         let content_width = area.width.saturating_sub(2) as usize;
-        if content_width > 2 { content_width - 2 } else { 1 }
+        if content_width > 2 {
+            content_width - 2
+        } else {
+            1
+        }
     }
 }
 
@@ -47,7 +51,12 @@ impl Widget for InputBox<'_> {
         let cap = "▄".repeat(area.width as usize);
         buf.set_string(area.x, area.y, &cap, Style::default().fg(bg));
 
-        let content_bg = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(2));
+        let content_bg = Rect::new(
+            area.x,
+            area.y + 1,
+            area.width,
+            area.height.saturating_sub(2),
+        );
         Block::default()
             .style(Style::default().bg(bg))
             .render(content_bg, buf);
@@ -76,7 +85,11 @@ impl Widget for InputBox<'_> {
         let prompt_style = Style::default().fg(prompt_color).bg(bg);
         let text_style = Style::default().bg(bg);
         let prompt = "❯ ";
-        let wrap_width = if content.width > 2 { content.width as usize - 2 } else { 1 };
+        let wrap_width = if content.width > 2 {
+            content.width as usize - 2
+        } else {
+            1
+        };
 
         if self.text.is_empty() {
             let line = Line::from(vec![

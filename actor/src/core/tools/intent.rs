@@ -1,5 +1,5 @@
 use inference::Tool;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::info;
 
 pub fn tools() -> Vec<Tool> {

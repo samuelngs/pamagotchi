@@ -188,11 +188,7 @@ pub fn render_row(creatures: &[(&Grid, &Palette)], spacing: u32) -> String {
         return String::new();
     }
 
-    let max_height = creatures
-        .iter()
-        .map(|(g, _)| g.height)
-        .max()
-        .unwrap_or(0);
+    let max_height = creatures.iter().map(|(g, _)| g.height).max().unwrap_or(0);
 
     let mut out = String::new();
     let mut y = 0;

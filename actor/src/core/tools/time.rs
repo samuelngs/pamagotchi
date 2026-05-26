@@ -1,6 +1,6 @@
-use inference::Tool;
-use serde_json::{json, Value};
 use super::context::SessionContext;
+use inference::Tool;
+use serde_json::{Value, json};
 
 pub fn tools() -> Vec<Tool> {
     vec![

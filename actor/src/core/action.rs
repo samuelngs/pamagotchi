@@ -165,7 +165,11 @@ impl Action {
         }
     }
 
-    pub fn outreach(task: String, conversation: Option<ConversationId>, authority: Authority) -> Self {
+    pub fn outreach(
+        task: String,
+        conversation: Option<ConversationId>,
+        authority: Authority,
+    ) -> Self {
         Self {
             id: ActionId::new(),
             kind: ActionKind::Outreach,
@@ -190,9 +194,7 @@ impl Action {
 
     pub fn responded(&self) -> bool {
         match &self.phase {
-            Phase::Running { progress, .. } => {
-                progress.read().map_or(false, |p| p.responded)
-            }
+            Phase::Running { progress, .. } => progress.read().map_or(false, |p| p.responded),
             Phase::Done { outcome } => outcome.responded,
             _ => false,
         }

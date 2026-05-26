@@ -3,8 +3,8 @@ pub mod decision;
 mod intent;
 mod memory;
 mod messaging;
-mod person;
 pub mod permission;
+mod person;
 mod reflection;
 mod time;
 pub mod util;
@@ -19,8 +19,16 @@ use serde_json::Value;
 
 pub fn mind_tools() -> Vec<Tool> {
     let mut tools = decision::tools();
-    tools.extend(memory::tools().into_iter().filter(|t| t.name == "recall_memories"));
-    tools.extend(time::tools().into_iter().filter(|t| t.name == "get_current_time"));
+    tools.extend(
+        memory::tools()
+            .into_iter()
+            .filter(|t| t.name == "recall_memories"),
+    );
+    tools.extend(
+        time::tools()
+            .into_iter()
+            .filter(|t| t.name == "get_current_time"),
+    );
     tools
 }
 

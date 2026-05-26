@@ -1,8 +1,8 @@
+use super::context::SessionContext;
 use inference::Tool;
 use protocol::PersonId;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::info;
-use super::context::SessionContext;
 
 pub fn tools() -> Vec<Tool> {
     vec![
@@ -60,18 +60,24 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
         Ok(()) => {
             info!(action = %ctx.action_id, person = %person_id.0, "person updated");
             let mut parts = Vec::new();
-            if name.is_some() { parts.push("name"); }
-            if summary.is_some() { parts.push("summary"); }
+            if name.is_some() {
+                parts.push("name");
+            }
+            if summary.is_some() {
+                parts.push("summary");
+            }
             json!({
                 "status": "updated",
                 "ref": person_id.0,
                 "fields": parts,
-            }).to_string()
+            })
+            .to_string()
         }
         Err(e) => json!({
             "status": "error",
             "message": format!("{e}"),
-        }).to_string(),
+        })
+        .to_string(),
     }
 }
 
@@ -81,7 +87,8 @@ pub async fn get(args: &Value, ctx: &SessionContext) -> String {
         return json!({
             "status": "error",
             "message": "No person ref provided and no current conversation partner.",
-        }).to_string();
+        })
+        .to_string();
     };
 
     match ctx.store.get_person(&person_id).await {
@@ -100,16 +107,19 @@ pub async fn get(args: &Value, ctx: &SessionContext) -> String {
                 "comm_style": person.comm_style,
                 "first_seen": first_seen,
                 "last_seen": last_seen,
-            }).to_string()
+            })
+            .to_string()
         }
         Ok(None) => json!({
             "status": "error",
             "message": "Person not found.",
-        }).to_string(),
+        })
+        .to_string(),
         Err(e) => json!({
             "status": "error",
             "message": format!("{e}"),
-        }).to_string(),
+        })
+        .to_string(),
     }
 }
 

@@ -1,5 +1,5 @@
-use protocol::PersonId;
 use crate::state::{AffectShift, Delta};
+use protocol::PersonId;
 
 pub fn empty_delta(triggered_by: Option<PersonId>) -> Delta {
     Delta {

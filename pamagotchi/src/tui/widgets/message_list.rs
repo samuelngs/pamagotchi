@@ -35,8 +35,7 @@ impl Widget for MessageList<'_> {
         if item_y + h as i32 > 0 && item_y < area.height as i32 {
             let render_y = item_y.max(0) as u16;
             let render_h = (h as i32 - (render_y as i32 - item_y))
-                .min(area.height as i32 - render_y as i32)
-                as u16;
+                .min(area.height as i32 - render_y as i32) as u16;
             if render_h > 0 {
                 Greeting.render(
                     Rect::new(area.x, area.y + render_y, area.width, render_h),

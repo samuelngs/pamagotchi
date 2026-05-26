@@ -1,7 +1,7 @@
+use super::ScreenAction;
 use crate::tui::app::App;
 use crate::tui::focus::FocusId;
 use crate::tui::widgets::{Button, InputBox, MessageList, ShortKey};
-use super::ScreenAction;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -65,15 +65,23 @@ fn render_buttons(frame: &mut Frame, app: &App, area: Rect) {
 pub async fn handle_key(app: &mut App, key: KeyEvent) -> ScreenAction {
     match key.code {
         KeyCode::Esc => return ScreenAction::Quit,
-        KeyCode::Tab => { app.focus.next(); return ScreenAction::None; }
-        KeyCode::BackTab => { app.focus.prev(); return ScreenAction::None; }
+        KeyCode::Tab => {
+            app.focus.next();
+            return ScreenAction::None;
+        }
+        KeyCode::BackTab => {
+            app.focus.prev();
+            return ScreenAction::None;
+        }
         _ => {}
     }
 
     match app.focus.current() {
         FocusId::Input => match key.code {
             KeyCode::Enter
-                if key.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
+                if key
+                    .modifiers
+                    .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
             {
                 app.insert_newline();
             }
@@ -118,6 +126,9 @@ pub async fn handle_key(app: &mut App, key: KeyEvent) -> ScreenAction {
             KeyCode::Right => app.focus.next(),
             _ => {}
         },
+        _ => {
+            app.focus.set(FocusId::Input);
+        }
     }
 
     app.ensure_cursor_visible();

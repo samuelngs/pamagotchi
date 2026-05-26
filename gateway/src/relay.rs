@@ -1,7 +1,9 @@
-use crate::{GatewayAdapter, GatewayCapabilities};
-use protocol::MediaAttachment;
-use protocol::{ConversationId, InboundMessage};
+use crate::{
+    GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayRuntimeEvent,
+    GatewaySetupInstructions,
+};
 use async_trait::async_trait;
+use protocol::{ConversationId, InboundMessage, MediaAttachment};
 use relay::{RelayEvent, RelaySender};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -55,7 +57,20 @@ impl RelayAdapter {
 
 #[async_trait]
 impl GatewayAdapter for RelayAdapter {
+    async fn connect(
+        _id: String,
+        _db_path: String,
+        _inbound_tx: mpsc::Sender<InboundMessage>,
+        _gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+    ) -> anyhow::Result<Self> {
+        anyhow::bail!("relay adapter requires relay server port/channel connection")
+    }
+
     fn gateway_id(&self) -> &str {
+        "relay"
+    }
+
+    fn kind(&self) -> &str {
         "relay"
     }
 
@@ -65,6 +80,14 @@ impl GatewayAdapter for RelayAdapter {
             composing: true,
             read_receipts: false,
         }
+    }
+
+    fn connection_state(&self) -> GatewayConnectionState {
+        GatewayConnectionState::Connected
+    }
+
+    fn setup_instructions(&self) -> Option<GatewaySetupInstructions> {
+        None
     }
 
     async fn send_message(

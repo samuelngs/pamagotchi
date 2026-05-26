@@ -1,20 +1,22 @@
 mod context;
 
-use context::*;
 use super::action::ActionKind;
 use super::handle::StateHandle;
 use super::tools::{SessionContext, SessionKind};
 use crate::state::{ActorState, Authority};
 use crate::store::{MemoryKind, RecallQuery, Store};
-use protocol::{ConversationId, InboundMessage};
+use context::*;
 use minijinja::Environment;
+use protocol::{ConversationId, InboundMessage};
 use std::sync::Arc;
 
 fn make_env() -> Environment<'static> {
     let mut env = Environment::new();
     env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-    env.add_template("mind.j2", include_str!("templates/mind.j2")).unwrap();
-    env.add_template("action.j2", include_str!("templates/action.j2")).unwrap();
+    env.add_template("mind.j2", include_str!("templates/mind.j2"))
+        .unwrap();
+    env.add_template("action.j2", include_str!("templates/action.j2"))
+        .unwrap();
     env
 }
 
@@ -29,9 +31,28 @@ pub async fn build_system_prompt(
 ) -> anyhow::Result<String> {
     let env = make_env();
     match kind {
-        SessionKind::Mind => build_mind(&env, state, store, messages, &session_ctx.concurrent_summaries).await,
+        SessionKind::Mind => {
+            build_mind(
+                &env,
+                state,
+                store,
+                messages,
+                &session_ctx.concurrent_summaries,
+            )
+            .await
+        }
         SessionKind::Action(action_kind) => {
-            build_action(&env, state, store, action_kind, messages, conversation, session_ctx, authority).await
+            build_action(
+                &env,
+                state,
+                store,
+                action_kind,
+                messages,
+                conversation,
+                session_ctx,
+                authority,
+            )
+            .await
         }
     }
 }
@@ -56,7 +77,13 @@ async fn build_mind(
         .collect();
     let thoughts = fetch_thoughts(store).await;
 
-    let ctx = MindContext { identity, now, person, actions, thoughts };
+    let ctx = MindContext {
+        identity,
+        now,
+        person,
+        actions,
+        thoughts,
+    };
     let tmpl = env.get_template("mind.j2")?;
     Ok(tmpl.render(&ctx)?)
 }
@@ -103,23 +130,33 @@ async fn build_action(
     }
 
     let mut interests: Vec<_> = actor.interests.iter().collect();
-    interests.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap_or(std::cmp::Ordering::Equal));
-    let interests: Vec<InterestCtx> = interests.iter().take(10).map(|i| InterestCtx {
-        topic: i.topic.clone(),
-        intensity: pct(i.intensity),
-    }).collect();
+    interests.sort_by(|a, b| {
+        b.intensity
+            .partial_cmp(&a.intensity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let interests: Vec<InterestCtx> = interests
+        .iter()
+        .take(10)
+        .map(|i| InterestCtx {
+            topic: i.topic.clone(),
+            intensity: pct(i.intensity),
+        })
+        .collect();
 
     let mood = match actor.affect.valence {
         v if v > 0.3 => "positive",
         v if v < -0.3 => "low",
         _ => "neutral",
-    }.into();
+    }
+    .into();
 
     let energy = match actor.affect.arousal {
         a if a > 0.6 => "high energy",
         a if a < 0.3 => "low energy",
         _ => "moderate energy",
-    }.into();
+    }
+    .into();
 
     let person_id = messages.first().and_then(|m| m.person.as_ref());
     let now_unix = now_ts.timestamp();
@@ -129,9 +166,13 @@ async fn build_action(
     let (relationship, comm_style) = if let Some(pid) = person_id {
         let info = resolve_person_info(store, pid).await;
         let rel_ctx = actor.bonds.get(pid).map(|rel| {
-            let tone = if rel.emotional_valence > 0.3 { "warm" }
-                else if rel.emotional_valence < -0.3 { "strained" }
-                else { "neutral" };
+            let tone = if rel.emotional_valence > 0.3 {
+                "warm"
+            } else if rel.emotional_valence < -0.3 {
+                "strained"
+            } else {
+                "neutral"
+            };
             RelationshipCtx {
                 ref_id: pid.0.clone(),
                 name: info.name.clone(),
@@ -156,7 +197,9 @@ async fn build_action(
     };
 
     let directives = if let Some(pid) = person_id {
-        load_directives(store, &actor, pid, conversation).await.unwrap_or_default()
+        load_directives(store, &actor, pid, conversation)
+            .await
+            .unwrap_or_default()
     } else {
         vec![]
     };
@@ -217,13 +260,23 @@ async fn recall_identity_memories(store: &Arc<dyn Store>) -> Vec<String> {
 }
 
 async fn fetch_thoughts(store: &Arc<dyn Store>) -> Vec<ThoughtCtx> {
-    store.recent_thoughts(5).await.unwrap_or_default().into_iter().map(|t| ThoughtCtx {
-        kind: t.kind.as_str().to_string(),
-        content: t.content,
-    }).collect()
+    store
+        .recent_thoughts(5)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| ThoughtCtx {
+            kind: t.kind.as_str().to_string(),
+            content: t.content,
+        })
+        .collect()
 }
 
-async fn resolve_person_for_mind(state: &StateHandle, store: &Arc<dyn Store>, messages: &[InboundMessage]) -> Option<PersonContext> {
+async fn resolve_person_for_mind(
+    state: &StateHandle,
+    store: &Arc<dyn Store>,
+    messages: &[InboundMessage],
+) -> Option<PersonContext> {
     let msg = messages.first()?;
     let person_id = msg.person.as_ref()?;
     let info = resolve_person_info(store, person_id).await;
@@ -270,7 +323,13 @@ async fn resolve_person_info(store: &Arc<dyn Store>, person_id: &protocol::Perso
             first_seen: Some(p.first_seen),
             last_seen: Some(p.last_seen),
         },
-        _ => PersonInfo { name: None, summary: None, comm_style: None, first_seen: None, last_seen: None },
+        _ => PersonInfo {
+            name: None,
+            summary: None,
+            comm_style: None,
+            first_seen: None,
+            last_seen: None,
+        },
     }
 }
 
@@ -285,12 +344,17 @@ async fn load_directives(
 
     let group = if let Some(conv) = conversation {
         let summaries = store.list_conversations().await?;
-        summaries.into_iter().find(|s| s.id == *conv).and_then(|s| s.group)
+        summaries
+            .into_iter()
+            .find(|s| s.id == *conv)
+            .and_then(|s| s.group)
     } else {
         None
     };
 
-    let directives = store.get_directives_for_context(person, &authority, group.as_ref()).await?;
+    let directives = store
+        .get_directives_for_context(person, &authority, group.as_ref())
+        .await?;
     Ok(directives.into_iter().map(|d| d.directive).collect())
 }
 
@@ -305,22 +369,46 @@ fn relative_duration(from: i64, to: i64) -> String {
         "just now".into()
     } else if secs < 3600 {
         let m = secs / 60;
-        if m == 1 { "1 minute ago".into() } else { format!("{m} minutes ago") }
+        if m == 1 {
+            "1 minute ago".into()
+        } else {
+            format!("{m} minutes ago")
+        }
     } else if secs < 86400 {
         let h = secs / 3600;
-        if h == 1 { "1 hour ago".into() } else { format!("{h} hours ago") }
+        if h == 1 {
+            "1 hour ago".into()
+        } else {
+            format!("{h} hours ago")
+        }
     } else if secs < 604800 {
         let d = secs / 86400;
-        if d == 1 { "1 day ago".into() } else { format!("{d} days ago") }
+        if d == 1 {
+            "1 day ago".into()
+        } else {
+            format!("{d} days ago")
+        }
     } else if secs < 2592000 {
         let w = secs / 604800;
-        if w == 1 { "1 week ago".into() } else { format!("{w} weeks ago") }
+        if w == 1 {
+            "1 week ago".into()
+        } else {
+            format!("{w} weeks ago")
+        }
     } else if secs < 31536000 {
         let mo = secs / 2592000;
-        if mo == 1 { "1 month ago".into() } else { format!("{mo} months ago") }
+        if mo == 1 {
+            "1 month ago".into()
+        } else {
+            format!("{mo} months ago")
+        }
     } else {
         let y = secs / 31536000;
-        if y == 1 { "1 year ago".into() } else { format!("{y} years ago") }
+        if y == 1 {
+            "1 year ago".into()
+        } else {
+            format!("{y} years ago")
+        }
     }
 }
 

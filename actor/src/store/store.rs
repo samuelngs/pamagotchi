@@ -1,13 +1,12 @@
 use super::{
-    ActorSnapshot, ConversationSummary, Memory, MemoryUpdate,
-    RecallQuery, StoredMessage, Thought,
+    ActorSnapshot, ConversationSummary, Memory, MemoryUpdate, RecallQuery, StoredMessage, Thought,
 };
 use crate::identity::{
-    ClaimStatus, Group, IdentityClaim, Identity, Person, Relation, SocialRelation,
+    ClaimStatus, Group, Identity, IdentityClaim, Person, Relation, SocialRelation,
 };
-use protocol::{ConversationId, GroupId, MemoryId, PersonId};
 use crate::state::{Authority, BehaviorDirective};
 use async_trait::async_trait;
+use protocol::{ConversationId, GroupId, MemoryId, PersonId};
 
 #[async_trait]
 pub trait Store: Send + Sync {
@@ -50,14 +49,23 @@ pub trait Store: Send + Sync {
     // People
     async fn add_person(&self, person: &Person) -> anyhow::Result<PersonId>;
     async fn get_person(&self, id: &PersonId) -> anyhow::Result<Option<Person>>;
-    async fn update_person(&self, id: &PersonId, name: Option<&str>, summary: Option<&str>) -> anyhow::Result<()>;
+    async fn update_person(
+        &self,
+        id: &PersonId,
+        name: Option<&str>,
+        summary: Option<&str>,
+    ) -> anyhow::Result<()>;
     async fn update_comm_style(&self, id: &PersonId, style: &str) -> anyhow::Result<()>;
     async fn touch_person(&self, id: &PersonId) -> anyhow::Result<()>;
     async fn list_people(&self) -> anyhow::Result<Vec<Person>>;
 
     // Identities
     async fn add_identity(&self, person: &PersonId, identity: &Identity) -> anyhow::Result<()>;
-    async fn resolve_identity(&self, gateway_id: &str, external_id: &str) -> anyhow::Result<Option<Person>>;
+    async fn resolve_identity(
+        &self,
+        gateway_id: &str,
+        external_id: &str,
+    ) -> anyhow::Result<Option<Person>>;
     async fn get_identities(&self, person: &PersonId) -> anyhow::Result<Vec<Identity>>;
     async fn merge_people(&self, keep: &PersonId, merge: &PersonId) -> anyhow::Result<()>;
 
@@ -67,9 +75,19 @@ pub trait Store: Send + Sync {
     async fn resolve_claim(&self, claim_id: &str, status: &ClaimStatus) -> anyhow::Result<()>;
 
     // Social graph
-    async fn add_relation(&self, a: &PersonId, b: &PersonId, relation: &Relation) -> anyhow::Result<()>;
+    async fn add_relation(
+        &self,
+        a: &PersonId,
+        b: &PersonId,
+        relation: &Relation,
+    ) -> anyhow::Result<()>;
     async fn get_relations(&self, person: &PersonId) -> anyhow::Result<Vec<SocialRelation>>;
-    async fn remove_relation(&self, a: &PersonId, b: &PersonId, relation: &Relation) -> anyhow::Result<()>;
+    async fn remove_relation(
+        &self,
+        a: &PersonId,
+        b: &PersonId,
+        relation: &Relation,
+    ) -> anyhow::Result<()>;
 
     // Groups
     async fn add_group(&self, group: &Group) -> anyhow::Result<GroupId>;

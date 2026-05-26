@@ -142,7 +142,10 @@ mod tests {
             .filter(|&(x, y)| grid.get(x, y) == Some(Cell::Eye))
             .count();
 
-        assert!(eye_count >= 4, "expected at least 4 eye cells, got {eye_count}");
+        assert!(
+            eye_count >= 4,
+            "expected at least 4 eye cells, got {eye_count}"
+        );
     }
 
     #[test]

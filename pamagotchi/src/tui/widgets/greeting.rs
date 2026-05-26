@@ -40,12 +40,7 @@ impl Widget for Greeting {
             return;
         }
 
-        buf.set_string(
-            text_x,
-            offset_y,
-            NAME,
-            Style::default().fg(Color::Gray),
-        );
+        buf.set_string(text_x, offset_y, NAME, Style::default().fg(Color::Gray));
 
         let prompt_y = offset_y + creature_h;
         if prompt_y < area.y + area.height {

@@ -1,12 +1,12 @@
 use super::super::action::{ActionId, RunningState};
 use super::super::decision::{MindDecision, MindVerdict};
 use super::super::event::WakeEvent;
-use protocol::InboundMessage;
 use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
 use super::Mind;
 use crate::state::Authority;
 use inference::{Reasoning, RouteContext};
+use protocol::InboundMessage;
 
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -76,7 +76,9 @@ impl Mind {
             SessionResult::Mind(verdict) => verdict,
             SessionResult::Action(_) => {
                 warn!("mind session returned action result, defaulting to respond");
-                MindVerdict::Respond { style_directive: None }
+                MindVerdict::Respond {
+                    style_directive: None,
+                }
             }
         }
     }
@@ -116,7 +118,10 @@ fn describe(event: &WakeEvent) -> String {
             )
         }
         WakeEvent::IdleTick { elapsed_secs } => {
-            format!("Idle tick. {:.0} seconds since last activity.", elapsed_secs)
+            format!(
+                "Idle tick. {:.0} seconds since last activity.",
+                elapsed_secs
+            )
         }
         WakeEvent::IntentFired(intent) => {
             let conv = intent
@@ -135,9 +140,7 @@ fn describe(event: &WakeEvent) -> String {
                 action_id, outcome.responded, has_delta
             )
         }
-        WakeEvent::TypingUpdate {
-            person, typing, ..
-        } => {
+        WakeEvent::TypingUpdate { person, typing, .. } => {
             format!(
                 "{} {} typing.",
                 person.0,

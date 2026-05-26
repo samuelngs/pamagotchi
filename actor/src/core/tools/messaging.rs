@@ -1,9 +1,9 @@
+use super::context::{SessionContext, SessionState};
+use crate::store::{MessageRole, StoredMessage};
 use inference::Tool;
 use protocol::{ConversationId, MediaAttachment, MediaKind, PersonId};
-use crate::store::{MessageRole, StoredMessage};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::warn;
-use super::context::{SessionContext, SessionState};
 
 pub fn tools() -> Vec<Tool> {
     vec![
@@ -85,11 +85,7 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-pub async fn send(
-    args: &Value,
-    ctx: &SessionContext,
-    state: &mut SessionState,
-) -> String {
+pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
     let content = args["content"].as_str().unwrap_or("").to_string();
     let gateway_id = args["gateway_id"].as_str();
     let external_id = args["external_id"].as_str();
@@ -128,7 +124,9 @@ pub async fn send(
         .await;
 
     if !state.composing_released {
-        ctx.gateway.release_composing(&target_gateway, &target_id).await;
+        ctx.gateway
+            .release_composing(&target_gateway, &target_id)
+            .await;
         state.composing_released = true;
     }
 
@@ -173,16 +171,16 @@ pub async fn lookup_contacts(args: &Value, ctx: &SessionContext) -> String {
     let person = PersonId(person_id.to_string());
 
     match ctx.store.get_identities(&person).await {
-        Ok(identities) if identities.is_empty() => format!("No contact methods found for {person_id}."),
+        Ok(identities) if identities.is_empty() => {
+            format!("No contact methods found for {person_id}.")
+        }
         Ok(identities) => {
             let mut out = String::new();
             for ident in &identities {
                 let name = ident.display_name.as_deref().unwrap_or("—");
                 out.push_str(&format!(
                     "- {} ({}): {}\n",
-                    ident.gateway_id,
-                    ident.external_id,
-                    name,
+                    ident.gateway_id, ident.external_id, name,
                 ));
             }
             out

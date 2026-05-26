@@ -2,7 +2,7 @@ use super::{
     AssistantMessage, ChatRequest, ChatResponse, ChatStream, FinishReason, Message, Provider,
     StreamEvent, ToolCall, ToolChoice, Usage,
 };
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -193,8 +193,7 @@ impl Provider for OpenAiProvider {
             bail!("API error ({}): {}", status, body);
         }
 
-        let resp: WireResponse =
-            serde_json::from_str(&body).context("failed to parse response")?;
+        let resp: WireResponse = serde_json::from_str(&body).context("failed to parse response")?;
 
         let choice = resp
             .choices
@@ -232,9 +231,7 @@ impl Provider for OpenAiProvider {
                 reasoning_content: choice.message.reasoning_content,
                 tool_calls,
             },
-            finish_reason: parse_finish_reason(
-                choice.finish_reason.as_deref().unwrap_or("stop"),
-            ),
+            finish_reason: parse_finish_reason(choice.finish_reason.as_deref().unwrap_or("stop")),
             usage,
         })
     }
@@ -256,7 +253,10 @@ impl Provider for OpenAiProvider {
             .context("embedding request failed")?;
 
         let status = response.status();
-        let body = response.text().await.context("failed to read embedding response")?;
+        let body = response
+            .text()
+            .await
+            .context("failed to read embedding response")?;
 
         if !status.is_success() {
             if let Ok(err) = serde_json::from_str::<WireErrorResponse>(&body) {
@@ -358,10 +358,7 @@ async fn stream_sse(
 
                 if let Some(tool_calls) = choice.delta.tool_calls {
                     for tc in &tool_calls {
-                        let name = tc
-                            .function
-                            .as_ref()
-                            .and_then(|f| f.name.clone());
+                        let name = tc.function.as_ref().and_then(|f| f.name.clone());
                         let id = tc.id.clone();
 
                         if id.is_some() || name.is_some() {
@@ -387,10 +384,8 @@ async fn stream_sse(
                 }
 
                 if let Some(reason) = choice.finish_reason {
-                    tx.send(Ok(StreamEvent::FinishReason(parse_finish_reason(
-                        &reason,
-                    ))))
-                    .await?;
+                    tx.send(Ok(StreamEvent::FinishReason(parse_finish_reason(&reason))))
+                        .await?;
                 }
             }
 

@@ -8,8 +8,8 @@ mod widgets;
 use app::{App, Screen};
 use screens::ScreenAction;
 
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
+use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::prelude::*;
 use std::io;
 
@@ -49,16 +49,38 @@ async fn run_loop(
                 }
                 match screens::handle_key(app, key).await {
                     ScreenAction::Quit => break,
-                    ScreenAction::Navigate(screen) => app.screen = screen,
-                    ScreenAction::Back => {
-                        app.screen = Screen::Chat;
-                        app.focus.set(focus::FocusId::Settings);
+                    ScreenAction::Navigate(screen) => {
+                        app.screen = screen;
+                        if screen == Screen::Gateways {
+                            if app.gateways.is_empty() {
+                                app.focus.set(focus::FocusId::GatewayBack);
+                            } else {
+                                app.focus.set(focus::FocusId::GatewayList);
+                            }
+                            app.request_gateway_list().await;
+                        } else if screen == Screen::GatewayDetail {
+                            app.focus.set(focus::FocusId::GatewayDetailBack);
+                        }
                     }
+                    ScreenAction::Back => match app.screen {
+                        Screen::GatewayDetail => {
+                            app.screen = Screen::Gateways;
+                            app.focus.set(focus::FocusId::GatewayList);
+                        }
+                        Screen::Gateways => {
+                            app.screen = Screen::Settings;
+                            app.focus.set(focus::FocusId::Settings);
+                        }
+                        Screen::Settings | Screen::Chat => {
+                            app.screen = Screen::Chat;
+                            app.focus.set(focus::FocusId::Settings);
+                        }
+                    },
                     ScreenAction::None => {}
                 }
             }
             event::Event::Tick => {
-                app.poll_relay();
+                app.poll_api();
             }
             event::Event::Resize => {}
         }

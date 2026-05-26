@@ -7,9 +7,9 @@ pub enum ShortKey {
 }
 
 impl ShortKey {
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> String {
         match self {
-            ShortKey::Esc => "esc",
+            ShortKey::Esc => "esc".into(),
         }
     }
 
@@ -29,10 +29,7 @@ pub struct Button<'a> {
 impl Button<'_> {
     pub fn width(&self) -> u16 {
         let label_w = self.label.len() as u16;
-        let key_w = self
-            .shortkey
-            .as_ref()
-            .map_or(0, |k| k.display_width() + 2);
+        let key_w = self.shortkey.as_ref().map_or(0, |k| k.display_width() + 2);
         1 + label_w + 1 + key_w
     }
 }
@@ -72,7 +69,7 @@ impl Widget for Button<'_> {
             buf.set_string(
                 key_x + 1,
                 area.y,
-                key_str,
+                &key_str,
                 Style::default().fg(fg).bg(keycap_bg),
             );
         }

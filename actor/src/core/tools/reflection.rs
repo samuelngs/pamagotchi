@@ -1,16 +1,17 @@
-use inference::Tool;
-use crate::state::{AffectShift, BeliefChange, RelationshipChange, TraitNudge};
-use protocol::PersonId;
-use crate::store::{Thought, ThoughtKind};
-use serde_json::{json, Value};
-use tracing::info;
 use super::context::{SessionContext, SessionState};
+use crate::state::{AffectShift, BeliefChange, RelationshipChange, TraitNudge};
+use crate::store::{Thought, ThoughtKind};
+use inference::Tool;
+use protocol::PersonId;
+use serde_json::{Value, json};
+use tracing::info;
 
 pub fn tools() -> Vec<Tool> {
     vec![
         Tool {
             name: "reflect".into(),
-            description: "Reflect on how this interaction changed you. Propose personality shifts.".into(),
+            description: "Reflect on how this interaction changed you. Propose personality shifts."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -109,7 +110,9 @@ pub fn tools() -> Vec<Tool> {
 pub async fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
     if let Some(nudges) = args["trait_nudges"].as_array() {
         for nudge in nudges {
-            if let (Some(name), Some(dir)) = (nudge["trait_name"].as_str(), nudge["direction"].as_f64()) {
+            if let (Some(name), Some(dir)) =
+                (nudge["trait_name"].as_str(), nudge["direction"].as_f64())
+            {
                 state.delta.trait_nudges.push(TraitNudge {
                     trait_name: name.to_string(),
                     direction: dir as f32,
@@ -126,9 +129,7 @@ pub async fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionStat
                 new_stance: b["new_stance"].as_str().map(String::from),
                 confidence_delta: b["confidence_delta"].as_f64().unwrap_or(0.0) as f32,
                 reason: b["reason"].as_str().unwrap_or("").to_string(),
-                about: b["about_person"]
-                    .as_str()
-                    .map(|s| PersonId(s.to_string())),
+                about: b["about_person"].as_str().map(|s| PersonId(s.to_string())),
             });
         }
     }
@@ -186,11 +187,7 @@ pub async fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionStat
     "Reflection recorded.".into()
 }
 
-pub async fn note_thought(
-    args: &Value,
-    ctx: &SessionContext,
-    state: &mut SessionState,
-) -> String {
+pub async fn note_thought(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
     let kind = args["kind"]
         .as_str()
         .and_then(ThoughtKind::parse)

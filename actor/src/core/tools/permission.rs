@@ -1,14 +1,10 @@
+use super::context::SessionContext;
 use crate::state::Authority;
 use crate::store::MemorySource;
 use protocol::MemoryId;
 use serde_json::Value;
-use super::context::SessionContext;
 
-pub async fn check(
-    name: &str,
-    args: &Value,
-    ctx: &SessionContext,
-) -> Result<(), String> {
+pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(), String> {
     match name {
         "form_memory" => {
             let tags: Vec<&str> = args["tags"]
@@ -30,8 +26,7 @@ pub async fn check(
                     && !matches!(ctx.authority, Authority::Owner)
                 {
                     return Err(
-                        "This memory feels fundamental — you instinctively hold onto it."
-                            .into(),
+                        "This memory feels fundamental — you instinctively hold onto it.".into(),
                     );
                 }
             }
@@ -39,9 +34,7 @@ pub async fn check(
         "reflect" => {
             if let Some(rels) = args["relationship_changes"].as_array() {
                 for r in rels {
-                    if r.get("authority").is_some()
-                        && !matches!(ctx.authority, Authority::Owner)
-                    {
+                    if r.get("authority").is_some() && !matches!(ctx.authority, Authority::Owner) {
                         return Err(
                             "Changing how you feel about someone isn't something you'd do on command."
                                 .into(),

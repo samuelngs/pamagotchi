@@ -4,8 +4,15 @@ use tokio::sync::mpsc;
 pub enum StreamEvent {
     TextDelta(String),
     ReasoningDelta(String),
-    ToolCallBegin { index: usize, id: String, name: String },
-    ToolCallDelta { index: usize, arguments_delta: String },
+    ToolCallBegin {
+        index: usize,
+        id: String,
+        name: String,
+    },
+    ToolCallDelta {
+        index: usize,
+        arguments_delta: String,
+    },
     FinishReason(FinishReason),
     Usage(Usage),
 }
@@ -75,7 +82,11 @@ impl ChatStream {
         Ok(ChatResponse {
             message: AssistantMessage {
                 text: if text.is_empty() { None } else { Some(text) },
-                reasoning_content: if reasoning.is_empty() { None } else { Some(reasoning) },
+                reasoning_content: if reasoning.is_empty() {
+                    None
+                } else {
+                    Some(reasoning)
+                },
                 tool_calls,
             },
             finish_reason,

@@ -1,14 +1,11 @@
 use super::action::Outcome;
 use super::decision::MindVerdict;
 use super::prompt;
-use super::tools::{
-    self, SessionContext, SessionKind, SessionState, ToolOutcome,
-};
-use inference::{
-    AssistantMessage, ChatRequest, FinishReason, Message,
-    RouteContext, StreamEvent, ToolCall,
-};
+use super::tools::{self, SessionContext, SessionKind, SessionState, ToolOutcome};
 use crate::store::{MessageRole, StoredMessage};
+use inference::{
+    AssistantMessage, ChatRequest, FinishReason, Message, RouteContext, StreamEvent, ToolCall,
+};
 use protocol::{ConversationId, PersonId};
 use serde_json::Value;
 use tracing::{info, warn};
@@ -31,7 +28,11 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
     }
 
     let expects_response = matches!(&ctx.kind, SessionKind::Action(k) if k.expects_response());
-    let max_attempts = if expects_response { ctx.max_action_attempts } else { 1 };
+    let max_attempts = if expects_response {
+        ctx.max_action_attempts
+    } else {
+        1
+    };
     let escalate_after = ctx.escalate_after;
 
     let mut attempt = 0;
@@ -72,7 +73,9 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
         }
 
         let retry_warning = if attempt > 1 {
-            Some("IMPORTANT: Your previous attempt failed to call send_message. You MUST use send_message to respond. Text outside of tool calls is silent inner thought that no one can see or hear.")
+            Some(
+                "IMPORTANT: Your previous attempt failed to call send_message. You MUST use send_message to respond. Text outside of tool calls is silent inner thought that no one can see or hear.",
+            )
         } else {
             None
         };
@@ -130,23 +133,43 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
                 info!(action = %ctx.action_id, thought = %collected.text, "internal monologue");
             }
 
-            if tool_calls.is_empty() { break; }
+            if tool_calls.is_empty() {
+                break;
+            }
 
             llm_messages.push(Message::Assistant(AssistantMessage {
-                text: if collected.text.is_empty() { None } else { Some(collected.text) },
-                reasoning_content: if collected.reasoning.is_empty() { None } else { Some(collected.reasoning) },
+                text: if collected.text.is_empty() {
+                    None
+                } else {
+                    Some(collected.text)
+                },
+                reasoning_content: if collected.reasoning.is_empty() {
+                    None
+                } else {
+                    Some(collected.reasoning)
+                },
                 tool_calls: tool_calls.clone(),
             }));
 
             let got_decision = execute_tools(
-                &tool_calls, turn, &ctx, &mut state, &mut llm_messages, &mut mind_verdict,
-            ).await;
+                &tool_calls,
+                turn,
+                &ctx,
+                &mut state,
+                &mut llm_messages,
+                &mut mind_verdict,
+            )
+            .await;
 
-            if got_decision { break; }
+            if got_decision {
+                break;
+            }
 
             inject_pending_messages(&ctx, &mut state, &mut llm_messages).await;
 
-            if matches!(collected.finish, FinishReason::Stop | FinishReason::Length) { break; }
+            if matches!(collected.finish, FinishReason::Stop | FinishReason::Length) {
+                break;
+            }
         }
 
         if state.responded || !expects_response || attempt >= max_attempts {
@@ -175,10 +198,15 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
 
 async fn build_prompt(ctx: &SessionContext) -> anyhow::Result<String> {
     prompt::build_system_prompt(
-        &ctx.state, &ctx.store, &ctx.kind, &ctx.messages,
-        ctx.conversation.as_ref(), ctx,
+        &ctx.state,
+        &ctx.store,
+        &ctx.kind,
+        &ctx.messages,
+        ctx.conversation.as_ref(),
+        ctx,
         &ctx.authority,
-    ).await
+    )
+    .await
 }
 
 async fn ingest_messages(ctx: &SessionContext, llm_messages: &mut Vec<Message>) {
@@ -187,10 +215,16 @@ async fn ingest_messages(ctx: &SessionContext, llm_messages: &mut Vec<Message>) 
         llm_messages.push(Message::user(&display));
         if let Some(conv) = &ctx.conversation {
             let stored = StoredMessage {
-                timestamp: inbound.timestamp, role: MessageRole::User,
-                content: display, person: inbound.person.clone(), metadata: inbound.metadata.clone(),
+                timestamp: inbound.timestamp,
+                role: MessageRole::User,
+                content: display,
+                person: inbound.person.clone(),
+                metadata: inbound.metadata.clone(),
             };
-            ctx.store.append_message(conv, None, None, &stored).await.ok();
+            ctx.store
+                .append_message(conv, None, None, &stored)
+                .await
+                .ok();
         }
     }
 }
@@ -208,27 +242,41 @@ async fn collect_stream(
     state: &mut SessionState,
 ) -> Collected {
     let mut c = Collected {
-        text: String::new(), reasoning: String::new(),
-        partial_tools: vec![], finish: FinishReason::Stop,
+        text: String::new(),
+        reasoning: String::new(),
+        partial_tools: vec![],
+        finish: FinishReason::Stop,
     };
     while let Some(event) = stream.recv().await {
         let event = match event {
             Ok(e) => e,
-            Err(e) => { warn!(%e, action = %ctx.action_id, "stream event error"); break; }
+            Err(e) => {
+                warn!(%e, action = %ctx.action_id, "stream event error");
+                break;
+            }
         };
         match event {
             StreamEvent::TextDelta(d) => c.text.push_str(&d),
             StreamEvent::ReasoningDelta(d) => c.reasoning.push_str(&d),
             StreamEvent::ToolCallBegin { index, id, name } => {
                 if c.partial_tools.len() <= index {
-                    c.partial_tools.resize_with(index + 1, PartialToolCall::default);
+                    c.partial_tools
+                        .resize_with(index + 1, PartialToolCall::default);
                 }
-                if !id.is_empty() { c.partial_tools[index].id = id; }
-                if !name.is_empty() { c.partial_tools[index].name = name; }
+                if !id.is_empty() {
+                    c.partial_tools[index].id = id;
+                }
+                if !name.is_empty() {
+                    c.partial_tools[index].name = name;
+                }
             }
-            StreamEvent::ToolCallDelta { index, arguments_delta } => {
+            StreamEvent::ToolCallDelta {
+                index,
+                arguments_delta,
+            } => {
                 if c.partial_tools.len() <= index {
-                    c.partial_tools.resize_with(index + 1, PartialToolCall::default);
+                    c.partial_tools
+                        .resize_with(index + 1, PartialToolCall::default);
                 }
                 c.partial_tools[index].arguments.push_str(&arguments_delta);
             }
@@ -244,17 +292,24 @@ async fn collect_stream(
 }
 
 fn finalize_tool_calls(partials: Vec<PartialToolCall>) -> Vec<ToolCall> {
-    partials.into_iter().map(|tc| ToolCall {
-        id: tc.id, name: tc.name,
-        arguments: serde_json::from_str(&tc.arguments)
-            .unwrap_or(Value::Object(Default::default())),
-    }).collect()
+    partials
+        .into_iter()
+        .map(|tc| ToolCall {
+            id: tc.id,
+            name: tc.name,
+            arguments: serde_json::from_str(&tc.arguments)
+                .unwrap_or(Value::Object(Default::default())),
+        })
+        .collect()
 }
 
 async fn execute_tools(
-    tool_calls: &[ToolCall], turn: usize,
-    ctx: &SessionContext, state: &mut SessionState,
-    llm_messages: &mut Vec<Message>, mind_verdict: &mut Option<MindVerdict>,
+    tool_calls: &[ToolCall],
+    turn: usize,
+    ctx: &SessionContext,
+    state: &mut SessionState,
+    llm_messages: &mut Vec<Message>,
+    mind_verdict: &mut Option<MindVerdict>,
 ) -> bool {
     for tc in tool_calls {
         let args_short = truncate(&tc.arguments.to_string(), 200);
@@ -282,32 +337,59 @@ async fn execute_tools(
 }
 
 async fn inject_pending_messages(
-    ctx: &SessionContext, state: &mut SessionState, llm_messages: &mut Vec<Message>,
+    ctx: &SessionContext,
+    state: &mut SessionState,
+    llm_messages: &mut Vec<Message>,
 ) {
     for msg in &state.injected_messages {
         let display = msg.display_content();
-        if llm_messages.iter().any(|m| matches!(m, Message::User(u) if *u == display)) { continue; }
-        llm_messages.push(Message::system("--- New message arrived while you were working. Address it before finishing. ---"));
+        if llm_messages
+            .iter()
+            .any(|m| matches!(m, Message::User(u) if *u == display))
+        {
+            continue;
+        }
+        llm_messages.push(Message::system(
+            "--- New message arrived while you were working. Address it before finishing. ---",
+        ));
         llm_messages.push(Message::user(&display));
         if let Some(conv) = &ctx.conversation {
             let stored = StoredMessage {
-                timestamp: msg.timestamp, role: MessageRole::User,
-                content: display, person: msg.person.clone(), metadata: msg.metadata.clone(),
+                timestamp: msg.timestamp,
+                role: MessageRole::User,
+                content: display,
+                person: msg.person.clone(),
+                metadata: msg.metadata.clone(),
             };
-            ctx.store.append_message(conv, None, None, &stored).await.ok();
+            ctx.store
+                .append_message(conv, None, None, &stored)
+                .await
+                .ok();
         }
     }
 }
 
-fn build_result(mut ctx: SessionContext, state: SessionState, verdict: Option<MindVerdict>) -> SessionResult {
+fn build_result(
+    mut ctx: SessionContext,
+    state: SessionState,
+    verdict: Option<MindVerdict>,
+) -> SessionResult {
     match ctx.kind {
-        SessionKind::Mind => SessionResult::Mind(verdict.unwrap_or(MindVerdict::Respond { style_directive: None })),
+        SessionKind::Mind => SessionResult::Mind(verdict.unwrap_or(MindVerdict::Respond {
+            style_directive: None,
+        })),
         SessionKind::Action(_) => {
             let mut pending = vec![];
-            while let Ok(msg) = ctx.inject_rx.try_recv() { pending.push(msg); }
+            while let Ok(msg) = ctx.inject_rx.try_recv() {
+                pending.push(msg);
+            }
             SessionResult::Action(Outcome {
                 responded: state.responded,
-                delta: if tools::has_changes(&state.delta) { Some(state.delta) } else { None },
+                delta: if tools::has_changes(&state.delta) {
+                    Some(state.delta)
+                } else {
+                    None
+                },
                 pending_messages: pending,
                 had_injections: !state.injected_messages.is_empty(),
             })
@@ -316,22 +398,36 @@ fn build_result(mut ctx: SessionContext, state: SessionState, verdict: Option<Mi
 }
 
 fn resolve_composing_target(ctx: &SessionContext) -> Option<(String, String)> {
-    ctx.messages.first().map(|msg| (msg.gateway_id.clone(), msg.external_id.clone()))
+    ctx.messages
+        .first()
+        .map(|msg| (msg.gateway_id.clone(), msg.external_id.clone()))
 }
 
 fn log_turn_start(ctx: &SessionContext, turn: usize, msgs: &[Message]) {
-    let summary: Vec<String> = msgs.iter().map(|m| match m {
-        Message::System(s) => format!("system({})", s.len()),
-        Message::User(s) => format!("user({})", s.len()),
-        Message::Assistant(a) => format!("assistant(text={},tools={})", a.text.as_ref().map_or(0, |t| t.len()), a.tool_calls.len()),
-        Message::Tool(t) => format!("tool_result({}:{})", t.call_id.chars().take(8).collect::<String>(), t.content.len()),
-    }).collect();
+    let summary: Vec<String> = msgs
+        .iter()
+        .map(|m| match m {
+            Message::System(s) => format!("system({})", s.len()),
+            Message::User(s) => format!("user({})", s.len()),
+            Message::Assistant(a) => format!(
+                "assistant(text={},tools={})",
+                a.text.as_ref().map_or(0, |t| t.len()),
+                a.tool_calls.len()
+            ),
+            Message::Tool(t) => format!(
+                "tool_result({}:{})",
+                t.call_id.chars().take(8).collect::<String>(),
+                t.content.len()
+            ),
+        })
+        .collect();
     info!(action = %ctx.action_id, turn, messages = ?summary, "LLM request starting");
 }
 
 fn update_progress(
     progress: &std::sync::Arc<std::sync::RwLock<super::action::RunningState>>,
-    state: &SessionState, tool_name: &str,
+    state: &SessionState,
+    tool_name: &str,
 ) {
     if let Ok(mut p) = progress.write() {
         p.responded = state.responded;
@@ -369,8 +465,16 @@ async fn try_open_stream(
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() > max { format!("{}...", &s[..max]) } else { s.to_string() }
+    if s.len() > max {
+        format!("{}...", &s[..max])
+    } else {
+        s.to_string()
+    }
 }
 
 #[derive(Default)]
-struct PartialToolCall { id: String, name: String, arguments: String }
+struct PartialToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
