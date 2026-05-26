@@ -1,10 +1,12 @@
 use crate::{
-    GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayRuntimeEvent,
-    GatewaySetupInstructions,
+    GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayContentCapabilities,
+    GatewayRuntimeEvent, GatewaySetupInstructions,
 };
 use async_trait::async_trait;
 use protocol::{InboundMessage, MediaAttachment, ServerEvent};
 use relay::ApiServerHandle;
+use serde_json::Value;
+use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use tracing::debug;
 
@@ -23,6 +25,7 @@ impl GatewayAdapter for LocalAdapter {
     async fn connect(
         _id: String,
         _db_path: String,
+        _vars: BTreeMap<String, Value>,
         _inbound_tx: mpsc::Sender<InboundMessage>,
         _gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
     ) -> anyhow::Result<Self> {
@@ -35,7 +38,7 @@ impl GatewayAdapter for LocalAdapter {
 
     fn capabilities(&self) -> GatewayCapabilities {
         GatewayCapabilities {
-            content_types: vec![],
+            content: GatewayContentCapabilities::text_only(),
             composing: true,
             read_receipts: false,
         }

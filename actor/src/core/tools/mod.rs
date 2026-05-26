@@ -56,12 +56,21 @@ pub async fn execute(
     let result = match name {
         "recall_memories" => memory::recall(args, ctx).await,
         "form_memory" => memory::form(args, ctx, state).await,
+        "promote_profile_memory_to_person" => {
+            memory::promote_profile_memory_to_person(args, ctx).await
+        }
+        "demote_person_memory_to_profile" => {
+            memory::demote_person_memory_to_profile(args, ctx).await
+        }
         "forget_memory" => memory::forget(args, ctx).await,
         "send_message" => messaging::send(args, ctx, state).await,
-        "lookup_contacts" => messaging::lookup_contacts(args, ctx).await,
         "read_messages" => messaging::read(args, ctx).await,
         "update_person" => person::update(args, ctx).await,
         "get_person" => person::get(args, ctx).await,
+        "request_identity_verification" => person::request_identity_verification(args, ctx).await,
+        "resolve_identity_verification" => person::resolve_identity_verification(args, ctx).await,
+        "detach_profile_from_person" => person::detach_profile(args, ctx).await,
+        "reject_profile_person_link" => person::reject_profile_person_link(args, ctx).await,
         "reflect" => reflection::reflect(args, ctx, state).await,
         "note_thought" => reflection::note_thought(args, ctx, state).await,
         "create_intent" => intent::create(args).await,

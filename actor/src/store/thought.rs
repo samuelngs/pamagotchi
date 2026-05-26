@@ -1,4 +1,5 @@
-use protocol::{MemoryId, PersonId};
+use super::MemorySubject;
+use protocol::MemoryId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,5 +40,5 @@ pub struct Thought {
     pub kind: ThoughtKind,
     pub content: String,
     pub memories_accessed: Vec<MemoryId>,
-    pub people: Vec<PersonId>,
+    pub subjects: Vec<MemorySubject>,
 }

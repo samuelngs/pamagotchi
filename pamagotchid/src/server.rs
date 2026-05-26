@@ -1,6 +1,7 @@
 use crate::config::{Config, InferenceEntry, ProviderConfig};
 use actor::core::{ActorBuilder, WakeEvent};
 use actor::store::{SqliteConfig, SqliteStore};
+use gateway::discord::DiscordAdapter;
 use gateway::local::LocalAdapter;
 use gateway::storage::{GatewayEntry, GatewayStore, gateway_data_dir};
 use gateway::whatsapp::WhatsAppAdapter;
@@ -147,9 +148,33 @@ async fn attach_configured_gateway(
         "whatsapp" => {
             let db_path = gateway_dir.join("whatsapp.db");
             let db_path = db_path.to_string_lossy().to_string();
-            let adapter =
-                WhatsAppAdapter::connect(entry.id.clone(), db_path, inbound_tx, gateway_event_tx)
-                    .await?;
+            let adapter = WhatsAppAdapter::connect(
+                entry.id.clone(),
+                db_path,
+                entry.vars.clone(),
+                inbound_tx,
+                gateway_event_tx,
+            )
+            .await?;
+            gw_router.register(Arc::new(adapter));
+            info!(
+                gateway = %entry.id,
+                kind = %entry.kind,
+                data_dir = %gateway_dir.display(),
+                "gateway connected"
+            );
+        }
+        "discord" => {
+            let db_path = gateway_dir.join("discord.db");
+            let db_path = db_path.to_string_lossy().to_string();
+            let adapter = DiscordAdapter::connect(
+                entry.id.clone(),
+                db_path,
+                entry.vars.clone(),
+                inbound_tx,
+                gateway_event_tx,
+            )
+            .await?;
             gw_router.register(Arc::new(adapter));
             info!(
                 gateway = %entry.id,
@@ -203,6 +228,8 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
                 external_id: "local".into(),
                 conversation: ConversationId("relay:local".into()),
                 group: None,
+                identity: None,
+                profile: None,
                 person: None,
                 content,
                 media: None,
@@ -486,7 +513,7 @@ fn is_supported_gateway_kind(kind: &str) -> bool {
 }
 
 fn supported_gateway_kinds() -> &'static [&'static str] {
-    &["whatsapp"]
+    &["whatsapp", "discord"]
 }
 
 fn now_secs() -> i64 {

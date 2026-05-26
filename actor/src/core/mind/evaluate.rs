@@ -28,6 +28,8 @@ impl Mind {
                 external_id: String::new(),
                 conversation: protocol::ConversationId("mind".into()),
                 group: None,
+                identity: None,
+                profile: None,
                 person: None,
                 content: event_desc,
                 media: None,

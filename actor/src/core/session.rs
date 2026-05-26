@@ -218,6 +218,8 @@ async fn ingest_messages(ctx: &SessionContext, llm_messages: &mut Vec<Message>) 
                 timestamp: inbound.timestamp,
                 role: MessageRole::User,
                 content: display,
+                identity: inbound.identity.clone(),
+                profile: inbound.profile.clone(),
                 person: inbound.person.clone(),
                 metadata: inbound.metadata.clone(),
             };
@@ -358,6 +360,8 @@ async fn inject_pending_messages(
                 timestamp: msg.timestamp,
                 role: MessageRole::User,
                 content: display,
+                identity: msg.identity.clone(),
+                profile: msg.profile.clone(),
                 person: msg.person.clone(),
                 metadata: msg.metadata.clone(),
             };

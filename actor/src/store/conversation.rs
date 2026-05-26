@@ -1,4 +1,4 @@
-use protocol::{ConversationId, GroupId, PersonId};
+use protocol::{ConversationId, GroupId, IdentityId, PersonId, ProfileId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -36,6 +36,8 @@ pub struct StoredMessage {
     pub timestamp: i64,
     pub role: MessageRole,
     pub content: String,
+    pub identity: Option<IdentityId>,
+    pub profile: Option<ProfileId>,
     pub person: Option<PersonId>,
     pub metadata: Value,
 }
@@ -44,6 +46,8 @@ pub struct StoredMessage {
 pub struct ConversationSummary {
     pub id: ConversationId,
     pub gateway_id: Option<String>,
+    pub identity: Option<IdentityId>,
+    pub profile: Option<ProfileId>,
     pub person: Option<PersonId>,
     pub group: Option<GroupId>,
     pub summary: Option<String>,

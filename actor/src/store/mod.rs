@@ -7,7 +7,9 @@ mod store;
 mod thought;
 
 pub use conversation::{ConversationSummary, MessageRole, StoredMessage};
-pub use memory::{Memory, MemoryKind, MemorySource, MemoryUpdate};
+pub use memory::{
+    Memory, MemoryKind, MemorySource, MemorySubject, MemorySubjectType, MemoryUpdate,
+};
 pub use query::{RecallQuery, TimeRange};
 pub use snapshot::ActorSnapshot;
 pub use sqlite::{SqliteConfig, SqliteStore};

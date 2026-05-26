@@ -1,6 +1,6 @@
 use super::context::{SessionContext, SessionState};
 use crate::state::{AffectShift, BeliefChange, RelationshipChange, TraitNudge};
-use crate::store::{Thought, ThoughtKind};
+use crate::store::{MemorySubject, Thought, ThoughtKind};
 use inference::Tool;
 use protocol::PersonId;
 use serde_json::{Value, json};
@@ -54,7 +54,7 @@ pub fn tools() -> Vec<Tool> {
                             "properties": {
                                 "person": {
                                     "type": "string",
-                                    "description": "Person ref. Defaults to current conversation partner."
+                                    "description": "Person id for the current verified/likely person grouping. Defaults to current conversation partner when available."
                                 },
                                 "trust_delta": { "type": "number" },
                                 "familiarity_delta": { "type": "number" },
@@ -81,7 +81,7 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "comm_style": {
                         "type": "string",
-                        "description": "Updated communication style profile for this person — tone, length, formality, language patterns, emoji use. Overwrites previous profile. Only set when you have a clear picture from multiple interactions."
+                        "description": "Updated communication style for the current profile — tone, length, formality, language patterns, emoji use. Overwrites previous profile style. Only set when you have a clear picture from multiple interactions."
                     }
                 }
             }),
@@ -173,12 +173,12 @@ pub async fn reflect(args: &Value, ctx: &SessionContext, state: &mut SessionStat
     }
 
     if let Some(style) = args["comm_style"].as_str() {
-        let person_id = ctx.messages.first().and_then(|m| m.person.clone());
-        if let Some(pid) = person_id {
-            if let Err(e) = ctx.store.update_comm_style(&pid, style).await {
+        let profile_id = ctx.messages.first().and_then(|m| m.profile.clone());
+        if let Some(pid) = profile_id {
+            if let Err(e) = ctx.store.update_profile_comm_style(&pid, style).await {
                 info!(action = %ctx.action_id, %e, "failed to update comm_style");
             } else {
-                info!(action = %ctx.action_id, person = %pid.0, "comm_style updated");
+                info!(action = %ctx.action_id, profile = %pid.0, "comm_style updated");
             }
         }
     }
@@ -199,10 +199,34 @@ pub async fn note_thought(args: &Value, ctx: &SessionContext, state: &mut Sessio
         kind,
         content,
         memories_accessed: vec![],
-        people: ctx
+        subjects: ctx
             .messages
             .iter()
-            .filter_map(|m| m.person.clone())
+            .flat_map(|m| {
+                let mut subjects = Vec::new();
+                if let Some(identity) = &m.identity {
+                    subjects.push(MemorySubject::identity(
+                        identity.clone(),
+                        Some("source".into()),
+                        1.0,
+                    ));
+                }
+                if let Some(profile) = &m.profile {
+                    subjects.push(MemorySubject::profile(
+                        profile.clone(),
+                        Some("about".into()),
+                        1.0,
+                    ));
+                }
+                if let Some(person) = &m.person {
+                    subjects.push(MemorySubject::person(
+                        person.clone(),
+                        Some("related".into()),
+                        1.0,
+                    ));
+                }
+                subjects
+            })
             .collect(),
     };
 

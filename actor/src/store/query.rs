@@ -1,10 +1,12 @@
 use super::MemoryKind;
-use protocol::PersonId;
+use protocol::{IdentityId, PersonId, ProfileId};
 
 pub struct RecallQuery {
     pub text: Option<String>,
     pub embedding: Option<Vec<f32>>,
     pub kind: Option<MemoryKind>,
+    pub identity: Option<IdentityId>,
+    pub profile: Option<ProfileId>,
     pub person: Option<PersonId>,
     pub time_range: Option<TimeRange>,
     pub min_importance: Option<f32>,
@@ -24,6 +26,8 @@ impl RecallQuery {
             text: Some(text.to_string()),
             embedding: None,
             kind: None,
+            identity: None,
+            profile: None,
             person: None,
             time_range: None,
             min_importance: None,
@@ -38,6 +42,8 @@ impl RecallQuery {
             text: None,
             embedding: Some(embedding),
             kind: None,
+            identity: None,
+            profile: None,
             person: None,
             time_range: None,
             min_importance: None,
@@ -64,6 +70,16 @@ impl RecallQuery {
 
     pub fn with_person(mut self, person: PersonId) -> Self {
         self.person = Some(person);
+        self
+    }
+
+    pub fn with_profile(mut self, profile: ProfileId) -> Self {
+        self.profile = Some(profile);
+        self
+    }
+
+    pub fn with_identity(mut self, identity: IdentityId) -> Self {
+        self.identity = Some(identity);
         self
     }
 

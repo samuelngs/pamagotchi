@@ -138,49 +138,6 @@ impl ActorState {
         }
     }
 
-    pub fn merge_relationship(&mut self, keep: &PersonId, merge: &PersonId) {
-        if let Some(merged_rel) = self.bonds.remove(merge) {
-            self.bonds.entry(keep.clone()).or_insert(merged_rel);
-        }
-        let merge_some = Some(merge.clone());
-        let keep_some = Some(keep.clone());
-        for belief in &mut self.beliefs {
-            if belief.about == merge_some {
-                belief.about = keep_some.clone();
-            }
-        }
-        let mut i = 0;
-        while i < self.beliefs.len() {
-            let dominated = (0..i).any(|j| {
-                self.beliefs[j].topic == self.beliefs[i].topic
-                    && self.beliefs[j].about == self.beliefs[i].about
-                    && self.beliefs[j].confidence >= self.beliefs[i].confidence
-            });
-            if dominated {
-                self.beliefs.remove(i);
-            } else {
-                if let Some(j) = (0..i).find(|&j| {
-                    self.beliefs[j].topic == self.beliefs[i].topic
-                        && self.beliefs[j].about == self.beliefs[i].about
-                }) {
-                    self.beliefs.remove(j);
-                } else {
-                    i += 1;
-                }
-            }
-        }
-        for interest in &mut self.interests {
-            if interest.origin_person == merge_some {
-                interest.origin_person = keep_some.clone();
-            }
-        }
-        for event in &mut self.growth_log {
-            if event.person == merge_some {
-                event.person = keep_some.clone();
-            }
-        }
-    }
-
     fn strengthen_interest(&mut self, topic: &str, rate: f32, triggered_by: Option<&PersonId>) {
         if let Some(interest) = self.interests.iter_mut().find(|i| i.topic == topic) {
             interest.intensity = (interest.intensity + 0.1 * rate).clamp(0.0, 1.0);

@@ -158,13 +158,69 @@ async fn build_action(
     }
     .into();
 
-    let person_id = messages.first().and_then(|m| m.person.as_ref());
+    let current_msg = messages.first();
+    let identity_id = current_msg.and_then(|m| m.identity.as_ref());
+    let profile_id = current_msg.and_then(|m| m.profile.as_ref());
+    let person_id = current_msg.and_then(|m| m.person.as_ref());
     let now_unix = now_ts.timestamp();
 
     let style_directive = session_ctx.style_directive.clone();
+    let current_identity = match identity_id {
+        Some(id) => {
+            store
+                .get_identity(id)
+                .await
+                .ok()
+                .flatten()
+                .map(|identity| CurrentIdentityCtx {
+                    ref_id: identity.id.0,
+                    display_name: identity.display_name,
+                })
+        }
+        None => None,
+    };
+    let profile_info = match profile_id {
+        Some(id) => store.get_profile(id).await.ok().flatten(),
+        None => None,
+    };
+    let profile_person_link = match profile_id {
+        Some(id) => store
+            .get_person_for_profile(id)
+            .await
+            .ok()
+            .flatten()
+            .map(|(_, link)| link),
+        None => None,
+    };
+    let current_profile = profile_id.map(|pid| CurrentProfileCtx {
+        ref_id: pid.0.clone(),
+        display_name: profile_info
+            .as_ref()
+            .and_then(|profile| profile.display_name.clone()),
+        person_ref_id: profile_person_link
+            .as_ref()
+            .map(|link| link.person_id.0.clone()),
+        person_link_status: profile_person_link
+            .as_ref()
+            .map(|link| link.status.as_str().to_string()),
+        person_link_confidence: profile_person_link
+            .as_ref()
+            .map(|link| pct(link.confidence)),
+    });
+    let person_info = if let Some(pid) = person_id {
+        Some(resolve_person_info(store, pid).await)
+    } else {
+        None
+    };
+    let current_person = person_id.map(|pid| CurrentPersonCtx {
+        ref_id: pid.0.clone(),
+        name: person_info.as_ref().and_then(|info| info.name.clone()),
+    });
 
     let (relationship, comm_style) = if let Some(pid) = person_id {
-        let info = resolve_person_info(store, pid).await;
+        let info = person_info
+            .as_ref()
+            .expect("person_info exists when person_id exists");
         let rel_ctx = actor.bonds.get(pid).map(|rel| {
             let tone = if rel.emotional_valence > 0.3 {
                 "warm"
@@ -186,14 +242,25 @@ async fn build_action(
             }
         });
         let interaction_count = actor.bonds.get(pid).map_or(0, |r| r.interaction_count);
-        let style = if interaction_count >= 10 && info.comm_style.is_some() {
-            info.comm_style
+        let style = if let Some(profile_style) = profile_info
+            .as_ref()
+            .and_then(|profile| profile.comm_style.clone())
+        {
+            Some(profile_style)
+        } else if interaction_count >= 10 {
+            info.comm_style.clone().or(style_directive)
         } else {
             style_directive
         };
         (rel_ctx, style)
     } else {
-        (None, style_directive)
+        (
+            None,
+            profile_info
+                .as_ref()
+                .and_then(|profile| profile.comm_style.clone())
+                .or(style_directive),
+        )
     };
 
     let directives = if let Some(pid) = person_id {
@@ -225,6 +292,9 @@ async fn build_action(
         interests,
         mood,
         energy,
+        current_identity,
+        current_profile,
+        current_person,
         relationship,
         directives,
         thoughts,

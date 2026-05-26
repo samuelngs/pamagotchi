@@ -1,4 +1,4 @@
-use crate::id::{ConversationId, GroupId, PersonId};
+use crate::id::{ConversationId, GroupId, IdentityId, PersonId, ProfileId};
 use crate::media::MediaAttachment;
 
 #[derive(Clone, Debug)]
@@ -8,6 +8,8 @@ pub struct InboundMessage {
     pub external_id: String,
     pub conversation: ConversationId,
     pub group: Option<GroupId>,
+    pub identity: Option<IdentityId>,
+    pub profile: Option<ProfileId>,
     pub person: Option<PersonId>,
     pub content: String,
     pub media: Option<MediaAttachment>,

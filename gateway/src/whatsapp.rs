@@ -1,6 +1,6 @@
 use crate::{
-    GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayRuntime,
-    GatewayRuntimeEvent, GatewaySetupInstructions,
+    GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayContentCapabilities,
+    GatewayContentKind, GatewayRuntime, GatewayRuntimeEvent, GatewaySetupInstructions,
 };
 use async_trait::async_trait;
 use protocol::{ConversationId, GroupId, InboundMessage};
@@ -161,6 +161,8 @@ async fn handle_event(
                 } else {
                     None
                 },
+                identity: None,
+                profile: None,
                 person: None,
                 content,
                 media,
@@ -270,6 +272,7 @@ impl GatewayAdapter for WhatsAppAdapter {
     async fn connect(
         id: String,
         db_path: String,
+        _vars: std::collections::BTreeMap<String, serde_json::Value>,
         inbound_tx: mpsc::Sender<InboundMessage>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
     ) -> anyhow::Result<Self> {
@@ -286,13 +289,17 @@ impl GatewayAdapter for WhatsAppAdapter {
 
     fn capabilities(&self) -> GatewayCapabilities {
         GatewayCapabilities {
-            content_types: vec![
-                MediaKind::Image,
-                MediaKind::Video,
-                MediaKind::Audio,
-                MediaKind::Sticker,
-                MediaKind::File,
-            ],
+            content: GatewayContentCapabilities {
+                receive: vec![
+                    GatewayContentKind::Text,
+                    GatewayContentKind::Image,
+                    GatewayContentKind::Video,
+                    GatewayContentKind::Audio,
+                    GatewayContentKind::Sticker,
+                    GatewayContentKind::File,
+                ],
+                send: vec![GatewayContentKind::Text],
+            },
             composing: true,
             read_receipts: true,
         }

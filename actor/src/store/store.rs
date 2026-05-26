@@ -2,11 +2,12 @@ use super::{
     ActorSnapshot, ConversationSummary, Memory, MemoryUpdate, RecallQuery, StoredMessage, Thought,
 };
 use crate::identity::{
-    ClaimStatus, Group, Identity, IdentityClaim, Person, Relation, SocialRelation,
+    ClaimStatus, Group, Identity, IdentityClaim, Person, PersonProfileLink, PersonProfileStatus,
+    Profile, ProfileIdentityLink, Relation, ResolvedActorIdentity, SocialRelation,
 };
 use crate::state::{Authority, BehaviorDirective};
 use async_trait::async_trait;
-use protocol::{ConversationId, GroupId, MemoryId, PersonId};
+use protocol::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
 
 #[async_trait]
 pub trait Store: Send + Sync {
@@ -46,7 +47,44 @@ pub trait Store: Send + Sync {
     async fn log_thought(&self, thought: &Thought) -> anyhow::Result<()>;
     async fn recent_thoughts(&self, limit: usize) -> anyhow::Result<Vec<Thought>>;
 
-    // People
+    // Identities, profiles, persons
+    async fn add_identity(&self, identity: &Identity) -> anyhow::Result<IdentityId>;
+    async fn get_identity(&self, id: &IdentityId) -> anyhow::Result<Option<Identity>>;
+    async fn resolve_identity(
+        &self,
+        gateway_id: &str,
+        external_id: &str,
+    ) -> anyhow::Result<Option<ResolvedActorIdentity>>;
+    async fn touch_identity(&self, id: &IdentityId) -> anyhow::Result<()>;
+
+    async fn add_profile(&self, profile: &Profile) -> anyhow::Result<ProfileId>;
+    async fn get_profile(&self, id: &ProfileId) -> anyhow::Result<Option<Profile>>;
+    async fn update_profile(
+        &self,
+        id: &ProfileId,
+        display_name: Option<&str>,
+        summary: Option<&str>,
+    ) -> anyhow::Result<()>;
+    async fn update_profile_comm_style(&self, id: &ProfileId, style: &str) -> anyhow::Result<()>;
+    async fn touch_profile(&self, id: &ProfileId) -> anyhow::Result<()>;
+    async fn get_profile_for_identity(
+        &self,
+        identity: &IdentityId,
+    ) -> anyhow::Result<Option<(Profile, ProfileIdentityLink)>>;
+    async fn link_identity_to_profile(
+        &self,
+        identity: &IdentityId,
+        profile: &ProfileId,
+        confidence: f32,
+        evidence: Option<&serde_json::Value>,
+    ) -> anyhow::Result<ProfileIdentityLink>;
+    async fn unlink_identity_from_profile(
+        &self,
+        identity: &IdentityId,
+        profile: &ProfileId,
+        reason: Option<&serde_json::Value>,
+    ) -> anyhow::Result<()>;
+
     async fn add_person(&self, person: &Person) -> anyhow::Result<PersonId>;
     async fn get_person(&self, id: &PersonId) -> anyhow::Result<Option<Person>>;
     async fn update_person(
@@ -57,17 +95,30 @@ pub trait Store: Send + Sync {
     ) -> anyhow::Result<()>;
     async fn update_comm_style(&self, id: &PersonId, style: &str) -> anyhow::Result<()>;
     async fn touch_person(&self, id: &PersonId) -> anyhow::Result<()>;
-    async fn list_people(&self) -> anyhow::Result<Vec<Person>>;
-
-    // Identities
-    async fn add_identity(&self, person: &PersonId, identity: &Identity) -> anyhow::Result<()>;
-    async fn resolve_identity(
+    async fn list_persons(&self) -> anyhow::Result<Vec<Person>>;
+    async fn attach_profile_to_person(
         &self,
-        gateway_id: &str,
-        external_id: &str,
-    ) -> anyhow::Result<Option<Person>>;
-    async fn get_identities(&self, person: &PersonId) -> anyhow::Result<Vec<Identity>>;
-    async fn merge_people(&self, keep: &PersonId, merge: &PersonId) -> anyhow::Result<()>;
+        profile: &ProfileId,
+        person: &PersonId,
+        status: PersonProfileStatus,
+        confidence: f32,
+        evidence: Option<&serde_json::Value>,
+    ) -> anyhow::Result<PersonProfileLink>;
+    async fn detach_profile_from_person(
+        &self,
+        profile: &ProfileId,
+        person: &PersonId,
+        reason: Option<&serde_json::Value>,
+    ) -> anyhow::Result<()>;
+    async fn get_person_for_profile(
+        &self,
+        profile: &ProfileId,
+    ) -> anyhow::Result<Option<(Person, PersonProfileLink)>>;
+    async fn get_profiles_for_person(
+        &self,
+        person: &PersonId,
+    ) -> anyhow::Result<Vec<(Profile, PersonProfileLink)>>;
+    async fn get_identities_for_person(&self, person: &PersonId) -> anyhow::Result<Vec<Identity>>;
 
     // Identity claims
     async fn create_claim(&self, claim: &IdentityClaim) -> anyhow::Result<()>;

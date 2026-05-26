@@ -1,14 +1,16 @@
 use super::{
-    ActorSnapshot, ConversationSummary, Memory, MemoryKind, MemorySource, MemoryUpdate,
-    MessageRole, RecallQuery, Store, StoredMessage, Thought, ThoughtKind,
+    ActorSnapshot, ConversationSummary, Memory, MemoryKind, MemorySource, MemorySubject,
+    MemorySubjectType, MemoryUpdate, MessageRole, RecallQuery, Store, StoredMessage, Thought,
+    ThoughtKind,
 };
 use crate::identity::{
-    ClaimEvidence, ClaimStatus, Group, GroupContext, Identity, IdentityClaim, Person, Relation,
-    SocialRelation,
+    ClaimEvidence, ClaimStatus, Group, GroupContext, Identity, IdentityClaim, Person,
+    PersonProfileLink, PersonProfileStatus, Profile, ProfileIdentityLink, ProfileIdentityStatus,
+    Relation, ResolvedActorIdentity, SocialRelation,
 };
 use crate::state::{Authority, BehaviorDirective, DirectiveScope};
-use protocol::{ConversationId, GroupId, MemoryId, PersonId};
-use rusqlite::{Connection, params};
+use protocol::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
+use rusqlite::{Connection, OptionalExtension, params};
 use sqlite_vec::sqlite3_vec_init;
 use std::collections::HashSet;
 use std::sync::{Mutex, Once};
@@ -91,6 +93,8 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
             gateway_id TEXT,
+            identity_id TEXT,
+            profile_id TEXT,
             person_id TEXT,
             group_id TEXT,
             summary TEXT,
@@ -105,16 +109,22 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
             timestamp INTEGER NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
+            identity_id TEXT,
+            profile_id TEXT,
             person_id TEXT,
             metadata TEXT NOT NULL DEFAULT '{}'
         );
         CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, timestamp);
 
-        CREATE TABLE IF NOT EXISTS memory_people (
+        CREATE TABLE IF NOT EXISTS memory_subjects (
             memory_id TEXT NOT NULL,
-            person_id TEXT NOT NULL,
-            PRIMARY KEY(memory_id, person_id)
+            subject_type TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            role TEXT,
+            confidence REAL NOT NULL,
+            PRIMARY KEY(memory_id, subject_type, subject_id, role)
         );
+        CREATE INDEX IF NOT EXISTS idx_memory_subjects_subject ON memory_subjects(subject_type, subject_id);
 
         CREATE TABLE IF NOT EXISTS thoughts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +132,7 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
             kind TEXT NOT NULL,
             content TEXT NOT NULL,
             memories_accessed TEXT NOT NULL DEFAULT '[]',
-            people TEXT NOT NULL DEFAULT '[]'
+            subjects TEXT NOT NULL DEFAULT '[]'
         );
         CREATE INDEX IF NOT EXISTS idx_thoughts_ts ON thoughts(timestamp);
 
@@ -133,24 +143,61 @@ fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_snapshots_saved ON snapshots(saved_at);
 
-        CREATE TABLE IF NOT EXISTS people (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            summary TEXT,
-            comm_style TEXT,
-            first_seen INTEGER NOT NULL,
-            last_seen INTEGER NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS identities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            person_id TEXT NOT NULL,
+            id TEXT PRIMARY KEY,
             gateway_id TEXT NOT NULL,
             external_id TEXT NOT NULL,
             display_name TEXT,
+            metadata_json TEXT,
+            created_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
             UNIQUE(gateway_id, external_id)
         );
-        CREATE INDEX IF NOT EXISTS idx_identities_person ON identities(person_id);
+
+        CREATE TABLE IF NOT EXISTS profiles (
+            id TEXT PRIMARY KEY,
+            display_name TEXT,
+            summary TEXT,
+            comm_style TEXT,
+            first_seen INTEGER NOT NULL,
+            last_seen INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS persons (
+            id TEXT PRIMARY KEY,
+            display_name TEXT,
+            summary TEXT,
+            comm_style TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS profile_identities (
+            profile_id TEXT NOT NULL,
+            identity_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_json TEXT,
+            created_at INTEGER NOT NULL,
+            removed_at INTEGER,
+            PRIMARY KEY(profile_id, identity_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_profile_identities_identity ON profile_identities(identity_id, status);
+
+        CREATE TABLE IF NOT EXISTS person_profiles (
+            person_id TEXT NOT NULL,
+            profile_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            evidence_json TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            detached_at INTEGER,
+            PRIMARY KEY(person_id, profile_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_person_profiles_profile ON person_profiles(profile_id, status);
 
         CREATE TABLE IF NOT EXISTS identity_claims (
             id TEXT PRIMARY KEY,
@@ -293,7 +340,7 @@ fn read_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
         accessed_at: row.get("accessed_at")?,
         access_count: row.get("access_count")?,
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
-        people: vec![],
+        subjects: vec![],
         embedding: None,
     })
 }
@@ -301,13 +348,85 @@ fn read_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
 fn read_message(row: &rusqlite::Row) -> rusqlite::Result<StoredMessage> {
     let role_str: String = row.get("role")?;
     let metadata_json: String = row.get("metadata")?;
+    let identity_id: Option<String> = row.get("identity_id")?;
+    let profile_id: Option<String> = row.get("profile_id")?;
     let person_id: Option<String> = row.get("person_id")?;
     Ok(StoredMessage {
         timestamp: row.get("timestamp")?,
         role: MessageRole::parse(&role_str).unwrap_or(MessageRole::User),
         content: row.get("content")?,
+        identity: identity_id.map(IdentityId),
+        profile: profile_id.map(ProfileId),
         person: person_id.map(PersonId),
         metadata: serde_json::from_str(&metadata_json).unwrap_or_default(),
+    })
+}
+
+fn read_identity(row: &rusqlite::Row) -> rusqlite::Result<Identity> {
+    let metadata_json: Option<String> = row.get("metadata_json")?;
+    Ok(Identity {
+        id: IdentityId(row.get("id")?),
+        gateway_id: row.get("gateway_id")?,
+        external_id: row.get("external_id")?,
+        display_name: row.get("display_name")?,
+        metadata: metadata_json.and_then(|json| serde_json::from_str(&json).ok()),
+        created_at: row.get("created_at")?,
+        last_seen_at: row.get("last_seen_at")?,
+    })
+}
+
+fn read_profile(row: &rusqlite::Row) -> rusqlite::Result<Profile> {
+    Ok(Profile {
+        id: ProfileId(row.get("id")?),
+        display_name: row.get("display_name")?,
+        summary: row.get("summary")?,
+        comm_style: row.get("comm_style")?,
+        first_seen: row.get("first_seen")?,
+        last_seen: row.get("last_seen")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
+fn read_profile_identity_link(row: &rusqlite::Row) -> rusqlite::Result<ProfileIdentityLink> {
+    let status: String = row.get("status")?;
+    let evidence_json: Option<String> = row.get("evidence_json")?;
+    Ok(ProfileIdentityLink {
+        profile_id: ProfileId(row.get("profile_id")?),
+        identity_id: IdentityId(row.get("identity_id")?),
+        status: ProfileIdentityStatus::parse(&status).unwrap_or(ProfileIdentityStatus::Removed),
+        confidence: row.get::<_, f32>("confidence")?,
+        evidence: evidence_json.and_then(|json| serde_json::from_str(&json).ok()),
+        created_at: row.get("created_at")?,
+        removed_at: row.get("removed_at")?,
+    })
+}
+
+fn read_person(row: &rusqlite::Row) -> rusqlite::Result<Person> {
+    let created_at: i64 = row.get("created_at")?;
+    let updated_at: i64 = row.get("updated_at")?;
+    Ok(Person {
+        id: PersonId(row.get("id")?),
+        name: row.get("display_name")?,
+        summary: row.get("summary")?,
+        comm_style: row.get("comm_style")?,
+        first_seen: created_at,
+        last_seen: updated_at,
+    })
+}
+
+fn read_person_profile_link(row: &rusqlite::Row) -> rusqlite::Result<PersonProfileLink> {
+    let status: String = row.get("status")?;
+    let evidence_json: Option<String> = row.get("evidence_json")?;
+    Ok(PersonProfileLink {
+        person_id: PersonId(row.get("person_id")?),
+        profile_id: ProfileId(row.get("profile_id")?),
+        status: PersonProfileStatus::parse(&status).unwrap_or(PersonProfileStatus::Detached),
+        confidence: row.get::<_, f32>("confidence")?,
+        evidence: evidence_json.and_then(|json| serde_json::from_str(&json).ok()),
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        detached_at: row.get("detached_at")?,
     })
 }
 
@@ -359,10 +478,17 @@ impl Store for SqliteStore {
             ],
         )?;
 
-        for person in &memory.people {
+        for subject in &memory.subjects {
             conn.execute(
-                "INSERT OR IGNORE INTO memory_people (memory_id, person_id) VALUES (?1, ?2)",
-                params![memory.id.0, person.0],
+                "INSERT OR IGNORE INTO memory_subjects (memory_id, subject_type, subject_id, role, confidence)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    memory.id.0,
+                    subject.subject_type.as_str(),
+                    subject.subject_id,
+                    subject.role,
+                    subject.confidence,
+                ],
             )?;
         }
 
@@ -392,10 +518,20 @@ impl Store for SqliteStore {
         )?;
         match stmt.query_row(params![id.0], read_memory) {
             Ok(mut memory) => {
-                let mut people_stmt =
-                    conn.prepare("SELECT person_id FROM memory_people WHERE memory_id = ?1")?;
-                memory.people = people_stmt
-                    .query_map(params![id.0], |row| Ok(PersonId(row.get::<_, String>(0)?)))?
+                let mut subjects_stmt = conn.prepare(
+                    "SELECT subject_type, subject_id, role, confidence FROM memory_subjects WHERE memory_id = ?1",
+                )?;
+                memory.subjects = subjects_stmt
+                    .query_map(params![id.0], |row| {
+                        let subject_type: String = row.get(0)?;
+                        Ok(MemorySubject {
+                            subject_type: MemorySubjectType::parse(&subject_type)
+                                .unwrap_or(MemorySubjectType::Profile),
+                            subject_id: row.get(1)?,
+                            role: row.get(2)?,
+                            confidence: row.get(3)?,
+                        })
+                    })?
                     .filter_map(|r| r.ok())
                     .collect();
 
@@ -452,15 +588,22 @@ impl Store for SqliteStore {
                 params![tags_json, id.0],
             )?;
         }
-        if let Some(ref people) = update.people {
+        if let Some(ref subjects) = update.subjects {
             conn.execute(
-                "DELETE FROM memory_people WHERE memory_id = ?1",
+                "DELETE FROM memory_subjects WHERE memory_id = ?1",
                 params![id.0],
             )?;
-            for person in people {
+            for subject in subjects {
                 conn.execute(
-                    "INSERT OR IGNORE INTO memory_people (memory_id, person_id) VALUES (?1, ?2)",
-                    params![id.0, person.0],
+                    "INSERT OR IGNORE INTO memory_subjects (memory_id, subject_type, subject_id, role, confidence)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        id.0,
+                        subject.subject_type.as_str(),
+                        subject.subject_id,
+                        subject.role,
+                        subject.confidence,
+                    ],
                 )?;
             }
         }
@@ -484,15 +627,34 @@ impl Store for SqliteStore {
         let conn = self.lock()?;
         let fetch_limit = ((query.offset + query.limit) * 2) as i64;
 
-        let person_filter = query.person.as_ref();
-        let person_ids: HashSet<String> = if let Some(ref person) = person_filter {
-            let mut stmt =
-                conn.prepare("SELECT memory_id FROM memory_people WHERE person_id = ?1")?;
-            stmt.query_map(params![person.0], |row| row.get::<_, String>(0))?
-                .filter_map(|r| r.ok())
-                .collect()
-        } else {
+        let mut subject_filters = Vec::new();
+        if let Some(identity) = query.identity.as_ref() {
+            subject_filters.push(("identity", identity.0.as_str()));
+        }
+        if let Some(profile) = query.profile.as_ref() {
+            subject_filters.push(("profile", profile.0.as_str()));
+        }
+        if let Some(person) = query.person.as_ref() {
+            subject_filters.push(("person", person.0.as_str()));
+        }
+        let subject_ids: HashSet<String> = if subject_filters.is_empty() {
             HashSet::new()
+        } else {
+            let mut ids = HashSet::new();
+            let mut stmt = conn.prepare(
+                "SELECT memory_id FROM memory_subjects WHERE subject_type = ?1 AND subject_id = ?2",
+            )?;
+            for (subject_type, subject_id) in &subject_filters {
+                for id in stmt
+                    .query_map(params![subject_type, subject_id], |row| {
+                        row.get::<_, String>(0)
+                    })?
+                    .filter_map(|r| r.ok())
+                {
+                    ids.insert(id);
+                }
+            }
+            ids
         };
 
         let mut memories = if let Some(ref embedding) = query.embedding {
@@ -515,7 +677,7 @@ impl Store for SqliteStore {
                  FROM memories_fts f
                  JOIN memories m ON m.rowid = f.rowid
                  WHERE memories_fts MATCH ?1
-                 ORDER BY bm25(memories_fts) ASC
+                 ORDER BY m.created_at DESC, bm25(memories_fts) ASC
                  LIMIT ?2",
             )?;
             let results: Vec<_> = stmt
@@ -532,7 +694,7 @@ impl Store for SqliteStore {
                     "SELECT id, kind, content, source, importance, sensitivity, emotional_valence,
                             created_at, accessed_at, access_count, tags
                      FROM memories WHERE content LIKE ?1 ESCAPE '\\'
-                     ORDER BY importance DESC, created_at DESC
+                     ORDER BY created_at DESC, importance DESC
                      LIMIT ?2",
                 )?;
                 fallback
@@ -547,7 +709,7 @@ impl Store for SqliteStore {
                 "SELECT id, kind, content, source, importance, sensitivity, emotional_valence,
                         created_at, accessed_at, access_count, tags
                  FROM memories
-                 ORDER BY importance DESC, created_at DESC
+                 ORDER BY created_at DESC, importance DESC
                  LIMIT ?1",
             )?;
             stmt.query_map(params![fetch_limit], read_memory)?
@@ -583,10 +745,16 @@ impl Store for SqliteStore {
                     return false;
                 }
             }
-            if person_filter.is_some() && !person_ids.contains(&m.id.0) {
+            if !subject_filters.is_empty() && !subject_ids.contains(&m.id.0) {
                 return false;
             }
             true
+        });
+
+        memories.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| b.importance.total_cmp(&a.importance))
         });
 
         if query.offset > 0 {
@@ -594,15 +762,23 @@ impl Store for SqliteStore {
         }
         memories.truncate(query.limit);
 
-        let mut people_stmt =
-            conn.prepare("SELECT person_id FROM memory_people WHERE memory_id = ?1")?;
+        let mut subjects_stmt = conn.prepare(
+            "SELECT subject_type, subject_id, role, confidence FROM memory_subjects WHERE memory_id = ?1",
+        )?;
         let mut access_stmt = conn.prepare(
             "UPDATE memories SET accessed_at = unixepoch(), access_count = access_count + 1 WHERE id = ?1",
         )?;
         for memory in &mut memories {
-            memory.people = people_stmt
+            memory.subjects = subjects_stmt
                 .query_map(params![memory.id.0], |row| {
-                    Ok(PersonId(row.get::<_, String>(0)?))
+                    let subject_type: String = row.get(0)?;
+                    Ok(MemorySubject {
+                        subject_type: MemorySubjectType::parse(&subject_type)
+                            .unwrap_or(MemorySubjectType::Profile),
+                        subject_id: row.get(1)?,
+                        role: row.get(2)?,
+                        confidence: row.get(3)?,
+                    })
                 })?
                 .filter_map(|r| r.ok())
                 .collect();
@@ -624,7 +800,7 @@ impl Store for SqliteStore {
             params![id.0],
         )?;
         conn.execute(
-            "DELETE FROM memory_people WHERE memory_id = ?1",
+            "DELETE FROM memory_subjects WHERE memory_id = ?1",
             params![id.0],
         )?;
         let rows = conn.execute("DELETE FROM memories WHERE id = ?1", params![id.0])?;
@@ -641,38 +817,58 @@ impl Store for SqliteStore {
     ) -> anyhow::Result<()> {
         let conn = self.lock()?;
         let tx = TxGuard::begin(&conn)?;
+        let identity_id = msg.identity.as_ref().map(|p| &p.0);
+        let profile_id = msg.profile.as_ref().map(|p| &p.0);
         let person_id = msg.person.as_ref().map(|p| &p.0);
         let group_id = group.map(|g| &g.0);
 
         conn.execute(
-            "INSERT INTO conversations (id, gateway_id, person_id, group_id, started_at, last_message_at, message_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)
+            "INSERT INTO conversations (id, gateway_id, identity_id, profile_id, person_id, group_id, started_at, last_message_at, message_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, 1)
              ON CONFLICT(id) DO UPDATE SET
-                last_message_at = ?5,
+                last_message_at = ?7,
                 message_count = message_count + 1,
                 gateway_id = COALESCE(conversations.gateway_id, excluded.gateway_id),
+                identity_id = COALESCE(excluded.identity_id, conversations.identity_id),
+                profile_id = COALESCE(excluded.profile_id, conversations.profile_id),
                 person_id = COALESCE(conversations.person_id, excluded.person_id),
                 group_id = COALESCE(conversations.group_id, excluded.group_id)",
-            params![conv.0, gateway_id, person_id, group_id, msg.timestamp],
+            params![
+                conv.0,
+                gateway_id,
+                identity_id,
+                profile_id,
+                person_id,
+                group_id,
+                msg.timestamp,
+            ],
         )?;
 
         let metadata_json = serde_json::to_string(&msg.metadata)?;
         conn.execute(
-            "INSERT INTO messages (conversation_id, timestamp, role, content, person_id, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO messages (conversation_id, timestamp, role, content, identity_id, profile_id, person_id, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 conv.0,
                 msg.timestamp,
                 msg.role.as_str(),
                 msg.content,
+                identity_id,
+                profile_id,
                 person_id,
                 metadata_json,
             ],
         )?;
 
+        if let Some(profile) = &msg.profile {
+            conn.execute(
+                "UPDATE profiles SET last_seen = ?1, updated_at = ?1 WHERE id = ?2 AND last_seen < ?1",
+                params![msg.timestamp, profile.0],
+            )?;
+        }
         if let Some(person) = &msg.person {
             conn.execute(
-                "UPDATE people SET last_seen = ?1 WHERE id = ?2 AND last_seen < ?1",
+                "UPDATE persons SET updated_at = ?1 WHERE id = ?2 AND updated_at < ?1",
                 params![msg.timestamp, person.0],
             )?;
         }
@@ -691,7 +887,7 @@ impl Store for SqliteStore {
 
         let mut messages = if let Some(before_ts) = before {
             let mut stmt = conn.prepare(
-                "SELECT timestamp, role, content, person_id, metadata
+                "SELECT timestamp, role, content, identity_id, profile_id, person_id, metadata
                  FROM messages
                  WHERE conversation_id = ?1 AND timestamp < ?2
                  ORDER BY timestamp DESC, id DESC
@@ -702,7 +898,7 @@ impl Store for SqliteStore {
                 .collect::<Vec<_>>()
         } else {
             let mut stmt = conn.prepare(
-                "SELECT timestamp, role, content, person_id, metadata
+                "SELECT timestamp, role, content, identity_id, profile_id, person_id, metadata
                  FROM messages
                  WHERE conversation_id = ?1
                  ORDER BY timestamp DESC, id DESC
@@ -720,16 +916,20 @@ impl Store for SqliteStore {
     async fn list_conversations(&self) -> anyhow::Result<Vec<ConversationSummary>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT id, gateway_id, person_id, group_id, summary, message_count, started_at, last_message_at
+            "SELECT id, gateway_id, identity_id, profile_id, person_id, group_id, summary, message_count, started_at, last_message_at
              FROM conversations ORDER BY last_message_at DESC",
         )?;
         let results = stmt
             .query_map([], |row| {
+                let identity_id: Option<String> = row.get("identity_id")?;
+                let profile_id: Option<String> = row.get("profile_id")?;
                 let person_id: Option<String> = row.get("person_id")?;
                 let group_id: Option<String> = row.get("group_id")?;
                 Ok(ConversationSummary {
                     id: ConversationId(row.get("id")?),
                     gateway_id: row.get("gateway_id")?,
+                    identity: identity_id.map(IdentityId),
+                    profile: profile_id.map(ProfileId),
                     person: person_id.map(PersonId),
                     group: group_id.map(GroupId),
                     summary: row.get("summary")?,
@@ -759,16 +959,16 @@ impl Store for SqliteStore {
     async fn log_thought(&self, thought: &Thought) -> anyhow::Result<()> {
         let conn = self.lock()?;
         let memories_json = serde_json::to_string(&thought.memories_accessed)?;
-        let people_json = serde_json::to_string(&thought.people)?;
+        let subjects_json = serde_json::to_string(&thought.subjects)?;
         conn.execute(
-            "INSERT INTO thoughts (timestamp, kind, content, memories_accessed, people)
+            "INSERT INTO thoughts (timestamp, kind, content, memories_accessed, subjects)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 thought.timestamp,
                 thought.kind.as_str(),
                 thought.content,
                 memories_json,
-                people_json,
+                subjects_json,
             ],
         )?;
         Ok(())
@@ -777,20 +977,20 @@ impl Store for SqliteStore {
     async fn recent_thoughts(&self, limit: usize) -> anyhow::Result<Vec<Thought>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT timestamp, kind, content, memories_accessed, people
+            "SELECT timestamp, kind, content, memories_accessed, subjects
              FROM thoughts ORDER BY timestamp DESC, id DESC LIMIT ?1",
         )?;
         let mut thoughts: Vec<Thought> = stmt
             .query_map(params![limit as i64], |row| {
                 let kind_str: String = row.get("kind")?;
                 let memories_json: String = row.get("memories_accessed")?;
-                let people_json: String = row.get("people")?;
+                let subjects_json: String = row.get("subjects")?;
                 Ok(Thought {
                     timestamp: row.get("timestamp")?,
                     kind: ThoughtKind::parse(&kind_str).unwrap_or(ThoughtKind::Observation),
                     content: row.get("content")?,
                     memories_accessed: serde_json::from_str(&memories_json).unwrap_or_default(),
-                    people: serde_json::from_str(&people_json).unwrap_or_default(),
+                    subjects: serde_json::from_str(&subjects_json).unwrap_or_default(),
                 })
             })?
             .filter_map(|r| r.ok())
@@ -800,12 +1000,268 @@ impl Store for SqliteStore {
         Ok(thoughts)
     }
 
-    // People
+    // Identities, profiles, persons
+
+    async fn add_identity(&self, identity: &Identity) -> anyhow::Result<IdentityId> {
+        let conn = self.lock()?;
+        let metadata_json = identity
+            .metadata
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
+        conn.execute(
+            "INSERT INTO identities (id, gateway_id, external_id, display_name, metadata_json, created_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(gateway_id, external_id) DO UPDATE SET
+                display_name = COALESCE(excluded.display_name, identities.display_name),
+                metadata_json = COALESCE(excluded.metadata_json, identities.metadata_json),
+                last_seen_at = excluded.last_seen_at",
+            params![
+                identity.id.0,
+                identity.gateway_id,
+                identity.external_id,
+                identity.display_name,
+                metadata_json,
+                identity.created_at,
+                identity.last_seen_at,
+            ],
+        )?;
+        let id = conn.query_row(
+            "SELECT id FROM identities WHERE gateway_id = ?1 AND external_id = ?2",
+            params![identity.gateway_id, identity.external_id],
+            |row| row.get::<_, String>(0),
+        )?;
+        Ok(IdentityId(id))
+    }
+
+    async fn get_identity(&self, id: &IdentityId) -> anyhow::Result<Option<Identity>> {
+        let conn = self.lock()?;
+        match conn.query_row(
+            "SELECT id, gateway_id, external_id, display_name, metadata_json, created_at, last_seen_at
+             FROM identities WHERE id = ?1",
+            params![id.0],
+            read_identity,
+        ) {
+            Ok(identity) => Ok(Some(identity)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn resolve_identity(
+        &self,
+        gateway_id: &str,
+        external_id: &str,
+    ) -> anyhow::Result<Option<ResolvedActorIdentity>> {
+        let conn = self.lock()?;
+        let identity = match conn.query_row(
+            "SELECT id, gateway_id, external_id, display_name, metadata_json, created_at, last_seen_at
+             FROM identities WHERE gateway_id = ?1 AND external_id = ?2",
+            params![gateway_id, external_id],
+            read_identity,
+        ) {
+            Ok(identity) => identity,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+
+        let (profile, _profile_link) = conn.query_row(
+            "SELECT p.id, p.display_name, p.summary, p.comm_style, p.first_seen, p.last_seen, p.created_at, p.updated_at,
+                    l.profile_id, l.identity_id, l.status, l.confidence, l.evidence_json, l.created_at, l.removed_at
+             FROM profile_identities l
+             JOIN profiles p ON p.id = l.profile_id
+             WHERE l.identity_id = ?1 AND l.status = 'active'
+             ORDER BY l.confidence DESC, l.created_at DESC
+             LIMIT 1",
+            params![identity.id.0],
+            |row| Ok((read_profile(row)?, read_profile_identity_link(row)?)),
+        )?;
+
+        let person_link = conn
+            .query_row(
+                "SELECT p.id, p.display_name, p.summary, p.comm_style, p.created_at, p.updated_at,
+                        l.person_id, l.profile_id, l.status, l.confidence, l.evidence_json, l.created_at, l.updated_at, l.detached_at
+                 FROM person_profiles l
+                 JOIN persons p ON p.id = l.person_id
+                 WHERE l.profile_id = ?1 AND l.status IN ('verified', 'likely')
+                 ORDER BY CASE l.status WHEN 'verified' THEN 0 ELSE 1 END, l.confidence DESC, l.updated_at DESC
+                 LIMIT 1",
+                params![profile.id.0],
+                |row| Ok((read_person(row)?, read_person_profile_link(row)?)),
+            )
+            .optional()?;
+
+        Ok(Some(ResolvedActorIdentity {
+            identity,
+            profile,
+            person: person_link.as_ref().map(|(person, _)| person.clone()),
+            profile_person_link: person_link.map(|(_, link)| link),
+        }))
+    }
+
+    async fn touch_identity(&self, id: &IdentityId) -> anyhow::Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE identities SET last_seen_at = unixepoch() WHERE id = ?1",
+            params![id.0],
+        )?;
+        Ok(())
+    }
+
+    async fn add_profile(&self, profile: &Profile) -> anyhow::Result<ProfileId> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO profiles (id, display_name, summary, comm_style, first_seen, last_seen, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                profile.id.0,
+                profile.display_name,
+                profile.summary,
+                profile.comm_style,
+                profile.first_seen,
+                profile.last_seen,
+                profile.created_at,
+                profile.updated_at,
+            ],
+        )?;
+        Ok(profile.id.clone())
+    }
+
+    async fn get_profile(&self, id: &ProfileId) -> anyhow::Result<Option<Profile>> {
+        let conn = self.lock()?;
+        match conn.query_row(
+            "SELECT id, display_name, summary, comm_style, first_seen, last_seen, created_at, updated_at
+             FROM profiles WHERE id = ?1",
+            params![id.0],
+            read_profile,
+        ) {
+            Ok(profile) => Ok(Some(profile)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn update_profile(
+        &self,
+        id: &ProfileId,
+        display_name: Option<&str>,
+        summary: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let conn = self.lock()?;
+        let tx = TxGuard::begin(&conn)?;
+        if let Some(display_name) = display_name {
+            conn.execute(
+                "UPDATE profiles SET display_name = ?1, updated_at = unixepoch() WHERE id = ?2",
+                params![display_name, id.0],
+            )?;
+        }
+        if let Some(summary) = summary {
+            conn.execute(
+                "UPDATE profiles SET summary = ?1, updated_at = unixepoch() WHERE id = ?2",
+                params![summary, id.0],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    async fn update_profile_comm_style(&self, id: &ProfileId, style: &str) -> anyhow::Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE profiles SET comm_style = ?1, updated_at = unixepoch() WHERE id = ?2",
+            params![style, id.0],
+        )?;
+        Ok(())
+    }
+
+    async fn touch_profile(&self, id: &ProfileId) -> anyhow::Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE profiles SET last_seen = unixepoch(), updated_at = unixepoch() WHERE id = ?1",
+            params![id.0],
+        )?;
+        Ok(())
+    }
+
+    async fn get_profile_for_identity(
+        &self,
+        identity: &IdentityId,
+    ) -> anyhow::Result<Option<(Profile, ProfileIdentityLink)>> {
+        let conn = self.lock()?;
+        match conn.query_row(
+            "SELECT p.id, p.display_name, p.summary, p.comm_style, p.first_seen, p.last_seen, p.created_at, p.updated_at,
+                    l.profile_id, l.identity_id, l.status, l.confidence, l.evidence_json, l.created_at, l.removed_at
+             FROM profile_identities l
+             JOIN profiles p ON p.id = l.profile_id
+             WHERE l.identity_id = ?1 AND l.status = 'active'
+             ORDER BY l.confidence DESC, l.created_at DESC
+             LIMIT 1",
+            params![identity.0],
+            |row| Ok((read_profile(row)?, read_profile_identity_link(row)?)),
+        ) {
+            Ok(result) => Ok(Some(result)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn link_identity_to_profile(
+        &self,
+        identity: &IdentityId,
+        profile: &ProfileId,
+        confidence: f32,
+        evidence: Option<&serde_json::Value>,
+    ) -> anyhow::Result<ProfileIdentityLink> {
+        let conn = self.lock()?;
+        let tx = TxGuard::begin(&conn)?;
+        let evidence_json = evidence.map(serde_json::to_string).transpose()?;
+        conn.execute(
+            "UPDATE profile_identities
+             SET status = 'removed', removed_at = unixepoch()
+             WHERE identity_id = ?1 AND status = 'active' AND profile_id <> ?2",
+            params![identity.0, profile.0],
+        )?;
+        conn.execute(
+            "INSERT INTO profile_identities (profile_id, identity_id, status, confidence, evidence_json, created_at, removed_at)
+             VALUES (?1, ?2, 'active', ?3, ?4, unixepoch(), NULL)
+             ON CONFLICT(profile_id, identity_id) DO UPDATE SET
+                status = 'active',
+                confidence = excluded.confidence,
+                evidence_json = excluded.evidence_json,
+                removed_at = NULL",
+            params![profile.0, identity.0, confidence, evidence_json],
+        )?;
+        let link = conn.query_row(
+            "SELECT profile_id, identity_id, status, confidence, evidence_json, created_at, removed_at
+             FROM profile_identities WHERE profile_id = ?1 AND identity_id = ?2",
+            params![profile.0, identity.0],
+            read_profile_identity_link,
+        )?;
+        tx.commit()?;
+        Ok(link)
+    }
+
+    async fn unlink_identity_from_profile(
+        &self,
+        identity: &IdentityId,
+        profile: &ProfileId,
+        reason: Option<&serde_json::Value>,
+    ) -> anyhow::Result<()> {
+        let conn = self.lock()?;
+        let reason_json = reason.map(serde_json::to_string).transpose()?;
+        conn.execute(
+            "UPDATE profile_identities
+             SET status = 'removed', removed_at = unixepoch(), evidence_json = COALESCE(?3, evidence_json)
+             WHERE identity_id = ?1 AND profile_id = ?2 AND status = 'active'",
+            params![identity.0, profile.0, reason_json],
+        )?;
+        Ok(())
+    }
 
     async fn add_person(&self, person: &Person) -> anyhow::Result<PersonId> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO people (id, name, summary, comm_style, first_seen, last_seen)
+            "INSERT INTO persons (id, display_name, summary, comm_style, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 person.id.0,
@@ -822,7 +1278,7 @@ impl Store for SqliteStore {
     async fn get_person(&self, id: &PersonId) -> anyhow::Result<Option<Person>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT id, name, summary, comm_style, first_seen, last_seen FROM people WHERE id = ?1",
+            "SELECT id, display_name, summary, comm_style, created_at, updated_at FROM persons WHERE id = ?1",
             params![id.0],
             read_person,
         ) {
@@ -842,13 +1298,13 @@ impl Store for SqliteStore {
         let tx = TxGuard::begin(&conn)?;
         if let Some(name) = name {
             conn.execute(
-                "UPDATE people SET name = ?1 WHERE id = ?2",
+                "UPDATE persons SET display_name = ?1, updated_at = unixepoch() WHERE id = ?2",
                 params![name, id.0],
             )?;
         }
         if let Some(summary) = summary {
             conn.execute(
-                "UPDATE people SET summary = ?1 WHERE id = ?2",
+                "UPDATE persons SET summary = ?1, updated_at = unixepoch() WHERE id = ?2",
                 params![summary, id.0],
             )?;
         }
@@ -859,7 +1315,7 @@ impl Store for SqliteStore {
     async fn update_comm_style(&self, id: &PersonId, style: &str) -> anyhow::Result<()> {
         let conn = self.lock()?;
         conn.execute(
-            "UPDATE people SET comm_style = ?1 WHERE id = ?2",
+            "UPDATE persons SET comm_style = ?1, updated_at = unixepoch() WHERE id = ?2",
             params![style, id.0],
         )?;
         Ok(())
@@ -868,16 +1324,16 @@ impl Store for SqliteStore {
     async fn touch_person(&self, id: &PersonId) -> anyhow::Result<()> {
         let conn = self.lock()?;
         conn.execute(
-            "UPDATE people SET last_seen = unixepoch() WHERE id = ?1",
+            "UPDATE persons SET updated_at = unixepoch() WHERE id = ?1",
             params![id.0],
         )?;
         Ok(())
     }
 
-    async fn list_people(&self) -> anyhow::Result<Vec<Person>> {
+    async fn list_persons(&self) -> anyhow::Result<Vec<Person>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, summary, comm_style, first_seen, last_seen FROM people ORDER BY name",
+            "SELECT id, display_name, summary, comm_style, created_at, updated_at FROM persons ORDER BY display_name",
         )?;
         let results = stmt
             .query_map([], read_person)?
@@ -886,146 +1342,123 @@ impl Store for SqliteStore {
         Ok(results)
     }
 
-    // Identities
-
-    async fn add_identity(&self, person: &PersonId, identity: &Identity) -> anyhow::Result<()> {
+    async fn attach_profile_to_person(
+        &self,
+        profile: &ProfileId,
+        person: &PersonId,
+        status: PersonProfileStatus,
+        confidence: f32,
+        evidence: Option<&serde_json::Value>,
+    ) -> anyhow::Result<PersonProfileLink> {
         let conn = self.lock()?;
+        let tx = TxGuard::begin(&conn)?;
+        let evidence_json = evidence.map(serde_json::to_string).transpose()?;
+        if status.is_active_person_context() {
+            conn.execute(
+                "UPDATE person_profiles
+                 SET status = 'detached', updated_at = unixepoch(), detached_at = unixepoch()
+                 WHERE profile_id = ?1 AND status IN ('verified', 'likely') AND person_id <> ?2",
+                params![profile.0, person.0],
+            )?;
+        }
         conn.execute(
-            "INSERT INTO identities (person_id, gateway_id, external_id, display_name)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![
-                person.0,
-                identity.gateway_id,
-                identity.external_id,
-                identity.display_name.as_deref()
-            ],
+            "INSERT INTO person_profiles (person_id, profile_id, status, confidence, evidence_json, created_at, updated_at, detached_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), unixepoch(), NULL)
+             ON CONFLICT(person_id, profile_id) DO UPDATE SET
+                status = excluded.status,
+                confidence = excluded.confidence,
+                evidence_json = excluded.evidence_json,
+                updated_at = unixepoch(),
+                detached_at = CASE WHEN excluded.status IN ('detached', 'rejected') THEN unixepoch() ELSE NULL END",
+            params![person.0, profile.0, status.as_str(), confidence, evidence_json],
+        )?;
+        let link = conn.query_row(
+            "SELECT person_id, profile_id, status, confidence, evidence_json, created_at, updated_at, detached_at
+             FROM person_profiles WHERE person_id = ?1 AND profile_id = ?2",
+            params![person.0, profile.0],
+            read_person_profile_link,
+        )?;
+        tx.commit()?;
+        Ok(link)
+    }
+
+    async fn detach_profile_from_person(
+        &self,
+        profile: &ProfileId,
+        person: &PersonId,
+        reason: Option<&serde_json::Value>,
+    ) -> anyhow::Result<()> {
+        let conn = self.lock()?;
+        let reason_json = reason.map(serde_json::to_string).transpose()?;
+        conn.execute(
+            "UPDATE person_profiles
+             SET status = 'detached', evidence_json = COALESCE(?3, evidence_json),
+                 updated_at = unixepoch(), detached_at = unixepoch()
+             WHERE profile_id = ?1 AND person_id = ?2 AND status <> 'detached'",
+            params![profile.0, person.0, reason_json],
         )?;
         Ok(())
     }
 
-    async fn resolve_identity(
+    async fn get_person_for_profile(
         &self,
-        gateway_id: &str,
-        external_id: &str,
-    ) -> anyhow::Result<Option<Person>> {
+        profile: &ProfileId,
+    ) -> anyhow::Result<Option<(Person, PersonProfileLink)>> {
         let conn = self.lock()?;
         match conn.query_row(
-            "SELECT p.id, p.name, p.summary, p.comm_style, p.first_seen, p.last_seen
-             FROM identities i JOIN people p ON p.id = i.person_id
-             WHERE i.gateway_id = ?1 AND i.external_id = ?2",
-            params![gateway_id, external_id],
-            read_person,
+            "SELECT p.id, p.display_name, p.summary, p.comm_style, p.created_at, p.updated_at,
+                    l.person_id, l.profile_id, l.status, l.confidence, l.evidence_json, l.created_at, l.updated_at, l.detached_at
+             FROM person_profiles l
+             JOIN persons p ON p.id = l.person_id
+             WHERE l.profile_id = ?1 AND l.status IN ('verified', 'likely')
+             ORDER BY CASE l.status WHEN 'verified' THEN 0 ELSE 1 END, l.confidence DESC, l.updated_at DESC
+             LIMIT 1",
+            params![profile.0],
+            |row| Ok((read_person(row)?, read_person_profile_link(row)?)),
         ) {
-            Ok(p) => Ok(Some(p)),
+            Ok(result) => Ok(Some(result)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
-    async fn get_identities(&self, person: &PersonId) -> anyhow::Result<Vec<Identity>> {
+    async fn get_profiles_for_person(
+        &self,
+        person: &PersonId,
+    ) -> anyhow::Result<Vec<(Profile, PersonProfileLink)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT gateway_id, external_id, display_name FROM identities WHERE person_id = ?1",
+            "SELECT p.id, p.display_name, p.summary, p.comm_style, p.first_seen, p.last_seen, p.created_at, p.updated_at,
+                    l.person_id, l.profile_id, l.status, l.confidence, l.evidence_json, l.created_at, l.updated_at, l.detached_at
+             FROM person_profiles l
+             JOIN profiles p ON p.id = l.profile_id
+             WHERE l.person_id = ?1
+             ORDER BY l.status, l.confidence DESC, l.updated_at DESC",
         )?;
         let results = stmt
             .query_map(params![person.0], |row| {
-                Ok(Identity {
-                    gateway_id: row.get("gateway_id")?,
-                    external_id: row.get("external_id")?,
-                    display_name: row.get::<_, Option<String>>("display_name")?,
-                })
+                Ok((read_profile(row)?, read_person_profile_link(row)?))
             })?
             .filter_map(|r| r.ok())
             .collect();
         Ok(results)
     }
 
-    async fn merge_people(&self, keep: &PersonId, merge: &PersonId) -> anyhow::Result<()> {
-        if keep == merge {
-            return Ok(());
-        }
+    async fn get_identities_for_person(&self, person: &PersonId) -> anyhow::Result<Vec<Identity>> {
         let conn = self.lock()?;
-        let tx = TxGuard::begin(&conn)?;
-        conn.execute(
-            "UPDATE identities SET person_id = ?1 WHERE person_id = ?2",
-            params![keep.0, merge.0],
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.gateway_id, i.external_id, i.display_name, i.metadata_json, i.created_at, i.last_seen_at
+             FROM identities i
+             JOIN profile_identities pi ON pi.identity_id = i.id AND pi.status = 'active'
+             JOIN person_profiles pp ON pp.profile_id = pi.profile_id AND pp.status IN ('verified', 'likely')
+             WHERE pp.person_id = ?1
+             ORDER BY i.gateway_id, i.external_id",
         )?;
-        conn.execute(
-            "UPDATE messages SET person_id = ?1 WHERE person_id = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE conversations SET person_id = ?1 WHERE person_id = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE OR IGNORE memory_people SET person_id = ?1 WHERE person_id = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "DELETE FROM memory_people WHERE person_id = ?1",
-            params![merge.0],
-        )?;
-        conn.execute(
-            "UPDATE behavior_directives SET set_by = ?1 WHERE set_by = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE behavior_directives SET scope_value = ?1 WHERE scope_type = 'person' AND scope_value = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE OR IGNORE group_members SET person_id = ?1 WHERE person_id = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "DELETE FROM group_members WHERE person_id = ?1",
-            params![merge.0],
-        )?;
-        conn.execute(
-            "UPDATE OR IGNORE social_graph SET person_a = ?1 WHERE person_a = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE OR IGNORE social_graph SET person_b = ?1 WHERE person_b = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute("DELETE FROM social_graph WHERE person_a = person_b", [])?;
-        conn.execute(
-            "DELETE FROM social_graph WHERE person_a = ?1 OR person_b = ?1",
-            params![merge.0],
-        )?;
-        conn.execute(
-            "UPDATE people SET first_seen = MIN(first_seen, (SELECT first_seen FROM people WHERE id = ?2)),
-                             last_seen = MAX(last_seen, (SELECT last_seen FROM people WHERE id = ?2))
-             WHERE id = ?1",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE identity_claims SET claimant_id = ?1 WHERE claimant_id = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE identity_claims SET claimed_person_id = ?1 WHERE claimed_person_id = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE memories SET source = json_set(source, '$.Conversation.person', ?1)
-             WHERE json_extract(source, '$.Conversation.person') = ?2",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute(
-            "UPDATE thoughts SET people = (
-                SELECT json_group_array(val) FROM (
-                    SELECT DISTINCT CASE WHEN j.value = ?2 THEN ?1 ELSE j.value END AS val
-                    FROM json_each(thoughts.people) j
-                )
-            ) WHERE EXISTS (SELECT 1 FROM json_each(thoughts.people) WHERE value = ?2)",
-            params![keep.0, merge.0],
-        )?;
-        conn.execute("DELETE FROM people WHERE id = ?1", params![merge.0])?;
-        tx.commit()?;
-        Ok(())
+        let results = stmt
+            .query_map(params![person.0], read_identity)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(results)
     }
 
     // Identity claims
@@ -1329,17 +1762,6 @@ impl Store for SqliteStore {
     }
 }
 
-fn read_person(row: &rusqlite::Row) -> rusqlite::Result<Person> {
-    Ok(Person {
-        id: PersonId(row.get("id")?),
-        name: row.get::<_, Option<String>>("name")?,
-        summary: row.get::<_, Option<String>>("summary")?,
-        comm_style: row.get::<_, Option<String>>("comm_style")?,
-        first_seen: row.get("first_seen")?,
-        last_seen: row.get("last_seen")?,
-    })
-}
-
 fn read_claim(row: &rusqlite::Row) -> rusqlite::Result<IdentityClaim> {
     let evidence_str: String = row.get("evidence")?;
     let status_str: String = row.get("status")?;
@@ -1397,7 +1819,10 @@ mod tests {
             content: content.into(),
             source: MemorySource::Conversation {
                 conversation_id: ConversationId("conv-1".into()),
-                person: PersonId("sam".into()),
+                identity_id: None,
+                profile_id: Some(ProfileId("profile-sam".into())),
+                person_id: Some(PersonId("sam".into())),
+                message_id: None,
             },
             importance: 0.8,
             sensitivity: 0.0,
@@ -1406,7 +1831,11 @@ mod tests {
             accessed_at: 1000,
             access_count: 0,
             tags: vec!["work".into()],
-            people: vec![PersonId("sam".into())],
+            subjects: vec![MemorySubject::profile(
+                ProfileId("profile-sam".into()),
+                Some("speaker".into()),
+                1.0,
+            )],
             embedding: Some(embedding),
         }
     }
@@ -1427,6 +1856,27 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id.0, "m1");
+    }
+
+    #[tokio::test]
+    async fn memory_recall_returns_newest_first() {
+        let store = test_store();
+        let mut older = sample_memory("older", "profile fact changed", vec![0.1, 0.2, 0.3, 0.4]);
+        older.created_at = 1000;
+        older.accessed_at = 1000;
+        let mut newer = sample_memory("newer", "profile fact changed", vec![0.1, 0.2, 0.3, 0.4]);
+        newer.created_at = 2000;
+        newer.accessed_at = 2000;
+
+        store.store_memory(&older).await.unwrap();
+        store.store_memory(&newer).await.unwrap();
+
+        let results = store
+            .recall(&RecallQuery::by_text("profile", 10))
+            .await
+            .unwrap();
+        let ids = results.iter().map(|m| m.id.0.as_str()).collect::<Vec<_>>();
+        assert_eq!(ids, vec!["newer", "older"]);
     }
 
     #[tokio::test]
@@ -1498,6 +1948,8 @@ mod tests {
                     timestamp: 1000,
                     role: MessageRole::User,
                     content: "hello".into(),
+                    identity: None,
+                    profile: Some(ProfileId("profile-sam".into())),
                     person: Some(PersonId("sam".into())),
                     metadata: serde_json::Value::Null,
                 },
@@ -1514,6 +1966,8 @@ mod tests {
                     timestamp: 1001,
                     role: MessageRole::Assistant,
                     content: "hi there".into(),
+                    identity: None,
+                    profile: None,
                     person: None,
                     metadata: serde_json::Value::Null,
                 },
@@ -1540,7 +1994,11 @@ mod tests {
                 kind: ThoughtKind::Reflection,
                 content: "Sam seemed stressed".into(),
                 memories_accessed: vec![MemoryId("m1".into())],
-                people: vec![PersonId("sam".into())],
+                subjects: vec![MemorySubject::profile(
+                    ProfileId("profile-sam".into()),
+                    Some("about".into()),
+                    1.0,
+                )],
             })
             .await
             .unwrap();
@@ -1548,6 +2006,7 @@ mod tests {
         let thoughts = store.recent_thoughts(5).await.unwrap();
         assert_eq!(thoughts.len(), 1);
         assert_eq!(thoughts[0].content, "Sam seemed stressed");
+        assert_eq!(thoughts[0].subjects[0].subject_id, "profile-sam");
     }
 
     #[tokio::test]
@@ -1580,7 +2039,7 @@ mod tests {
                 accessed_at: 1000,
                 access_count: 0,
                 tags: vec![],
-                people: vec![],
+                subjects: vec![],
                 embedding: None,
             })
             .await
@@ -1598,7 +2057,7 @@ mod tests {
                 accessed_at: 1000,
                 access_count: 0,
                 tags: vec![],
-                people: vec![],
+                subjects: vec![],
                 embedding: None,
             })
             .await
@@ -1631,7 +2090,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn people_crud() {
+    async fn persons_crud() {
         let store = test_store();
         store
             .add_person(&sample_person("p1", "Alice"))
@@ -1657,8 +2116,38 @@ mod tests {
             .unwrap();
         assert_eq!(alice.summary, Some("likes cats".into()));
 
-        let all = store.list_people().await.unwrap();
+        let all = store.list_persons().await.unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    fn sample_identity(
+        id: &str,
+        gateway_id: &str,
+        external_id: &str,
+        display_name: &str,
+    ) -> Identity {
+        Identity {
+            id: IdentityId(id.into()),
+            gateway_id: gateway_id.into(),
+            external_id: external_id.into(),
+            display_name: Some(display_name.into()),
+            metadata: None,
+            created_at: 1000,
+            last_seen_at: 1000,
+        }
+    }
+
+    fn sample_profile(id: &str, display_name: &str) -> Profile {
+        Profile {
+            id: ProfileId(id.into()),
+            display_name: Some(display_name.into()),
+            summary: None,
+            comm_style: None,
+            first_seen: 1000,
+            last_seen: 1000,
+            created_at: 1000,
+            updated_at: 1000,
+        }
     }
 
     #[tokio::test]
@@ -1668,14 +2157,21 @@ mod tests {
             .add_person(&sample_person("p1", "Alice"))
             .await
             .unwrap();
+        let identity = sample_identity("i1", "discord", "discord-123", "alice#1234");
+        let profile = sample_profile("profile-p1", "alice#1234");
+        store.add_identity(&identity).await.unwrap();
+        store.add_profile(&profile).await.unwrap();
         store
-            .add_identity(
+            .link_identity_to_profile(&identity.id, &profile.id, 1.0, None)
+            .await
+            .unwrap();
+        store
+            .attach_profile_to_person(
+                &profile.id,
                 &PersonId("p1".into()),
-                &Identity {
-                    gateway_id: "discord".into(),
-                    external_id: "discord-123".into(),
-                    display_name: Some("alice#1234".into()),
-                },
+                PersonProfileStatus::Verified,
+                1.0,
+                None,
             )
             .await
             .unwrap();
@@ -1685,12 +2181,17 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(found.id.0, "p1");
+        assert_eq!(found.identity.id.0, "i1");
+        assert_eq!(found.profile.id.0, "profile-p1");
+        assert_eq!(found.person.unwrap().id.0, "p1");
 
         let not_found = store.resolve_identity("telegram", "unknown").await.unwrap();
         assert!(not_found.is_none());
 
-        let identities = store.get_identities(&PersonId("p1".into())).await.unwrap();
+        let identities = store
+            .get_identities_for_person(&PersonId("p1".into()))
+            .await
+            .unwrap();
         assert_eq!(identities.len(), 1);
         assert_eq!(identities[0].display_name.as_deref(), Some("alice#1234"));
     }
@@ -1734,7 +2235,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn merge_people_reconnects_data() {
+    async fn profile_attach_reconnects_identity_without_deleting_person() {
         let store = test_store();
         store
             .add_person(&sample_person("p1", "Alice"))
@@ -1745,14 +2246,21 @@ mod tests {
             .await
             .unwrap();
 
+        let identity = sample_identity("i2", "telegram", "tg-alice", "alice_t");
+        let profile = sample_profile("profile-p2", "alice_t");
+        store.add_identity(&identity).await.unwrap();
+        store.add_profile(&profile).await.unwrap();
         store
-            .add_identity(
+            .link_identity_to_profile(&identity.id, &profile.id, 1.0, None)
+            .await
+            .unwrap();
+        store
+            .attach_profile_to_person(
+                &profile.id,
                 &PersonId("p2".into()),
-                &Identity {
-                    gateway_id: "telegram".into(),
-                    external_id: "tg-alice".into(),
-                    display_name: Some("alice_t".into()),
-                },
+                PersonProfileStatus::Verified,
+                1.0,
+                None,
             )
             .await
             .unwrap();
@@ -1767,6 +2275,8 @@ mod tests {
                     timestamp: 1000,
                     role: MessageRole::User,
                     content: "from alt account".into(),
+                    identity: Some(identity.id.clone()),
+                    profile: Some(profile.id.clone()),
                     person: Some(PersonId("p2".into())),
                     metadata: serde_json::Value::Null,
                 },
@@ -1775,7 +2285,13 @@ mod tests {
             .unwrap();
 
         store
-            .merge_people(&PersonId("p1".into()), &PersonId("p2".into()))
+            .attach_profile_to_person(
+                &profile.id,
+                &PersonId("p1".into()),
+                PersonProfileStatus::Verified,
+                1.0,
+                None,
+            )
             .await
             .unwrap();
 
@@ -1784,14 +2300,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(resolved.id.0, "p1");
+        assert_eq!(resolved.person.unwrap().id.0, "p1");
 
         assert!(
             store
                 .get_person(&PersonId("p2".into()))
                 .await
                 .unwrap()
-                .is_none()
+                .is_some()
         );
     }
 
@@ -1881,7 +2397,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn memory_people_association() {
+    async fn memory_subjects_association() {
         let store = test_store();
         let mem = Memory {
             id: MemoryId("m1".into()),
@@ -1889,7 +2405,10 @@ mod tests {
             content: "Alice told me Bob got a new job".into(),
             source: MemorySource::Conversation {
                 conversation_id: ConversationId("c1".into()),
-                person: PersonId("alice".into()),
+                identity_id: None,
+                profile_id: Some(ProfileId("profile-alice".into())),
+                person_id: Some(PersonId("alice".into())),
+                message_id: None,
             },
             importance: 0.7,
             sensitivity: 0.5,
@@ -1898,7 +2417,14 @@ mod tests {
             accessed_at: 1000,
             access_count: 0,
             tags: vec![],
-            people: vec![PersonId("alice".into()), PersonId("bob".into())],
+            subjects: vec![
+                MemorySubject::profile(
+                    ProfileId("profile-alice".into()),
+                    Some("speaker".into()),
+                    1.0,
+                ),
+                MemorySubject::person(PersonId("bob".into()), Some("mentioned".into()), 0.8),
+            ],
             embedding: None,
         };
         store.store_memory(&mem).await.unwrap();
@@ -1908,7 +2434,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(loaded.people.len(), 2);
+        assert_eq!(loaded.subjects.len(), 2);
 
         let results = store
             .recall(&RecallQuery::by_text("Bob", 10).with_person(PersonId("bob".into())))
@@ -1924,6 +2450,290 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn memory_subjects_can_be_rewritten_without_legacy_person_links() {
+        let store = test_store();
+        let mut mem = sample_memory(
+            "promotable",
+            "Sam prefers concise updates",
+            vec![0.1, 0.2, 0.3, 0.4],
+        );
+        mem.subjects = vec![MemorySubject::profile(
+            ProfileId("profile-sam".into()),
+            Some("about".into()),
+            1.0,
+        )];
+        store.store_memory(&mem).await.unwrap();
+
+        store
+            .update_memory(
+                &mem.id,
+                &MemoryUpdate {
+                    content: None,
+                    importance: None,
+                    sensitivity: None,
+                    emotional_valence: None,
+                    tags: None,
+                    subjects: Some(vec![MemorySubject::person(
+                        PersonId("sam".into()),
+                        Some("about".into()),
+                        1.0,
+                    )]),
+                    embedding: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let by_profile = store
+            .recall(
+                &RecallQuery::by_text("concise", 10).with_profile(ProfileId("profile-sam".into())),
+            )
+            .await
+            .unwrap();
+        assert_eq!(by_profile.len(), 0);
+
+        let by_person = store
+            .recall(&RecallQuery::by_text("concise", 10).with_person(PersonId("sam".into())))
+            .await
+            .unwrap();
+        assert_eq!(by_person.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn fresh_schema_has_no_legacy_people_tables() {
+        let store = test_store();
+        let conn = store.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .unwrap();
+        let tables = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect::<HashSet<_>>();
+
+        assert!(tables.contains("persons"));
+        assert!(tables.contains("memory_subjects"));
+        assert!(!tables.contains("people"));
+        assert!(!tables.contains("memory_people"));
+
+        let thought_columns = conn
+            .prepare("PRAGMA table_info(thoughts)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect::<HashSet<_>>();
+        assert!(thought_columns.contains("subjects"));
+        assert!(!thought_columns.contains("people"));
+    }
+
+    #[tokio::test]
+    async fn same_display_name_does_not_share_profile_memories() {
+        let store = test_store();
+        store.add_person(&sample_person("p1", "Sam")).await.unwrap();
+        store.add_person(&sample_person("p2", "Sam")).await.unwrap();
+
+        let identity_a = sample_identity("i1", "discord", "sam-a", "Sam");
+        let profile_a = sample_profile("profile-a", "Sam");
+        store.add_identity(&identity_a).await.unwrap();
+        store.add_profile(&profile_a).await.unwrap();
+        store
+            .link_identity_to_profile(&identity_a.id, &profile_a.id, 1.0, None)
+            .await
+            .unwrap();
+        store
+            .attach_profile_to_person(
+                &profile_a.id,
+                &PersonId("p1".into()),
+                PersonProfileStatus::Verified,
+                1.0,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let identity_b = sample_identity("i2", "discord", "sam-b", "Sam");
+        let profile_b = sample_profile("profile-b", "Sam");
+        store.add_identity(&identity_b).await.unwrap();
+        store.add_profile(&profile_b).await.unwrap();
+        store
+            .link_identity_to_profile(&identity_b.id, &profile_b.id, 1.0, None)
+            .await
+            .unwrap();
+        store
+            .attach_profile_to_person(
+                &profile_b.id,
+                &PersonId("p2".into()),
+                PersonProfileStatus::Verified,
+                1.0,
+                None,
+            )
+            .await
+            .unwrap();
+
+        store
+            .store_memory(&Memory {
+                id: MemoryId("sam-a-city".into()),
+                kind: MemoryKind::Semantic,
+                content: "Sam said they are from Edmonton".into(),
+                source: MemorySource::Conversation {
+                    conversation_id: ConversationId("c1".into()),
+                    identity_id: Some(identity_a.id.clone()),
+                    profile_id: Some(profile_a.id.clone()),
+                    person_id: Some(PersonId("p1".into())),
+                    message_id: None,
+                },
+                importance: 0.8,
+                sensitivity: 0.0,
+                emotional_valence: 0.0,
+                created_at: 1000,
+                accessed_at: 1000,
+                access_count: 0,
+                tags: vec![],
+                subjects: vec![MemorySubject::profile(
+                    profile_a.id.clone(),
+                    Some("about".into()),
+                    1.0,
+                )],
+                embedding: None,
+            })
+            .await
+            .unwrap();
+
+        let current_profile_results = store
+            .recall(&RecallQuery::by_text("Edmonton", 10).with_profile(profile_a.id))
+            .await
+            .unwrap();
+        assert_eq!(current_profile_results.len(), 1);
+
+        let same_name_other_profile_results = store
+            .recall(&RecallQuery::by_text("Edmonton", 10).with_profile(profile_b.id))
+            .await
+            .unwrap();
+        assert_eq!(same_name_other_profile_results.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn profile_comm_style_is_stored_on_profile_not_person() {
+        let store = test_store();
+        store.add_person(&sample_person("p1", "Sam")).await.unwrap();
+        let profile = sample_profile("profile-sam", "Sam");
+        store.add_profile(&profile).await.unwrap();
+        store
+            .attach_profile_to_person(
+                &profile.id,
+                &PersonId("p1".into()),
+                PersonProfileStatus::Verified,
+                1.0,
+                None,
+            )
+            .await
+            .unwrap();
+
+        store
+            .update_profile_comm_style(&profile.id, "Prefers concise replies")
+            .await
+            .unwrap();
+
+        let loaded_profile = store.get_profile(&profile.id).await.unwrap().unwrap();
+        assert_eq!(
+            loaded_profile.comm_style.as_deref(),
+            Some("Prefers concise replies")
+        );
+
+        let loaded_person = store
+            .get_person(&PersonId("p1".into()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_person.comm_style, None);
+    }
+
+    #[tokio::test]
+    async fn detach_profile_removes_person_context_without_rewriting_memories() {
+        let store = test_store();
+        store
+            .add_person(&sample_person("p1", "Alice"))
+            .await
+            .unwrap();
+
+        let identity = sample_identity("i1", "telegram", "alice-alt", "Alice");
+        let profile = sample_profile("profile-alice-alt", "Alice");
+        store.add_identity(&identity).await.unwrap();
+        store.add_profile(&profile).await.unwrap();
+        store
+            .link_identity_to_profile(&identity.id, &profile.id, 1.0, None)
+            .await
+            .unwrap();
+        store
+            .attach_profile_to_person(
+                &profile.id,
+                &PersonId("p1".into()),
+                PersonProfileStatus::Verified,
+                1.0,
+                None,
+            )
+            .await
+            .unwrap();
+
+        store
+            .store_memory(&Memory {
+                id: MemoryId("profile-memory".into()),
+                kind: MemoryKind::Semantic,
+                content: "Alice alt prefers short messages".into(),
+                source: MemorySource::Conversation {
+                    conversation_id: ConversationId("c1".into()),
+                    identity_id: Some(identity.id.clone()),
+                    profile_id: Some(profile.id.clone()),
+                    person_id: Some(PersonId("p1".into())),
+                    message_id: None,
+                },
+                importance: 0.8,
+                sensitivity: 0.0,
+                emotional_valence: 0.0,
+                created_at: 1000,
+                accessed_at: 1000,
+                access_count: 0,
+                tags: vec![],
+                subjects: vec![MemorySubject::profile(
+                    profile.id.clone(),
+                    Some("about".into()),
+                    1.0,
+                )],
+                embedding: None,
+            })
+            .await
+            .unwrap();
+
+        assert!(
+            store
+                .get_person_for_profile(&profile.id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        store
+            .detach_profile_from_person(&profile.id, &PersonId("p1".into()), None)
+            .await
+            .unwrap();
+        assert!(
+            store
+                .get_person_for_profile(&profile.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        let loaded = store
+            .get_memory(&MemoryId("profile-memory".into()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.subjects[0].subject_id, profile.id.0);
+    }
+
+    #[tokio::test]
     async fn behavior_directives() {
         let store = test_store();
         let sam = PersonId("sam".into());
@@ -1933,7 +2743,7 @@ mod tests {
             .add_directive(&BehaviorDirective {
                 id: "d1".into(),
                 scope: DirectiveScope::Global,
-                directive: "Never share private info between people".into(),
+                directive: "Never share private info between persons".into(),
                 set_by: sam.clone(),
                 priority: 0,
                 active: true,

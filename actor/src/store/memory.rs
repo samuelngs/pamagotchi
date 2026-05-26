@@ -1,4 +1,4 @@
-use protocol::{ConversationId, MemoryId, PersonId};
+use protocol::{ConversationId, IdentityId, MemoryId, PersonId, ProfileId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -31,13 +31,79 @@ impl MemoryKind {
 pub enum MemorySource {
     Conversation {
         conversation_id: ConversationId,
-        person: PersonId,
+        identity_id: Option<IdentityId>,
+        profile_id: Option<ProfileId>,
+        person_id: Option<PersonId>,
+        message_id: Option<String>,
     },
     Consolidation {
         from_memories: Vec<MemoryId>,
     },
     Reflection,
     External,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct MemorySubject {
+    pub subject_type: MemorySubjectType,
+    pub subject_id: String,
+    pub role: Option<String>,
+    pub confidence: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MemorySubjectType {
+    Identity,
+    Profile,
+    Person,
+}
+
+impl MemorySubjectType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Profile => "profile",
+            Self::Person => "person",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "identity" => Some(Self::Identity),
+            "profile" => Some(Self::Profile),
+            "person" => Some(Self::Person),
+            _ => None,
+        }
+    }
+}
+
+impl MemorySubject {
+    pub fn identity(id: IdentityId, role: Option<String>, confidence: f32) -> Self {
+        Self {
+            subject_type: MemorySubjectType::Identity,
+            subject_id: id.0,
+            role,
+            confidence,
+        }
+    }
+
+    pub fn profile(id: ProfileId, role: Option<String>, confidence: f32) -> Self {
+        Self {
+            subject_type: MemorySubjectType::Profile,
+            subject_id: id.0,
+            role,
+            confidence,
+        }
+    }
+
+    pub fn person(id: PersonId, role: Option<String>, confidence: f32) -> Self {
+        Self {
+            subject_type: MemorySubjectType::Person,
+            subject_id: id.0,
+            role,
+            confidence,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,7 +119,7 @@ pub struct Memory {
     pub accessed_at: i64,
     pub access_count: u32,
     pub tags: Vec<String>,
-    pub people: Vec<PersonId>,
+    pub subjects: Vec<MemorySubject>,
     pub embedding: Option<Vec<f32>>,
 }
 
@@ -63,6 +129,6 @@ pub struct MemoryUpdate {
     pub sensitivity: Option<f32>,
     pub emotional_valence: Option<f32>,
     pub tags: Option<Vec<String>>,
-    pub people: Option<Vec<PersonId>>,
+    pub subjects: Option<Vec<MemorySubject>>,
     pub embedding: Option<Vec<f32>>,
 }

@@ -50,7 +50,7 @@ pub enum ClaimStatus {
     Pending,
     Confirmed,
     Denied,
-    Merged,
+    Linked,
 }
 
 impl ClaimStatus {
@@ -59,7 +59,7 @@ impl ClaimStatus {
             Self::Pending => "pending",
             Self::Confirmed => "confirmed",
             Self::Denied => "denied",
-            Self::Merged => "merged",
+            Self::Linked => "linked",
         }
     }
 
@@ -68,7 +68,7 @@ impl ClaimStatus {
             "pending" => Some(Self::Pending),
             "confirmed" => Some(Self::Confirmed),
             "denied" => Some(Self::Denied),
-            "merged" => Some(Self::Merged),
+            "linked" => Some(Self::Linked),
             _ => None,
         }
     }

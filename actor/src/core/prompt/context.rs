@@ -30,6 +30,9 @@ pub struct ActionPromptContext {
     pub interests: Vec<InterestCtx>,
     pub mood: String,
     pub energy: String,
+    pub current_identity: Option<CurrentIdentityCtx>,
+    pub current_profile: Option<CurrentProfileCtx>,
+    pub current_person: Option<CurrentPersonCtx>,
     pub relationship: Option<RelationshipCtx>,
     pub directives: Vec<String>,
     pub thoughts: Vec<ThoughtCtx>,
@@ -38,6 +41,27 @@ pub struct ActionPromptContext {
     pub style: Option<String>,
     pub authority: String,
     pub kind: String,
+}
+
+#[derive(Serialize)]
+pub struct CurrentIdentityCtx {
+    pub ref_id: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct CurrentProfileCtx {
+    pub ref_id: String,
+    pub display_name: Option<String>,
+    pub person_ref_id: Option<String>,
+    pub person_link_status: Option<String>,
+    pub person_link_confidence: Option<i32>,
+}
+
+#[derive(Serialize)]
+pub struct CurrentPersonCtx {
+    pub ref_id: String,
+    pub name: Option<String>,
 }
 
 #[derive(Serialize)]
