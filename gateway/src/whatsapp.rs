@@ -152,9 +152,9 @@ async fn handle_event(
             }
 
             let base = msg.get_base_message();
-            let (content, media) = extract_message_content(client, media_store, base).await;
+            let (content, attachments) = extract_message_content(client, media_store, base).await;
 
-            if content.is_empty() && media.is_none() {
+            if content.is_empty() && attachments.is_empty() {
                 return;
             }
 
@@ -175,7 +175,7 @@ async fn handle_event(
                 profile: None,
                 person: None,
                 content,
-                media,
+                attachments,
                 timestamp: info.timestamp.timestamp(),
                 metadata: serde_json::json!({
                     "sender": sender,
@@ -202,21 +202,21 @@ async fn extract_message_content(
     client: &Client,
     media_store: &MediaStore,
     msg: &wa::Message,
-) -> (String, Option<MediaAttachment>) {
+) -> (String, Vec<MediaAttachment>) {
     if let Some(ref text) = msg.conversation {
-        return (text.clone(), None);
+        return (text.clone(), Vec::new());
     }
 
     if let Some(ref ext) = msg.extended_text_message {
         if let Some(ref text) = ext.text {
-            return (text.clone(), None);
+            return (text.clone(), Vec::new());
         }
     }
 
     if let Some(ref img) = msg.image_message {
         return (
             img.caption.clone().unwrap_or_default(),
-            Some(
+            vec![
                 persist_media_attachment(
                     client,
                     media_store,
@@ -228,14 +228,14 @@ async fn extract_message_content(
                     img.file_length,
                 )
                 .await,
-            ),
+            ],
         );
     }
 
     if let Some(ref vid) = msg.video_message {
         return (
             vid.caption.clone().unwrap_or_default(),
-            Some(
+            vec![
                 persist_media_attachment(
                     client,
                     media_store,
@@ -247,14 +247,14 @@ async fn extract_message_content(
                     vid.file_length,
                 )
                 .await,
-            ),
+            ],
         );
     }
 
     if let Some(ref aud) = msg.audio_message {
         return (
             String::new(),
-            Some(
+            vec![
                 persist_media_attachment(
                     client,
                     media_store,
@@ -266,14 +266,14 @@ async fn extract_message_content(
                     aud.file_length,
                 )
                 .await,
-            ),
+            ],
         );
     }
 
     if let Some(ref stk) = msg.sticker_message {
         return (
             String::new(),
-            Some(
+            vec![
                 persist_media_attachment(
                     client,
                     media_store,
@@ -285,14 +285,14 @@ async fn extract_message_content(
                     stk.file_length,
                 )
                 .await,
-            ),
+            ],
         );
     }
 
     if let Some(ref doc) = msg.document_message {
         return (
             doc.caption.clone().unwrap_or_default(),
-            Some(
+            vec![
                 persist_media_attachment(
                     client,
                     media_store,
@@ -304,11 +304,11 @@ async fn extract_message_content(
                     doc.file_length,
                 )
                 .await,
-            ),
+            ],
         );
     }
 
-    (String::new(), None)
+    (String::new(), Vec::new())
 }
 
 async fn persist_media_attachment(
@@ -552,38 +552,42 @@ impl GatewayAdapter for WhatsAppAdapter {
         &self,
         external_id: &str,
         content: &str,
-        media: Option<&MediaAttachment>,
+        attachments: &[MediaAttachment],
     ) -> anyhow::Result<()> {
         let jid: Jid = external_id
             .parse()
             .map_err(|_| anyhow::anyhow!("invalid WhatsApp JID: {external_id}"))?;
 
-        let Some(media) = media else {
+        if attachments.is_empty() {
             self.client.send_message(jid, text_message(content)).await?;
             return Ok(());
-        };
-
-        let asset_id = media
-            .asset_id
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("WhatsApp media send requires a stored media asset"))?;
-        let bytes = self
-            .media_store
-            .read_bytes(asset_id)?
-            .ok_or_else(|| anyhow::anyhow!("media asset not found: {}", asset_id.0))?;
-        let upload = self
-            .client
-            .upload(bytes, whatsapp_media_type(&media.kind), Default::default())
-            .await?;
-
-        if !content.is_empty() && matches!(media.kind, MediaKind::Audio | MediaKind::Sticker) {
-            self.client
-                .send_message(jid.clone(), text_message(content))
-                .await?;
         }
 
-        let message = build_outbound_media_message(&upload, media, content);
-        self.client.send_message(jid, message).await?;
+        for (index, media) in attachments.iter().enumerate() {
+            let attachment_content = if index == 0 { content } else { "" };
+            let asset_id = media.asset_id.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("WhatsApp media send requires a stored media asset")
+            })?;
+            let bytes = self
+                .media_store
+                .read_bytes(asset_id)?
+                .ok_or_else(|| anyhow::anyhow!("media asset not found: {}", asset_id.0))?;
+            let upload = self
+                .client
+                .upload(bytes, whatsapp_media_type(&media.kind), Default::default())
+                .await?;
+
+            if !attachment_content.is_empty()
+                && matches!(media.kind, MediaKind::Audio | MediaKind::Sticker)
+            {
+                self.client
+                    .send_message(jid.clone(), text_message(attachment_content))
+                    .await?;
+            }
+
+            let message = build_outbound_media_message(&upload, media, attachment_content);
+            self.client.send_message(jid.clone(), message).await?;
+        }
         Ok(())
     }
 

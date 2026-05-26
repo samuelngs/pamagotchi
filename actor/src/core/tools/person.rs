@@ -340,7 +340,7 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
 
         match ctx
             .gateway
-            .send_message(&ident.gateway_id, &ident.external_id, &content, None)
+            .send_message(&ident.gateway_id, &ident.external_id, &content, &[])
             .await
         {
             Ok(()) => contacted += 1,

@@ -221,7 +221,7 @@ async fn ingest_messages(ctx: &SessionContext, llm_messages: &mut Vec<Message>) 
                 identity: inbound.identity.clone(),
                 profile: inbound.profile.clone(),
                 person: inbound.person.clone(),
-                metadata: inbound.metadata.clone(),
+                metadata: message_metadata(inbound),
             };
             ctx.store
                 .append_message(conv, None, None, &stored)
@@ -363,7 +363,7 @@ async fn inject_pending_messages(
                 identity: msg.identity.clone(),
                 profile: msg.profile.clone(),
                 person: msg.person.clone(),
-                metadata: msg.metadata.clone(),
+                metadata: message_metadata(msg),
             };
             ctx.store
                 .append_message(conv, None, None, &stored)
@@ -409,6 +409,26 @@ fn resolve_composing_target(ctx: &SessionContext) -> Option<(String, String)> {
             Some((msg.gateway_id.clone(), msg.external_id.clone()))
         }
     })
+}
+
+fn message_metadata(msg: &protocol::InboundMessage) -> Value {
+    let mut metadata = msg.metadata.clone();
+    if msg.attachments.is_empty() {
+        return metadata;
+    }
+
+    let attachments_value = serde_json::to_value(&msg.attachments).unwrap_or(Value::Null);
+    match &mut metadata {
+        Value::Object(obj) => {
+            obj.insert("attachments".into(), attachments_value);
+            metadata
+        }
+        Value::Null => serde_json::json!({ "attachments": attachments_value }),
+        other => serde_json::json!({
+            "source_metadata": other.clone(),
+            "attachments": attachments_value,
+        }),
+    }
 }
 
 fn log_turn_start(ctx: &SessionContext, turn: usize, msgs: &[Message]) {
@@ -485,4 +505,44 @@ struct PartialToolCall {
     id: String,
     name: String,
     arguments: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use protocol::{InboundMessage, MediaAssetId, MediaAttachment, MediaKind};
+
+    fn inbound(metadata: Value) -> InboundMessage {
+        InboundMessage {
+            message_id: "msg-1".into(),
+            gateway_id: "whatsapp".into(),
+            external_id: "chat-1".into(),
+            conversation: ConversationId("whatsapp:chat-1".into()),
+            group: None,
+            identity: None,
+            profile: None,
+            person: None,
+            content: String::new(),
+            attachments: vec![MediaAttachment {
+                kind: MediaKind::Sticker,
+                asset_id: Some(MediaAssetId("media-1".into())),
+                url: None,
+                mime: Some("image/webp".into()),
+                filename: Some("sticker.webp".into()),
+                size: Some(99),
+            }],
+            timestamp: 1,
+            metadata,
+        }
+    }
+
+    #[test]
+    fn message_metadata_embeds_attachments() {
+        let metadata = message_metadata(&inbound(serde_json::json!({ "sender": "user" })));
+
+        assert_eq!(metadata["sender"], "user");
+        assert_eq!(metadata["attachments"][0]["kind"], "Sticker");
+        assert_eq!(metadata["attachments"][0]["asset_id"], "media-1");
+        assert_eq!(metadata["attachments"][0]["mime"], "image/webp");
+    }
 }

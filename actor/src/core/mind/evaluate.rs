@@ -32,7 +32,7 @@ impl Mind {
                 profile: None,
                 person: None,
                 content: event_desc,
-                media: None,
+                attachments: Vec::new(),
                 timestamp: 0,
                 metadata: serde_json::Value::Null,
             }]

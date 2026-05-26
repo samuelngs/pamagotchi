@@ -244,7 +244,7 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
                 profile: None,
                 person: None,
                 content,
-                media: None,
+                attachments: Vec::new(),
                 timestamp: now_secs(),
                 metadata: serde_json::Value::Null,
             };

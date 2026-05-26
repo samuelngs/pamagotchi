@@ -45,6 +45,37 @@ pub fn tools() -> Vec<Tool> {
                     "filename": {
                         "type": "string",
                         "description": "Filename for file attachments"
+                    },
+                    "attachments": {
+                        "type": "array",
+                        "description": "Media attachments to send. Use media_asset_id for stored assets, especially WhatsApp.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "media_asset_id": {
+                                    "type": "string",
+                                    "description": "Stored media asset ID to attach"
+                                },
+                                "media_url": {
+                                    "type": "string",
+                                    "description": "URL of media to attach for gateways that support URL attachments"
+                                },
+                                "media_type": {
+                                    "type": "string",
+                                    "enum": ["image", "video", "audio", "sticker", "file"],
+                                    "description": "Type of media attachment"
+                                },
+                                "mime_type": {
+                                    "type": "string",
+                                    "description": "MIME type of the media"
+                                },
+                                "filename": {
+                                    "type": "string",
+                                    "description": "Filename for file attachments"
+                                }
+                            },
+                            "required": ["media_type"]
+                        }
                     }
                 },
                 "required": ["content"]
@@ -96,34 +127,9 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
     let gateway_id = args["gateway_id"].as_str();
     let external_id = args["external_id"].as_str();
 
-    let media = match (
-        args["media_asset_id"].as_str(),
-        args["media_url"].as_str(),
-        args["media_type"].as_str(),
-    ) {
-        (Some(asset_id), _, Some(kind_str)) => match MediaKind::parse(kind_str) {
-            Some(kind) => Some(MediaAttachment {
-                kind,
-                asset_id: Some(MediaAssetId(asset_id.to_string())),
-                url: None,
-                mime: args["mime_type"].as_str().map(String::from),
-                filename: args["filename"].as_str().map(String::from),
-                size: None,
-            }),
-            None => return format!("Unknown media type: {kind_str}"),
-        },
-        (_, Some(url), Some(kind_str)) => match MediaKind::parse(kind_str) {
-            Some(kind) => Some(MediaAttachment {
-                kind,
-                asset_id: None,
-                url: Some(url.to_string()),
-                mime: args["mime_type"].as_str().map(String::from),
-                filename: args["filename"].as_str().map(String::from),
-                size: None,
-            }),
-            None => return format!("Unknown media type: {kind_str}"),
-        },
-        _ => None,
+    let attachments = match parse_attachments(args) {
+        Ok(attachments) => attachments,
+        Err(message) => return message,
     };
 
     let is_outbound = gateway_id.is_some() && external_id.is_some();
@@ -142,7 +148,7 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
 
     let delivery = ctx
         .gateway
-        .send_message(&target_gateway, &target_id, &content, media.as_ref())
+        .send_message(&target_gateway, &target_id, &content, &attachments)
         .await;
 
     if !state.composing_released
@@ -164,7 +170,7 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
             identity: None,
             profile: None,
             person: None,
-            metadata: Value::Null,
+            metadata: outbound_metadata(&attachments),
         };
         ctx.store
             .append_message(&conv, Some(&target_gateway), None, &stored)
@@ -229,14 +235,71 @@ pub async fn read(args: &Value, ctx: &SessionContext) -> String {
                     }
                     f
                 };
-                items.push(json!({
+                let mut item = json!({
                     "time": ts,
                     "from": from,
                     "content": m.content,
-                }));
+                });
+                if let Some(attachments) = m.metadata.get("attachments") {
+                    item["attachments"] = attachments.clone();
+                }
+                items.push(item);
             }
             json!({"messages": items}).to_string()
         }
         Err(e) => json!({"error": format!("{e}")}).to_string(),
+    }
+}
+
+fn parse_attachments(args: &Value) -> Result<Vec<MediaAttachment>, String> {
+    if let Some(items) = args["attachments"].as_array() {
+        let mut attachments = Vec::with_capacity(items.len());
+        for item in items {
+            if let Some(attachment) = parse_attachment(item)? {
+                attachments.push(attachment);
+            }
+        }
+        return Ok(attachments);
+    }
+
+    parse_attachment(args).map(|attachment| attachment.into_iter().collect())
+}
+
+fn parse_attachment(value: &Value) -> Result<Option<MediaAttachment>, String> {
+    let Some(kind_str) = value["media_type"].as_str() else {
+        return Ok(None);
+    };
+    let Some(kind) = MediaKind::parse(kind_str) else {
+        return Err(format!("Unknown media type: {kind_str}"));
+    };
+
+    let asset_id = value["media_asset_id"]
+        .as_str()
+        .map(|id| MediaAssetId(id.to_string()));
+    let url = if asset_id.is_some() {
+        None
+    } else {
+        value["media_url"].as_str().map(String::from)
+    };
+
+    if asset_id.is_none() && url.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(MediaAttachment {
+        kind,
+        asset_id,
+        url,
+        mime: value["mime_type"].as_str().map(String::from),
+        filename: value["filename"].as_str().map(String::from),
+        size: None,
+    }))
+}
+
+fn outbound_metadata(attachments: &[MediaAttachment]) -> Value {
+    if attachments.is_empty() {
+        Value::Null
+    } else {
+        serde_json::json!({ "attachments": attachments })
     }
 }

@@ -38,7 +38,7 @@ impl RelayAdapter {
                             profile: None,
                             person: None,
                             content,
-                            media: None,
+                            attachments: Vec::new(),
                             timestamp: chrono::Utc::now().timestamp(),
                             metadata: serde_json::Value::Null,
                         };
@@ -102,7 +102,7 @@ impl GatewayAdapter for RelayAdapter {
         &self,
         _external_id: &str,
         content: &str,
-        _media: Option<&MediaAttachment>,
+        _attachments: &[MediaAttachment],
     ) -> anyhow::Result<()> {
         debug!(gateway = "relay", "sending message");
         self.sender

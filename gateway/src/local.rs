@@ -63,7 +63,7 @@ impl GatewayAdapter for LocalAdapter {
         &self,
         _external_id: &str,
         content: &str,
-        _media: Option<&MediaAttachment>,
+        _attachments: &[MediaAttachment],
     ) -> anyhow::Result<()> {
         debug!(gateway = "relay", "broadcasting local chat message");
         self.handle

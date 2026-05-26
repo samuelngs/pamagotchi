@@ -41,7 +41,7 @@ pub trait GatewayAdapter: Send + Sync {
         &self,
         external_id: &str,
         content: &str,
-        media: Option<&MediaAttachment>,
+        attachments: &[MediaAttachment],
     ) -> anyhow::Result<()>;
     async fn start_composing(&self, external_id: &str) -> anyhow::Result<()>;
     async fn stop_composing(&self, external_id: &str) -> anyhow::Result<()>;

@@ -143,11 +143,13 @@ impl GatewayRouter {
         gateway_id: &str,
         external_id: &str,
         content: &str,
-        media: Option<&MediaAttachment>,
+        attachments: &[MediaAttachment],
     ) -> anyhow::Result<()> {
         let adapter = self
             .get(gateway_id)
             .ok_or_else(|| anyhow::anyhow!("unknown gateway: {gateway_id}"))?;
-        adapter.send_message(external_id, content, media).await
+        adapter
+            .send_message(external_id, content, attachments)
+            .await
     }
 }

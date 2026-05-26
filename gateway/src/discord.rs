@@ -166,8 +166,8 @@ impl EventHandler for DiscordHandler {
             return;
         }
 
-        let (content, media) = extract_message_content(&msg);
-        if content.trim().is_empty() && media.is_none() {
+        let (content, attachments) = extract_message_content(&msg);
+        if content.trim().is_empty() && attachments.is_empty() {
             return;
         }
 
@@ -183,7 +183,7 @@ impl EventHandler for DiscordHandler {
             profile: None,
             person: None,
             content,
-            media,
+            attachments,
             timestamp: msg.timestamp.unix_timestamp(),
             metadata: serde_json::json!({
                 "platform": "discord",
@@ -237,17 +237,37 @@ fn discord_setup_instructions() -> GatewaySetupInstructions {
     }
 }
 
-fn extract_message_content(msg: &Message) -> (String, Option<MediaAttachment>) {
-    let media = msg.attachments.first().map(|attachment| MediaAttachment {
-        kind: media_kind_from_mime(attachment.content_type.as_deref()),
-        asset_id: None,
-        url: Some(attachment.url.clone()),
-        mime: attachment.content_type.clone(),
-        filename: Some(attachment.filename.clone()),
-        size: Some(u64::from(attachment.size)),
-    });
+fn extract_message_content(msg: &Message) -> (String, Vec<MediaAttachment>) {
+    let attachments = msg
+        .attachments
+        .iter()
+        .map(|attachment| {
+            discord_attachment(
+                attachment.url.clone(),
+                attachment.content_type.clone(),
+                attachment.filename.clone(),
+                u64::from(attachment.size),
+            )
+        })
+        .collect();
 
-    (msg.content.clone(), media)
+    (msg.content.clone(), attachments)
+}
+
+fn discord_attachment(
+    url: String,
+    content_type: Option<String>,
+    filename: String,
+    size: u64,
+) -> MediaAttachment {
+    MediaAttachment {
+        kind: media_kind_from_mime(content_type.as_deref()),
+        asset_id: None,
+        url: Some(url),
+        mime: content_type,
+        filename: Some(filename),
+        size: Some(size),
+    }
 }
 
 fn media_kind_from_mime(mime: Option<&str>) -> MediaKind {
@@ -321,9 +341,9 @@ impl GatewayAdapter for DiscordAdapter {
         &self,
         external_id: &str,
         content: &str,
-        media: Option<&MediaAttachment>,
+        attachments: &[MediaAttachment],
     ) -> anyhow::Result<()> {
-        if media.is_some() {
+        if !attachments.is_empty() {
             warn!("discord media sending not yet implemented, sending text only");
         }
 
@@ -431,7 +451,7 @@ mod tests {
         );
         assert!(adapter.setup_instructions().is_some());
         assert!(adapter.http.is_none());
-        assert!(adapter.send_message("123", "hello", None).await.is_err());
+        assert!(adapter.send_message("123", "hello", &[]).await.is_err());
 
         assert!(matches!(
             event_rx.recv().await,
@@ -461,6 +481,25 @@ mod tests {
             MediaKind::Audio
         ));
         assert!(matches!(media_kind_from_mime(None), MediaKind::File));
+    }
+
+    #[test]
+    fn maps_discord_attachment_fields_without_dropping_metadata() {
+        let attachment = discord_attachment(
+            "https://cdn.example.test/image.png".into(),
+            Some("image/png".into()),
+            "image.png".into(),
+            42,
+        );
+
+        assert_eq!(attachment.kind, MediaKind::Image);
+        assert_eq!(
+            attachment.url.as_deref(),
+            Some("https://cdn.example.test/image.png")
+        );
+        assert_eq!(attachment.mime.as_deref(), Some("image/png"));
+        assert_eq!(attachment.filename.as_deref(), Some("image.png"));
+        assert_eq!(attachment.size, Some(42));
     }
 
     fn temp_media_root() -> std::path::PathBuf {
