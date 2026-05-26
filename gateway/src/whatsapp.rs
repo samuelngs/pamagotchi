@@ -3,16 +3,18 @@ use crate::{
     GatewayContentKind, GatewayRuntime, GatewayRuntimeEvent, GatewaySetupInstructions,
 };
 use async_trait::async_trait;
-use media::MediaStore;
-use protocol::{ConversationId, GroupId, InboundMessage};
+use media::{MediaStore, NewMediaAsset};
+use protocol::{ConversationId, GroupId, InboundMessage, MediaAssetId};
 use protocol::{MediaAttachment, MediaKind};
 use qrcode::{QrCode, render::unicode};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use whatsapp_rust::bot::Bot;
+use whatsapp_rust::download::{Downloadable, MediaType};
 use whatsapp_rust::proto_helpers::MessageExt;
 use whatsapp_rust::types::events::Event;
+use whatsapp_rust::upload::UploadResponse;
 use whatsapp_rust::waproto::whatsapp as wa;
 use whatsapp_rust::{Client, Jid, TokioRuntime};
 use whatsapp_rust_sqlite_storage::SqliteStore;
@@ -23,7 +25,7 @@ pub struct WhatsAppAdapter {
     id: String,
     client: Arc<Client>,
     runtime: Arc<GatewayRuntime>,
-    _media_store: Arc<MediaStore>,
+    media_store: Arc<MediaStore>,
 }
 
 impl WhatsAppAdapter {
@@ -45,17 +47,19 @@ impl WhatsAppAdapter {
         let tx = inbound_tx.clone();
         let gateway_id = id.clone();
         let runtime_for_events = runtime.clone();
+        let media_store_for_events = media_store.clone();
         let mut bot = Bot::builder()
             .with_backend(Arc::new(backend))
             .with_transport_factory(TokioWebSocketTransportFactory::new())
             .with_http_client(UreqHttpClient::new())
             .with_runtime(TokioRuntime)
-            .on_event(move |event: Arc<Event>, _client: Arc<Client>| {
+            .on_event(move |event: Arc<Event>, client: Arc<Client>| {
                 let tx = tx.clone();
                 let gateway_id = gateway_id.clone();
                 let runtime = runtime_for_events.clone();
+                let media_store = media_store_for_events.clone();
                 async move {
-                    handle_event(&gateway_id, &event, &tx, &runtime).await;
+                    handle_event(&gateway_id, &event, &tx, &runtime, &client, &media_store).await;
                 }
             })
             .build()
@@ -100,7 +104,7 @@ impl WhatsAppAdapter {
             id,
             client,
             runtime,
-            _media_store: media_store,
+            media_store,
         })
     }
 }
@@ -110,6 +114,8 @@ async fn handle_event(
     event: &Event,
     tx: &mpsc::Sender<InboundMessage>,
     runtime: &GatewayRuntime,
+    client: &Client,
+    media_store: &MediaStore,
 ) {
     match event {
         Event::PairingQrCode { code, .. } => {
@@ -146,7 +152,7 @@ async fn handle_event(
             }
 
             let base = msg.get_base_message();
-            let (content, media) = extract_message_content(base);
+            let (content, media) = extract_message_content(client, media_store, base).await;
 
             if content.is_empty() && media.is_none() {
                 return;
@@ -192,7 +198,11 @@ fn render_qr_compact(code: &str) -> String {
         .unwrap_or_default()
 }
 
-fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment>) {
+async fn extract_message_content(
+    client: &Client,
+    media_store: &MediaStore,
+    msg: &wa::Message,
+) -> (String, Option<MediaAttachment>) {
     if let Some(ref text) = msg.conversation {
         return (text.clone(), None);
     }
@@ -206,74 +216,282 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
     if let Some(ref img) = msg.image_message {
         return (
             img.caption.clone().unwrap_or_default(),
-            Some(MediaAttachment {
-                kind: MediaKind::Image,
-                asset_id: None,
-                url: img.direct_path.clone(),
-                mime: img.mimetype.clone(),
-                filename: None,
-                size: img.file_length,
-            }),
+            Some(
+                persist_media_attachment(
+                    client,
+                    media_store,
+                    img.as_ref(),
+                    MediaKind::Image,
+                    "image",
+                    img.mimetype.clone(),
+                    None,
+                    img.file_length,
+                )
+                .await,
+            ),
         );
     }
 
     if let Some(ref vid) = msg.video_message {
         return (
             vid.caption.clone().unwrap_or_default(),
-            Some(MediaAttachment {
-                kind: MediaKind::Video,
-                asset_id: None,
-                url: vid.direct_path.clone(),
-                mime: vid.mimetype.clone(),
-                filename: None,
-                size: vid.file_length,
-            }),
+            Some(
+                persist_media_attachment(
+                    client,
+                    media_store,
+                    vid.as_ref(),
+                    MediaKind::Video,
+                    "video",
+                    vid.mimetype.clone(),
+                    None,
+                    vid.file_length,
+                )
+                .await,
+            ),
         );
     }
 
     if let Some(ref aud) = msg.audio_message {
         return (
             String::new(),
-            Some(MediaAttachment {
-                kind: MediaKind::Audio,
-                asset_id: None,
-                url: aud.direct_path.clone(),
-                mime: aud.mimetype.clone(),
-                filename: None,
-                size: aud.file_length,
-            }),
+            Some(
+                persist_media_attachment(
+                    client,
+                    media_store,
+                    aud.as_ref(),
+                    MediaKind::Audio,
+                    "audio",
+                    aud.mimetype.clone(),
+                    None,
+                    aud.file_length,
+                )
+                .await,
+            ),
         );
     }
 
     if let Some(ref stk) = msg.sticker_message {
         return (
             String::new(),
-            Some(MediaAttachment {
-                kind: MediaKind::Sticker,
-                asset_id: None,
-                url: stk.direct_path.clone(),
-                mime: stk.mimetype.clone(),
-                filename: None,
-                size: stk.file_length,
-            }),
+            Some(
+                persist_media_attachment(
+                    client,
+                    media_store,
+                    stk.as_ref(),
+                    MediaKind::Sticker,
+                    "sticker",
+                    stk.mimetype.clone(),
+                    None,
+                    stk.file_length,
+                )
+                .await,
+            ),
         );
     }
 
     if let Some(ref doc) = msg.document_message {
         return (
             doc.caption.clone().unwrap_or_default(),
-            Some(MediaAttachment {
-                kind: MediaKind::File,
-                asset_id: None,
-                url: doc.direct_path.clone(),
-                mime: doc.mimetype.clone(),
-                filename: doc.file_name.clone(),
-                size: doc.file_length,
-            }),
+            Some(
+                persist_media_attachment(
+                    client,
+                    media_store,
+                    doc.as_ref(),
+                    MediaKind::File,
+                    "document",
+                    doc.mimetype.clone(),
+                    doc.file_name.clone(),
+                    doc.file_length,
+                )
+                .await,
+            ),
         );
     }
 
     (String::new(), None)
+}
+
+async fn persist_media_attachment(
+    client: &Client,
+    media_store: &MediaStore,
+    downloadable: &dyn Downloadable,
+    kind: MediaKind,
+    whatsapp_media_type: &'static str,
+    mime: Option<String>,
+    filename: Option<String>,
+    size: Option<u64>,
+) -> MediaAttachment {
+    let direct_path = downloadable.direct_path().map(ToString::to_string);
+    let fallback = build_media_attachment(
+        kind.clone(),
+        None,
+        direct_path.clone(),
+        mime.clone(),
+        filename.clone(),
+        size,
+    );
+
+    let bytes = match client.download(downloadable).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            warn!(
+                %e,
+                kind = kind.as_str(),
+                direct_path = direct_path.as_deref().unwrap_or_default(),
+                "failed to download whatsapp inbound media"
+            );
+            return fallback;
+        }
+    };
+
+    let new_asset = NewMediaAsset {
+        kind: kind.clone(),
+        mime: mime.clone(),
+        filename: filename.clone(),
+        metadata: serde_json::json!({
+            "platform": "whatsapp",
+            "media_type": whatsapp_media_type,
+            "direct_path": direct_path.clone(),
+            "declared_size": size,
+        }),
+    };
+
+    match media_store.put_bytes(&bytes, new_asset) {
+        Ok(asset) => build_media_attachment(
+            kind,
+            Some(asset.id),
+            direct_path,
+            mime,
+            filename,
+            Some(asset.size),
+        ),
+        Err(e) => {
+            warn!(
+                %e,
+                kind = kind.as_str(),
+                "failed to store whatsapp inbound media"
+            );
+            fallback
+        }
+    }
+}
+
+fn build_media_attachment(
+    kind: MediaKind,
+    asset_id: Option<MediaAssetId>,
+    url: Option<String>,
+    mime: Option<String>,
+    filename: Option<String>,
+    size: Option<u64>,
+) -> MediaAttachment {
+    MediaAttachment {
+        kind,
+        asset_id,
+        url,
+        mime,
+        filename,
+        size,
+    }
+}
+
+fn whatsapp_media_type(kind: &MediaKind) -> MediaType {
+    match kind {
+        MediaKind::Image => MediaType::Image,
+        MediaKind::Video => MediaType::Video,
+        MediaKind::Audio => MediaType::Audio,
+        MediaKind::Sticker => MediaType::Sticker,
+        MediaKind::File => MediaType::Document,
+    }
+}
+
+fn build_outbound_media_message(
+    upload: &UploadResponse,
+    media: &MediaAttachment,
+    content: &str,
+) -> wa::Message {
+    let caption = (!content.is_empty()).then(|| content.to_string());
+    match media.kind {
+        MediaKind::Image => wa::Message {
+            image_message: Some(Box::new(wa::message::ImageMessage {
+                url: Some(upload.url.clone()),
+                direct_path: Some(upload.direct_path.clone()),
+                media_key: Some(upload.media_key_vec()),
+                file_sha256: Some(upload.file_sha256_vec()),
+                file_enc_sha256: Some(upload.file_enc_sha256_vec()),
+                file_length: Some(upload.file_length),
+                mimetype: media.mime.clone(),
+                caption,
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+        MediaKind::Video => wa::Message {
+            video_message: Some(Box::new(wa::message::VideoMessage {
+                url: Some(upload.url.clone()),
+                direct_path: Some(upload.direct_path.clone()),
+                media_key: Some(upload.media_key_vec()),
+                file_sha256: Some(upload.file_sha256_vec()),
+                file_enc_sha256: Some(upload.file_enc_sha256_vec()),
+                file_length: Some(upload.file_length),
+                mimetype: media.mime.clone(),
+                caption,
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+        MediaKind::Audio => wa::Message {
+            audio_message: Some(Box::new(wa::message::AudioMessage {
+                url: Some(upload.url.clone()),
+                direct_path: Some(upload.direct_path.clone()),
+                media_key: Some(upload.media_key_vec()),
+                file_sha256: Some(upload.file_sha256_vec()),
+                file_enc_sha256: Some(upload.file_enc_sha256_vec()),
+                file_length: Some(upload.file_length),
+                mimetype: media.mime.clone(),
+                ptt: Some(false),
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+        MediaKind::Sticker => wa::Message {
+            sticker_message: Some(Box::new(wa::message::StickerMessage {
+                url: Some(upload.url.clone()),
+                direct_path: Some(upload.direct_path.clone()),
+                media_key: Some(upload.media_key_vec()),
+                file_sha256: Some(upload.file_sha256_vec()),
+                file_enc_sha256: Some(upload.file_enc_sha256_vec()),
+                file_length: Some(upload.file_length),
+                mimetype: media
+                    .mime
+                    .clone()
+                    .or_else(|| Some("image/webp".to_string())),
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+        MediaKind::File => wa::Message {
+            document_message: Some(Box::new(wa::message::DocumentMessage {
+                url: Some(upload.url.clone()),
+                direct_path: Some(upload.direct_path.clone()),
+                media_key: Some(upload.media_key_vec()),
+                file_sha256: Some(upload.file_sha256_vec()),
+                file_enc_sha256: Some(upload.file_enc_sha256_vec()),
+                file_length: Some(upload.file_length),
+                mimetype: media.mime.clone(),
+                file_name: media.filename.clone(),
+                caption,
+                ..Default::default()
+            })),
+            ..Default::default()
+        },
+    }
+}
+
+fn text_message(content: &str) -> wa::Message {
+    wa::Message {
+        conversation: Some(content.to_string()),
+        ..Default::default()
+    }
 }
 
 #[async_trait]
@@ -308,7 +526,14 @@ impl GatewayAdapter for WhatsAppAdapter {
                     GatewayContentKind::Sticker,
                     GatewayContentKind::File,
                 ],
-                send: vec![GatewayContentKind::Text],
+                send: vec![
+                    GatewayContentKind::Text,
+                    GatewayContentKind::Image,
+                    GatewayContentKind::Video,
+                    GatewayContentKind::Audio,
+                    GatewayContentKind::Sticker,
+                    GatewayContentKind::File,
+                ],
             },
             composing: true,
             read_receipts: true,
@@ -333,19 +558,31 @@ impl GatewayAdapter for WhatsAppAdapter {
             .parse()
             .map_err(|_| anyhow::anyhow!("invalid WhatsApp JID: {external_id}"))?;
 
-        let message = if let Some(_media) = media {
-            warn!("media sending not yet implemented, sending text only");
-            wa::Message {
-                conversation: Some(content.to_string()),
-                ..Default::default()
-            }
-        } else {
-            wa::Message {
-                conversation: Some(content.to_string()),
-                ..Default::default()
-            }
+        let Some(media) = media else {
+            self.client.send_message(jid, text_message(content)).await?;
+            return Ok(());
         };
 
+        let asset_id = media
+            .asset_id
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WhatsApp media send requires a stored media asset"))?;
+        let bytes = self
+            .media_store
+            .read_bytes(asset_id)?
+            .ok_or_else(|| anyhow::anyhow!("media asset not found: {}", asset_id.0))?;
+        let upload = self
+            .client
+            .upload(bytes, whatsapp_media_type(&media.kind), Default::default())
+            .await?;
+
+        if !content.is_empty() && matches!(media.kind, MediaKind::Audio | MediaKind::Sticker) {
+            self.client
+                .send_message(jid.clone(), text_message(content))
+                .await?;
+        }
+
+        let message = build_outbound_media_message(&upload, media, content);
         self.client.send_message(jid, message).await?;
         Ok(())
     }
@@ -364,5 +601,96 @@ impl GatewayAdapter for WhatsAppAdapter {
             .map_err(|_| anyhow::anyhow!("invalid WhatsApp JID: {external_id}"))?;
         self.client.chatstate().send_paused(&jid).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_media_attachment_preserves_asset_and_direct_path() {
+        let attachment = build_media_attachment(
+            MediaKind::Sticker,
+            Some(MediaAssetId("media-test".into())),
+            Some("/mms/image/path".into()),
+            Some("image/webp".into()),
+            Some("sticker.webp".into()),
+            Some(42),
+        );
+
+        assert_eq!(attachment.kind, MediaKind::Sticker);
+        assert_eq!(attachment.asset_id, Some(MediaAssetId("media-test".into())));
+        assert_eq!(attachment.url.as_deref(), Some("/mms/image/path"));
+        assert_eq!(attachment.mime.as_deref(), Some("image/webp"));
+        assert_eq!(attachment.filename.as_deref(), Some("sticker.webp"));
+        assert_eq!(attachment.size, Some(42));
+    }
+
+    #[test]
+    fn maps_media_kind_to_whatsapp_media_type() {
+        assert_eq!(whatsapp_media_type(&MediaKind::Image), MediaType::Image);
+        assert_eq!(whatsapp_media_type(&MediaKind::Video), MediaType::Video);
+        assert_eq!(whatsapp_media_type(&MediaKind::Audio), MediaType::Audio);
+        assert_eq!(whatsapp_media_type(&MediaKind::Sticker), MediaType::Sticker);
+        assert_eq!(whatsapp_media_type(&MediaKind::File), MediaType::Document);
+    }
+
+    #[test]
+    fn builds_image_message_from_upload_response() {
+        let upload = upload_response();
+        let media = MediaAttachment {
+            kind: MediaKind::Image,
+            asset_id: Some(MediaAssetId("media-test".into())),
+            url: None,
+            mime: Some("image/png".into()),
+            filename: None,
+            size: Some(upload.file_length),
+        };
+
+        let message = build_outbound_media_message(&upload, &media, "caption");
+        let image = message.image_message.unwrap();
+
+        assert_eq!(image.url.as_deref(), Some("https://cdn.example/upload"));
+        assert_eq!(image.direct_path.as_deref(), Some("/mms/image/path"));
+        assert_eq!(image.media_key, Some(vec![1; 32]));
+        assert_eq!(image.file_sha256, Some(vec![2; 32]));
+        assert_eq!(image.file_enc_sha256, Some(vec![3; 32]));
+        assert_eq!(image.file_length, Some(99));
+        assert_eq!(image.mimetype.as_deref(), Some("image/png"));
+        assert_eq!(image.caption.as_deref(), Some("caption"));
+    }
+
+    #[test]
+    fn builds_document_message_from_upload_response() {
+        let upload = upload_response();
+        let media = MediaAttachment {
+            kind: MediaKind::File,
+            asset_id: Some(MediaAssetId("media-test".into())),
+            url: None,
+            mime: Some("application/pdf".into()),
+            filename: Some("report.pdf".into()),
+            size: Some(upload.file_length),
+        };
+
+        let message = build_outbound_media_message(&upload, &media, "caption");
+        let document = message.document_message.unwrap();
+
+        assert_eq!(document.file_name.as_deref(), Some("report.pdf"));
+        assert_eq!(document.mimetype.as_deref(), Some("application/pdf"));
+        assert_eq!(document.caption.as_deref(), Some("caption"));
+        assert_eq!(document.media_key, Some(vec![1; 32]));
+    }
+
+    fn upload_response() -> UploadResponse {
+        UploadResponse {
+            url: "https://cdn.example/upload".into(),
+            direct_path: "/mms/image/path".into(),
+            media_key: [1; 32],
+            file_sha256: [2; 32],
+            file_enc_sha256: [3; 32],
+            file_length: 99,
+            media_key_timestamp: 123,
+        }
     }
 }
