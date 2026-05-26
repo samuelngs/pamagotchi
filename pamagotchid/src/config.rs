@@ -1,5 +1,5 @@
 use anyhow::{Context, bail};
-use inference::{Capability, OpenAiOptions, Reasoning};
+use inference::{Capability, CodexOptions, OpenAiOptions, Reasoning};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -81,6 +81,8 @@ pub struct InferenceEntry {
 pub enum ProviderConfig {
     #[serde(rename = "openai")]
     OpenAi(OpenAiOptions),
+    #[serde(rename = "codex")]
+    Codex(CodexOptions),
 }
 
 fn default_data_dir() -> String {
@@ -233,9 +235,35 @@ inference:
         let config: Config = yaml_serde::from_str(yaml).unwrap();
         config.validate().unwrap();
         assert_eq!(config.inference.len(), 1);
-        let ProviderConfig::OpenAi(ref opts) = config.inference[0].provider;
+        let ProviderConfig::OpenAi(ref opts) = config.inference[0].provider else {
+            panic!("expected openai provider");
+        };
         assert_eq!(opts.model, "gpt-4o");
         assert_eq!(config.max_turns, 5);
+    }
+
+    #[test]
+    fn parse_codex_config() {
+        let yaml = r#"
+inference:
+  - id: codex
+    kind: codex
+    capabilities: [chat]
+    options:
+      model: gpt-5
+      sandbox: read-only
+"#;
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
+        config.validate().unwrap();
+        let ProviderConfig::Codex(ref opts) = config.inference[0].provider else {
+            panic!("expected codex provider");
+        };
+        assert_eq!(opts.model, "gpt-5");
+        assert_eq!(opts.command, "codex");
+        assert_eq!(opts.sandbox.as_deref(), Some("read-only"));
+        assert_eq!(opts.approval_policy.as_deref(), Some("never"));
+        assert!(opts.ephemeral);
+        assert!(opts.skip_git_repo_check);
     }
 
     #[test]
@@ -282,7 +310,9 @@ max_concurrency: 3
 
         assert_eq!(config.inference[0].reasoning, Reasoning::Basic);
         assert_eq!(config.inference[1].reasoning, Reasoning::Advanced);
-        let ProviderConfig::OpenAi(ref opts) = config.inference[0].provider;
+        let ProviderConfig::OpenAi(ref opts) = config.inference[0].provider else {
+            panic!("expected openai provider");
+        };
         assert_eq!(opts.model, "deepseek-v4-flash");
 
         let data_dir = config.data_dir();

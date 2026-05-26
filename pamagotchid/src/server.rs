@@ -7,8 +7,8 @@ use gateway::storage::{GatewayEntry, GatewayStore, gateway_data_dir};
 use gateway::whatsapp::WhatsAppAdapter;
 use gateway::{GatewayAdapter, GatewayRouter, GatewayRuntimeEvent};
 use inference::{
-    InferenceEndpoint, InferenceRouter, InferenceRouterBuilder, OpenAiProvider, Retry,
-    SamplingConfig,
+    CodexProvider, InferenceEndpoint, InferenceRouter, InferenceRouterBuilder, OpenAiProvider,
+    Retry, SamplingConfig,
 };
 use media::MediaStore;
 use protocol::{
@@ -848,6 +848,16 @@ fn build_provider(
                 min_p: opts.min_p,
             };
             Ok((Arc::new(retry), opts.model.clone(), sampling))
+        }
+        ProviderConfig::Codex(opts) => {
+            let provider = CodexProvider::new(opts.clone());
+            let retry = Retry::new(provider, entry.max_retries)
+                .with_base_delay(std::time::Duration::from_millis(entry.retry_delay_ms));
+            Ok((
+                Arc::new(retry),
+                opts.model.clone(),
+                SamplingConfig::default(),
+            ))
         }
     }
 }
