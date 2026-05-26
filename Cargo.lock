@@ -1805,6 +1805,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
 
 [[package]]
+name = "media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nanoid",
+ "protocol",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2895,6 +2908,17 @@ dependencies = [
 
 [[package]]
 name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
@@ -3739,7 +3763,7 @@ dependencies = [
  "serde-big-array",
  "serde_json",
  "sha1 0.11.0",
- "sha2",
+ "sha2 0.11.0",
  "subtle",
  "thiserror 2.0.18",
  "typed-builder",
@@ -3765,7 +3789,7 @@ dependencies = [
  "serde",
  "serde-big-array",
  "serde_json",
- "sha2",
+ "sha2 0.11.0",
  "thiserror 2.0.18",
  "wacore-binary",
  "wacore-libsignal",
@@ -3822,7 +3846,7 @@ dependencies = [
  "rand 0.10.1",
  "serde",
  "sha1 0.11.0",
- "sha2",
+ "sha2 0.11.0",
  "subtle",
  "thiserror 2.0.18",
  "uuid",
@@ -3841,7 +3865,7 @@ dependencies = [
  "log",
  "prost",
  "rand 0.10.1",
- "sha2",
+ "sha2 0.11.0",
  "thiserror 2.0.18",
  "wacore-binary",
  "wacore-libsignal",

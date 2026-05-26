@@ -1,5 +1,15 @@
 [workspace]
-members = ["actor", "inference", "gateway", "protocol", "pamagotchid", "relay", "pamagotchi", "creature"]
+members = [
+    "actor",
+    "inference",
+    "gateway",
+    "protocol",
+    "pamagotchid",
+    "relay",
+    "pamagotchi",
+    "creature",
+    "media",
+]
 resolver = "2"
 
 [workspace.package]
@@ -10,6 +20,7 @@ license = "MIT"
 actor = { path = "actor" }
 inference = { path = "inference" }
 gateway = { path = "gateway" }
+media = { path = "media" }
 protocol = { path = "protocol" }
 pamagotchid = { path = "pamagotchid" }
 relay = { path = "relay" }
