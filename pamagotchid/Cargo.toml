@@ -16,6 +16,7 @@ path = "src/main.rs"
 actor.workspace = true
 inference.workspace = true
 gateway.workspace = true
+media.workspace = true
 protocol.workspace = true
 relay.workspace = true
 anyhow.workspace = true

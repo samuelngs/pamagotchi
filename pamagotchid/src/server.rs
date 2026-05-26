@@ -10,6 +10,7 @@ use inference::{
     InferenceEndpoint, InferenceRouter, InferenceRouterBuilder, OpenAiProvider, Retry,
     SamplingConfig,
 };
+use media::MediaStore;
 use protocol::{
     ClientRequest, ConversationId, GatewayKindView, GatewayVarKind, GatewayVarSpec, GatewayView,
     InboundMessage, ServerEvent,
@@ -27,6 +28,7 @@ struct GwApiContext {
     gw_router: Arc<GatewayRouter>,
     gateway_store: GatewayStore,
     gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+    media_store: Arc<MediaStore>,
     data_dir: PathBuf,
 }
 
@@ -60,6 +62,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let gateway_store = GatewayStore::for_data_dir(&data_dir);
     let gw_router = Arc::new(GatewayRouter::new());
+    let media_store = Arc::new(MediaStore::open(data_dir.join("media"))?);
+    info!(path = %media_store.root().display(), "media store opened");
 
     let local_adapter = LocalAdapter::new(api_handle.clone());
     gw_router.register(Arc::new(local_adapter));
@@ -70,6 +74,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         &data_dir,
         inbound_tx.clone(),
         gateway_event_tx.clone(),
+        media_store.clone(),
     )
     .await?;
 
@@ -79,6 +84,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         gw_router: gw_router.clone(),
         gateway_store,
         gateway_event_tx: gateway_event_tx.clone(),
+        media_store: media_store.clone(),
         data_dir: data_dir.clone(),
     };
 
@@ -112,6 +118,7 @@ async fn attach_configured_gateways(
     data_dir: &std::path::Path,
     inbound_tx: mpsc::Sender<InboundMessage>,
     gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+    media_store: Arc<MediaStore>,
 ) -> anyhow::Result<()> {
     let store = GatewayStore::for_data_dir(data_dir);
     let settings = store.load_or_create()?;
@@ -123,6 +130,7 @@ async fn attach_configured_gateways(
             entry,
             inbound_tx.clone(),
             gateway_event_tx.clone(),
+            media_store.clone(),
         )
         .await?;
     }
@@ -141,6 +149,7 @@ async fn attach_configured_gateway(
     entry: &GatewayEntry,
     inbound_tx: mpsc::Sender<InboundMessage>,
     gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+    media_store: Arc<MediaStore>,
 ) -> anyhow::Result<()> {
     let gateway_dir = gateway_data_dir(data_dir, &entry.id);
     std::fs::create_dir_all(&gateway_dir)?;
@@ -155,6 +164,7 @@ async fn attach_configured_gateway(
                 entry.vars.clone(),
                 inbound_tx,
                 gateway_event_tx,
+                media_store,
             )
             .await?;
             gw_router.register(Arc::new(adapter));
@@ -174,6 +184,7 @@ async fn attach_configured_gateway(
                 entry.vars.clone(),
                 inbound_tx,
                 gateway_event_tx,
+                media_store,
             )
             .await?;
             gw_router.register(Arc::new(adapter));
@@ -340,6 +351,7 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
                 &entry,
                 ctx.inbound_tx.clone(),
                 ctx.gateway_event_tx.clone(),
+                ctx.media_store.clone(),
             )
             .await
             {
@@ -449,6 +461,7 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
                 &entry,
                 ctx.inbound_tx.clone(),
                 ctx.gateway_event_tx.clone(),
+                ctx.media_store.clone(),
             )
             .await
             {
@@ -534,6 +547,7 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
                 &entry,
                 ctx.inbound_tx.clone(),
                 ctx.gateway_event_tx.clone(),
+                ctx.media_store.clone(),
             )
             .await
             {

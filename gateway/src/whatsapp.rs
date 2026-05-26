@@ -3,6 +3,7 @@ use crate::{
     GatewayContentKind, GatewayRuntime, GatewayRuntimeEvent, GatewaySetupInstructions,
 };
 use async_trait::async_trait;
+use media::MediaStore;
 use protocol::{ConversationId, GroupId, InboundMessage};
 use protocol::{MediaAttachment, MediaKind};
 use qrcode::{QrCode, render::unicode};
@@ -22,6 +23,7 @@ pub struct WhatsAppAdapter {
     id: String,
     client: Arc<Client>,
     runtime: Arc<GatewayRuntime>,
+    _media_store: Arc<MediaStore>,
 }
 
 impl WhatsAppAdapter {
@@ -30,6 +32,7 @@ impl WhatsAppAdapter {
         db_path: &str,
         inbound_tx: mpsc::Sender<InboundMessage>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+        media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
         let id = id.into();
         let runtime = Arc::new(GatewayRuntime::new(gateway_event_tx));
@@ -97,6 +100,7 @@ impl WhatsAppAdapter {
             id,
             client,
             runtime,
+            _media_store: media_store,
         })
     }
 }
@@ -204,6 +208,7 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
             img.caption.clone().unwrap_or_default(),
             Some(MediaAttachment {
                 kind: MediaKind::Image,
+                asset_id: None,
                 url: img.direct_path.clone(),
                 mime: img.mimetype.clone(),
                 filename: None,
@@ -217,6 +222,7 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
             vid.caption.clone().unwrap_or_default(),
             Some(MediaAttachment {
                 kind: MediaKind::Video,
+                asset_id: None,
                 url: vid.direct_path.clone(),
                 mime: vid.mimetype.clone(),
                 filename: None,
@@ -230,6 +236,7 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
             String::new(),
             Some(MediaAttachment {
                 kind: MediaKind::Audio,
+                asset_id: None,
                 url: aud.direct_path.clone(),
                 mime: aud.mimetype.clone(),
                 filename: None,
@@ -243,6 +250,7 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
             String::new(),
             Some(MediaAttachment {
                 kind: MediaKind::Sticker,
+                asset_id: None,
                 url: stk.direct_path.clone(),
                 mime: stk.mimetype.clone(),
                 filename: None,
@@ -256,6 +264,7 @@ fn extract_message_content(msg: &wa::Message) -> (String, Option<MediaAttachment
             doc.caption.clone().unwrap_or_default(),
             Some(MediaAttachment {
                 kind: MediaKind::File,
+                asset_id: None,
                 url: doc.direct_path.clone(),
                 mime: doc.mimetype.clone(),
                 filename: doc.file_name.clone(),
@@ -275,8 +284,9 @@ impl GatewayAdapter for WhatsAppAdapter {
         _vars: std::collections::BTreeMap<String, serde_json::Value>,
         inbound_tx: mpsc::Sender<InboundMessage>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+        media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
-        Self::connect_with_id(id, &db_path, inbound_tx, gateway_event_tx).await
+        Self::connect_with_id(id, &db_path, inbound_tx, gateway_event_tx, media_store).await
     }
 
     fn gateway_id(&self) -> &str {

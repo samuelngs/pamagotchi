@@ -3,6 +3,7 @@ use crate::{
     GatewayContentKind, GatewayRuntime, GatewayRuntimeEvent, GatewaySetupInstructions,
 };
 use async_trait::async_trait;
+use media::MediaStore;
 use protocol::{ConversationId, GroupId, InboundMessage, MediaAttachment, MediaKind};
 use serde_json::Value;
 use serenity::all::{
@@ -51,12 +52,14 @@ pub struct DiscordAdapter {
     id: String,
     http: Option<Arc<Http>>,
     runtime: Arc<GatewayRuntime>,
+    _media_store: Arc<MediaStore>,
 }
 
 impl DiscordAdapter {
     async fn setup_required(
         id: impl Into<String>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+        media_store: Arc<MediaStore>,
     ) -> Self {
         let id = id.into();
         let runtime = Arc::new(GatewayRuntime::new(gateway_event_tx));
@@ -71,6 +74,7 @@ impl DiscordAdapter {
             id,
             http: None,
             runtime,
+            _media_store: media_store,
         }
     }
 
@@ -79,6 +83,7 @@ impl DiscordAdapter {
         config: DiscordConfig,
         inbound_tx: mpsc::Sender<InboundMessage>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+        media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
         let id = id.into();
         let runtime = Arc::new(GatewayRuntime::new(gateway_event_tx));
@@ -126,6 +131,7 @@ impl DiscordAdapter {
             id,
             http: Some(http),
             runtime,
+            _media_store: media_store,
         })
     }
 }
@@ -234,6 +240,7 @@ fn discord_setup_instructions() -> GatewaySetupInstructions {
 fn extract_message_content(msg: &Message) -> (String, Option<MediaAttachment>) {
     let media = msg.attachments.first().map(|attachment| MediaAttachment {
         kind: media_kind_from_mime(attachment.content_type.as_deref()),
+        asset_id: None,
         url: Some(attachment.url.clone()),
         mime: attachment.content_type.clone(),
         filename: Some(attachment.filename.clone()),
@@ -264,16 +271,17 @@ impl GatewayAdapter for DiscordAdapter {
         vars: BTreeMap<String, Value>,
         inbound_tx: mpsc::Sender<InboundMessage>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+        media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
         let config = match DiscordConfig::from_vars(&vars) {
             Ok(config) => config,
             Err(e) if is_missing_bot_token_error(&e) => {
-                return Ok(Self::setup_required(id, gateway_event_tx).await);
+                return Ok(Self::setup_required(id, gateway_event_tx, media_store).await);
             }
             Err(e) => return Err(e),
         };
 
-        Self::connect_with_config(id, config, inbound_tx, gateway_event_tx).await
+        Self::connect_with_config(id, config, inbound_tx, gateway_event_tx, media_store).await
     }
 
     fn kind(&self) -> &str {
@@ -412,6 +420,7 @@ mod tests {
             BTreeMap::new(),
             inbound_tx,
             event_tx,
+            Arc::new(MediaStore::open(temp_media_root()).unwrap()),
         )
         .await
         .unwrap();
@@ -452,5 +461,9 @@ mod tests {
             MediaKind::Audio
         ));
         assert!(matches!(media_kind_from_mime(None), MediaKind::File));
+    }
+
+    fn temp_media_root() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("pamagotchi-gateway-media-{}", nanoid::nanoid!(12)))
     }
 }

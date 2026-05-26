@@ -1,8 +1,10 @@
 use crate::content::GatewayCapabilities;
 use async_trait::async_trait;
+use media::MediaStore;
 use protocol::{GatewayConnectionState, GatewaySetupInstructions, InboundMessage, MediaAttachment};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +27,7 @@ pub trait GatewayAdapter: Send + Sync {
         vars: BTreeMap<String, Value>,
         inbound_tx: mpsc::Sender<InboundMessage>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+        media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self>
     where
         Self: Sized;

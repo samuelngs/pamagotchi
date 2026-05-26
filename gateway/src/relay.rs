@@ -3,10 +3,12 @@ use crate::{
     GatewayRuntimeEvent, GatewaySetupInstructions,
 };
 use async_trait::async_trait;
+use media::MediaStore;
 use protocol::{ConversationId, InboundMessage, MediaAttachment};
 use relay::{RelayEvent, RelaySender};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -67,6 +69,7 @@ impl GatewayAdapter for RelayAdapter {
         _vars: BTreeMap<String, Value>,
         _inbound_tx: mpsc::Sender<InboundMessage>,
         _gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+        _media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
         anyhow::bail!("relay adapter requires relay server port/channel connection")
     }

@@ -96,6 +96,7 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
         (Some(url), Some(kind_str)) => match MediaKind::parse(kind_str) {
             Some(kind) => Some(MediaAttachment {
                 kind,
+                asset_id: None,
                 url: Some(url.to_string()),
                 mime: args["mime_type"].as_str().map(String::from),
                 filename: args["filename"].as_str().map(String::from),
