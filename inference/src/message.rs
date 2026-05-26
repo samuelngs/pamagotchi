@@ -1,7 +1,7 @@
 #[derive(Clone)]
 pub enum Message {
     System(String),
-    User(String),
+    User(UserMessage),
     Assistant(AssistantMessage),
     Tool(ToolResult),
 }
@@ -12,7 +12,11 @@ impl Message {
     }
 
     pub fn user(content: impl Into<String>) -> Self {
-        Self::User(content.into())
+        Self::User(UserMessage::text(content))
+    }
+
+    pub fn user_content(parts: Vec<ContentPart>) -> Self {
+        Self::User(UserMessage::Content(parts))
     }
 
     pub fn assistant(content: impl Into<String>) -> Self {
@@ -34,6 +38,52 @@ impl Message {
 impl From<AssistantMessage> for Message {
     fn from(msg: AssistantMessage) -> Self {
         Self::Assistant(msg)
+    }
+}
+
+#[derive(Clone)]
+pub enum UserMessage {
+    Text(String),
+    Content(Vec<ContentPart>),
+}
+
+impl UserMessage {
+    pub fn text(content: impl Into<String>) -> Self {
+        Self::Text(content.into())
+    }
+
+    pub fn display_text(&self) -> String {
+        match self {
+            Self::Text(text) => text.clone(),
+            Self::Content(parts) => parts
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text(text) => Some(text.as_str()),
+                    ContentPart::ImageUrl(_) => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        }
+    }
+
+    pub fn text_eq(&self, expected: &str) -> bool {
+        matches!(self, Self::Text(text) if text == expected)
+    }
+}
+
+#[derive(Clone)]
+pub enum ContentPart {
+    Text(String),
+    ImageUrl(String),
+}
+
+impl ContentPart {
+    pub fn text(content: impl Into<String>) -> Self {
+        Self::Text(content.into())
+    }
+
+    pub fn image_url(url: impl Into<String>) -> Self {
+        Self::ImageUrl(url.into())
     }
 }
 

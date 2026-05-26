@@ -1,6 +1,6 @@
 use super::{
-    AssistantMessage, ChatRequest, ChatResponse, ChatStream, FinishReason, Message, Provider,
-    StreamEvent, ToolCall, ToolChoice, Usage,
+    AssistantMessage, ChatRequest, ChatResponse, ChatStream, ContentPart, FinishReason, Message,
+    Provider, StreamEvent, ToolCall, ToolChoice, Usage, UserMessage,
 };
 use anyhow::{Context, bail};
 use async_trait::async_trait;
@@ -72,7 +72,7 @@ impl OpenAiProvider {
                 },
                 Message::User(content) => WireMessage::User {
                     role: "user",
-                    content: content.clone(),
+                    content: wire_user_content(content),
                 },
                 Message::Assistant(msg) => {
                     let tool_calls: Vec<WireToolCall> = msg
@@ -452,7 +452,7 @@ enum WireMessage {
     },
     User {
         role: &'static str,
-        content: String,
+        content: WireUserContent,
     },
     Assistant {
         role: &'static str,
@@ -468,6 +468,52 @@ enum WireMessage {
         tool_call_id: String,
         content: String,
     },
+}
+
+fn wire_user_content(content: &UserMessage) -> WireUserContent {
+    match content {
+        UserMessage::Text(text) => WireUserContent::Text(text.clone()),
+        UserMessage::Content(parts) => WireUserContent::Parts(
+            parts
+                .iter()
+                .map(|part| match part {
+                    ContentPart::Text(text) => WireContentPart::Text {
+                        r#type: "text",
+                        text: text.clone(),
+                    },
+                    ContentPart::ImageUrl(url) => WireContentPart::ImageUrl {
+                        r#type: "image_url",
+                        image_url: WireImageUrl { url: url.clone() },
+                    },
+                })
+                .collect(),
+        ),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum WireUserContent {
+    Text(String),
+    Parts(Vec<WireContentPart>),
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum WireContentPart {
+    Text {
+        r#type: &'static str,
+        text: String,
+    },
+    ImageUrl {
+        r#type: &'static str,
+        image_url: WireImageUrl,
+    },
+}
+
+#[derive(Serialize)]
+struct WireImageUrl {
+    url: String,
 }
 
 #[derive(Serialize)]

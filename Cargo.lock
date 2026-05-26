@@ -8,10 +8,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "chrono",
  "chrono-tz",
  "gateway",
  "inference",
+ "media",
  "minijinja",
  "nanoid",
  "protocol",

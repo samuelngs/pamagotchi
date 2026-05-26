@@ -5,6 +5,7 @@ use crate::state::{ActorState, GrowthConfig};
 use crate::store::Store;
 use gateway::GatewayRouter;
 use inference::InferenceRouter;
+use media::MediaStore;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -21,6 +22,7 @@ pub struct ActorBuilder {
     actor_state: ActorState,
     growth_config: GrowthConfig,
     store: Arc<dyn Store>,
+    media_store: Option<Arc<MediaStore>>,
     router: Arc<InferenceRouter>,
     gateway: Arc<GatewayRouter>,
     max_concurrency: usize,
@@ -37,6 +39,7 @@ impl ActorBuilder {
             actor_state: ActorState::new(Default::default()),
             growth_config: GrowthConfig::default(),
             store,
+            media_store: None,
             router,
             gateway: Arc::new(GatewayRouter::new()),
             max_concurrency: 5,
@@ -76,6 +79,11 @@ impl ActorBuilder {
 
     pub fn with_gateway(mut self, gateway: Arc<GatewayRouter>) -> Self {
         self.gateway = gateway;
+        self
+    }
+
+    pub fn with_media_store(mut self, media_store: Arc<MediaStore>) -> Self {
+        self.media_store = Some(media_store);
         self
     }
 
@@ -121,6 +129,7 @@ impl ActorBuilder {
             event_tx.clone(),
             state_handle.clone(),
             self.store,
+            self.media_store,
             self.router,
             self.gateway,
             self.max_concurrency,

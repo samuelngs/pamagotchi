@@ -11,6 +11,7 @@ use crate::state::{Authority, Relationship};
 use crate::store::Store;
 use gateway::GatewayRouter;
 use inference::InferenceRouter;
+use media::MediaStore;
 use protocol::{IdentityId, InboundMessage, PersonId, ProfileId};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -22,6 +23,7 @@ pub struct Mind {
     pub(super) registry: ActionRegistry,
     pub(super) state: StateHandle,
     pub(super) store: Arc<dyn Store>,
+    pub(super) media_store: Option<Arc<MediaStore>>,
     pub(super) router: Arc<InferenceRouter>,
     pub(super) gateway: Arc<GatewayRouter>,
     pub(super) max_turns: usize,
@@ -35,6 +37,7 @@ impl Mind {
         event_tx: mpsc::Sender<WakeEvent>,
         state: StateHandle,
         store: Arc<dyn Store>,
+        media_store: Option<Arc<MediaStore>>,
         router: Arc<InferenceRouter>,
         gateway: Arc<GatewayRouter>,
         max_concurrency: usize,
@@ -48,6 +51,7 @@ impl Mind {
             registry: ActionRegistry::new(max_concurrency),
             state,
             store,
+            media_store,
             router,
             gateway,
             max_turns,

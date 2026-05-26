@@ -62,6 +62,7 @@ impl Mind {
             concurrent_summaries,
             state: self.state.clone(),
             store: self.store.clone(),
+            media_store: self.media_store.clone(),
             router: self.router.clone(),
             endpoints,
             reasoning: Reasoning::Basic,

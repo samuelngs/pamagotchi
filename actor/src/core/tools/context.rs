@@ -5,6 +5,7 @@ use crate::state::{Authority, Delta};
 use crate::store::{Store, Thought};
 use gateway::GatewayRouter;
 use inference::Reasoning;
+use media::MediaStore;
 use protocol::{ConversationId, InboundMessage, MemoryId};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -20,6 +21,7 @@ pub struct SessionContext {
     pub concurrent_summaries: Vec<(String, String, String)>,
     pub state: StateHandle,
     pub store: Arc<dyn Store>,
+    pub media_store: Option<Arc<MediaStore>>,
     pub router: Arc<inference::InferenceRouter>,
     pub endpoints: Vec<inference::ResolvedInference>,
     pub reasoning: Reasoning,

@@ -93,6 +93,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let actor = ActorBuilder::new(store, Arc::new(router))
         .with_gateway(gw_router.clone())
+        .with_media_store(media_store.clone())
         .with_max_concurrency(config.max_concurrency)
         .with_max_turns(config.max_turns)
         .with_retry(config.retry.max_attempts, config.retry.escalate_after)

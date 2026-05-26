@@ -8,7 +8,7 @@ mod router;
 mod stream;
 mod tool;
 
-pub use message::{AssistantMessage, Message, ToolCall, ToolResult};
+pub use message::{AssistantMessage, ContentPart, Message, ToolCall, ToolResult, UserMessage};
 pub use middleware::{Logging, Retry, Timeout};
 pub use openai::{OpenAiOptions, OpenAiProvider};
 pub use provider::Provider;

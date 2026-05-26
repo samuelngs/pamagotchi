@@ -62,6 +62,7 @@ impl Mind {
         let event_tx = self.event_tx.clone();
         let state_handle = self.state.clone();
         let store = self.store.clone();
+        let media_store = self.media_store.clone();
         let router = self.router.clone();
         let gateway = self.gateway.clone();
         let max_turns = self.max_turns;
@@ -85,6 +86,7 @@ impl Mind {
                 concurrent_summaries,
                 state: state_handle,
                 store,
+                media_store,
                 router,
                 endpoints,
                 reasoning,
