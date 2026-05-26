@@ -185,7 +185,7 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
 
     if let Some((ref pid, ref eid)) = composing_target {
         let should_release = match &ctx.kind {
-            SessionKind::Mind => !matches!(mind_verdict, Some(MindVerdict::Respond { .. })),
+            SessionKind::Mind => true,
             SessionKind::Action(_) => !state.composing_released,
         };
         if should_release {
@@ -402,9 +402,13 @@ fn build_result(
 }
 
 fn resolve_composing_target(ctx: &SessionContext) -> Option<(String, String)> {
-    ctx.messages
-        .first()
-        .map(|msg| (msg.gateway_id.clone(), msg.external_id.clone()))
+    ctx.messages.first().and_then(|msg| {
+        if msg.gateway_id.is_empty() || msg.external_id.is_empty() {
+            None
+        } else {
+            Some((msg.gateway_id.clone(), msg.external_id.clone()))
+        }
+    })
 }
 
 fn log_turn_start(ctx: &SessionContext, turn: usize, msgs: &[Message]) {

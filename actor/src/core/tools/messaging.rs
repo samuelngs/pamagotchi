@@ -77,6 +77,16 @@ fn current_conversation(ctx: &SessionContext) -> Option<ConversationId> {
         .or_else(|| ctx.messages.first().map(|m| m.conversation.clone()))
 }
 
+fn current_composing_target(ctx: &SessionContext) -> Option<(String, String)> {
+    ctx.messages.first().and_then(|msg| {
+        if msg.gateway_id.is_empty() || msg.external_id.is_empty() {
+            None
+        } else {
+            Some((msg.gateway_id.clone(), msg.external_id.clone()))
+        }
+    })
+}
+
 pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
     let content = args["content"].as_str().unwrap_or("").to_string();
     let gateway_id = args["gateway_id"].as_str();
@@ -115,7 +125,11 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
         .send_message(&target_gateway, &target_id, &content, media.as_ref())
         .await;
 
-    if !state.composing_released {
+    if !state.composing_released
+        && current_composing_target(ctx)
+            .as_ref()
+            .is_some_and(|(gateway, id)| gateway == &target_gateway && id == &target_id)
+    {
         ctx.gateway
             .release_composing(&target_gateway, &target_id)
             .await;
