@@ -8,7 +8,6 @@ use crate::{
     ChatRequest, ChatStream, FinishReason, StreamEvent,
 };
 use anyhow::{Context, bail};
-use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -51,15 +50,6 @@ impl AppServerSession {
             .env("CODEX_HOME", codex_home);
         cmd.args(&self.options.extra_args);
         cmd
-    }
-
-    pub(super) async fn chat_stream(
-        self,
-        request: ChatRequest,
-        prompt: String,
-    ) -> anyhow::Result<ChatStream> {
-        self.chat_stream_with_tools(request, prompt, Arc::new(UnsupportedToolRuntime))
-            .await
     }
 
     pub(super) async fn chat_stream_with_tools(
@@ -315,18 +305,6 @@ struct DynamicToolCallParams {
     #[serde(default)]
     namespace: Option<String>,
     tool: String,
-}
-
-struct UnsupportedToolRuntime;
-
-#[async_trait]
-impl AppServerToolRuntime for UnsupportedToolRuntime {
-    async fn call_tool(&self, call: AppServerToolCall) -> anyhow::Result<AppServerToolResult> {
-        Ok(AppServerToolResult::error(format!(
-            "unsupported app-server tool call: {}",
-            call.name
-        )))
-    }
 }
 
 struct JsonRpcConnection {

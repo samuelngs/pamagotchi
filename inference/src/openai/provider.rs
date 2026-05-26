@@ -1,8 +1,8 @@
 use super::stream::{parse_finish_reason, stream_sse};
 use super::wire::*;
 use crate::{
-    AssistantMessage, ChatRequest, ChatResponse, ChatStream, Message, Provider, ToolCall,
-    ToolChoice, Usage,
+    AssistantMessage, ChatRequest, ChatResponse, ChatStream, Message, OpenAiCompatibleBridge,
+    ToolCall, ToolChoice, Usage,
 };
 use anyhow::{Context, bail};
 use async_trait::async_trait;
@@ -140,7 +140,7 @@ impl OpenAiProvider {
 }
 
 #[async_trait]
-impl Provider for OpenAiProvider {
+impl OpenAiCompatibleBridge for OpenAiProvider {
     async fn chat(&self, request: &ChatRequest) -> anyhow::Result<ChatResponse> {
         let url = format!("{}/chat/completions", self.base_url);
         let wire = self.build_request(request, false);

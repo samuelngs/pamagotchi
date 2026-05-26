@@ -1,13 +1,13 @@
 use super::*;
 use crate::request::SamplingConfig;
-use crate::{ChatRequest, ChatResponse, ChatStream, InferenceProtocol, Provider};
+use crate::{ChatRequest, ChatResponse, ChatStream, InferenceProtocol, OpenAiCompatibleBridge};
 use async_trait::async_trait;
 use std::sync::Arc;
 
 struct TestProvider;
 
 #[async_trait]
-impl Provider for TestProvider {
+impl OpenAiCompatibleBridge for TestProvider {
     async fn chat(&self, _request: &ChatRequest) -> anyhow::Result<ChatResponse> {
         anyhow::bail!("not used")
     }

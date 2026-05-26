@@ -1,5 +1,6 @@
 use super::{
-    AppServerToolRuntime, ChatRequest, ChatResponse, ChatStream, CodexAppServerProtocol, Provider,
+    AppServerToolRuntime, ChatRequest, ChatResponse, ChatStream, CodexAppServerProtocol,
+    OpenAiCompatibleBridge,
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -27,7 +28,7 @@ impl<P> Retry<P> {
 }
 
 #[async_trait]
-impl<P: Provider> Provider for Retry<P> {
+impl<P: OpenAiCompatibleBridge> OpenAiCompatibleBridge for Retry<P> {
     async fn chat(&self, request: &ChatRequest) -> anyhow::Result<ChatResponse> {
         let mut last_err = None;
         for attempt in 0..self.max_attempts {
@@ -113,7 +114,7 @@ impl<P> Logging<P> {
 }
 
 #[async_trait]
-impl<P: Provider> Provider for Logging<P> {
+impl<P: OpenAiCompatibleBridge> OpenAiCompatibleBridge for Logging<P> {
     async fn chat(&self, request: &ChatRequest) -> anyhow::Result<ChatResponse> {
         tracing::debug!(
             model = %request.model,
@@ -183,7 +184,7 @@ impl<P> Timeout<P> {
 }
 
 #[async_trait]
-impl<P: Provider> Provider for Timeout<P> {
+impl<P: OpenAiCompatibleBridge> OpenAiCompatibleBridge for Timeout<P> {
     async fn chat(&self, request: &ChatRequest) -> anyhow::Result<ChatResponse> {
         tokio::time::timeout(self.duration, self.inner.chat(request))
             .await

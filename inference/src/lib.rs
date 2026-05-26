@@ -3,7 +3,6 @@ mod message;
 mod middleware;
 mod openai;
 mod protocol;
-mod provider;
 mod request;
 mod response;
 mod router;
@@ -18,7 +17,6 @@ pub use protocol::{
     AppServerToolCall, AppServerToolResult, AppServerToolResultContent, AppServerToolRuntime,
     CodexAppServerProtocol, InferenceProtocol, OpenAiCompatibleBridge,
 };
-pub use provider::Provider;
 pub use request::{ChatRequest, JsonSchemaSpec, ResponseFormat, SamplingConfig};
 pub use response::{ChatResponse, FinishReason, Usage};
 pub use router::{
