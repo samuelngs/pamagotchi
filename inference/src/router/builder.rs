@@ -28,7 +28,7 @@ impl InferenceRouterBuilder {
 
         for ep in self.endpoints {
             let route = ResolvedRoute {
-                provider: ep.provider.clone(),
+                protocol: ep.protocol.clone(),
                 model: ep.model.clone(),
                 sampling: ep.sampling.clone(),
                 capabilities: ep.capabilities.clone(),
@@ -36,7 +36,7 @@ impl InferenceRouterBuilder {
 
             if ep.capabilities.contains(&Capability::Embedding) {
                 embedding.push(ResolvedRoute {
-                    provider: ep.provider,
+                    protocol: ep.protocol,
                     model: ep.model,
                     sampling: ep.sampling,
                     capabilities: ep.capabilities,

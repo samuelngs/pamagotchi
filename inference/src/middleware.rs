@@ -1,5 +1,8 @@
-use super::{ChatRequest, ChatResponse, ChatStream, Provider};
+use super::{
+    AppServerToolRuntime, ChatRequest, ChatResponse, ChatStream, CodexAppServerProtocol, Provider,
+};
 use async_trait::async_trait;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub struct Retry<P> {
@@ -58,6 +61,35 @@ impl<P: Provider> Provider for Retry<P> {
                         max = self.max_attempts,
                         error = %e,
                         "retrying chat stream"
+                    );
+                    last_err = Some(e);
+                    if attempt + 1 < self.max_attempts {
+                        tokio::time::sleep(self.base_delay * 2u32.pow(attempt)).await;
+                    }
+                }
+            }
+        }
+        Err(last_err.unwrap())
+    }
+}
+
+#[async_trait]
+impl<P: CodexAppServerProtocol> CodexAppServerProtocol for Retry<P> {
+    async fn run_turn(
+        &self,
+        request: &ChatRequest,
+        tools: Arc<dyn AppServerToolRuntime>,
+    ) -> anyhow::Result<ChatStream> {
+        let mut last_err = None;
+        for attempt in 0..self.max_attempts {
+            match self.inner.run_turn(request, tools.clone()).await {
+                Ok(stream) => return Ok(stream),
+                Err(e) => {
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        max = self.max_attempts,
+                        error = %e,
+                        "retrying codex app-server turn"
                     );
                     last_err = Some(e);
                     if attempt + 1 < self.max_attempts {

@@ -249,21 +249,55 @@ inference:
   - id: codex
     kind: codex
     capabilities: [chat]
-    options:
-      model: gpt-5
-      sandbox: read-only
+    options: {}
 "#;
         let config: Config = yaml_serde::from_str(yaml).unwrap();
         config.validate().unwrap();
         let ProviderConfig::Codex(ref opts) = config.inference[0].provider else {
             panic!("expected codex provider");
         };
-        assert_eq!(opts.model, "gpt-5");
+        assert_eq!(opts.model, "gpt-5.3-codex-spark");
         assert_eq!(opts.command, "codex");
+        assert_eq!(opts.profile_v2.as_deref(), Some("pamagotchi"));
         assert_eq!(opts.sandbox.as_deref(), Some("read-only"));
-        assert_eq!(opts.approval_policy.as_deref(), Some("never"));
-        assert!(opts.ephemeral);
-        assert!(opts.skip_git_repo_check);
+        assert!(opts.extra_args.is_empty());
+    }
+
+    #[test]
+    fn parse_codex_config_overrides_defaults() {
+        let yaml = r#"
+inference:
+  - id: codex
+    kind: codex
+    capabilities: [chat]
+    options:
+      model: gpt-5.3-codex
+      profile_v2: custom
+"#;
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
+        config.validate().unwrap();
+        let ProviderConfig::Codex(ref opts) = config.inference[0].provider else {
+            panic!("expected codex provider");
+        };
+        assert_eq!(opts.model, "gpt-5.3-codex");
+        assert_eq!(opts.profile_v2.as_deref(), Some("custom"));
+    }
+
+    #[test]
+    fn reject_unknown_codex_option() {
+        let yaml = r#"
+inference:
+  - id: codex
+    kind: codex
+    capabilities: [chat]
+    options:
+      model: gpt-5
+      approval_policy: never
+"#;
+        let Err(err) = yaml_serde::from_str::<Config>(yaml) else {
+            panic!("expected unknown codex option to fail");
+        };
+        assert!(err.to_string().contains("unknown field"));
     }
 
     #[test]

@@ -2,6 +2,7 @@ mod codex;
 mod message;
 mod middleware;
 mod openai;
+mod protocol;
 mod provider;
 mod request;
 mod response;
@@ -13,6 +14,10 @@ pub use codex::{CodexOptions, CodexProvider};
 pub use message::{AssistantMessage, ContentPart, Message, ToolCall, ToolResult, UserMessage};
 pub use middleware::{Logging, Retry, Timeout};
 pub use openai::{OpenAiOptions, OpenAiProvider};
+pub use protocol::{
+    AppServerToolCall, AppServerToolResult, AppServerToolResultContent, AppServerToolRuntime,
+    CodexAppServerProtocol, InferenceProtocol, OpenAiCompatibleBridge,
+};
 pub use provider::Provider;
 pub use request::{ChatRequest, JsonSchemaSpec, ResponseFormat, SamplingConfig};
 pub use response::{ChatResponse, FinishReason, Usage};

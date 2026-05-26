@@ -1,6 +1,6 @@
 use super::*;
 use crate::request::SamplingConfig;
-use crate::{ChatRequest, ChatResponse, ChatStream, Provider};
+use crate::{ChatRequest, ChatResponse, ChatStream, InferenceProtocol, Provider};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ impl Provider for TestProvider {
 
 fn endpoint(model: &str, reasoning: Reasoning, capabilities: Vec<Capability>) -> InferenceEndpoint {
     InferenceEndpoint {
-        provider: Arc::new(TestProvider),
+        protocol: InferenceProtocol::OpenAiCompatible(Arc::new(TestProvider)),
         model: model.into(),
         sampling: SamplingConfig::default(),
         capabilities,

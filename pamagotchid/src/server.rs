@@ -7,8 +7,8 @@ use gateway::storage::{GatewayEntry, GatewayStore, gateway_data_dir};
 use gateway::whatsapp::WhatsAppAdapter;
 use gateway::{GatewayAdapter, GatewayRouter, GatewayRuntimeEvent};
 use inference::{
-    CodexProvider, InferenceEndpoint, InferenceRouter, InferenceRouterBuilder, OpenAiProvider,
-    Retry, SamplingConfig,
+    CodexProvider, InferenceEndpoint, InferenceProtocol, InferenceRouter, InferenceRouterBuilder,
+    OpenAiProvider, Retry, SamplingConfig,
 };
 use media::MediaStore;
 use protocol::{
@@ -810,7 +810,7 @@ fn build_inference_router(config: &Config) -> anyhow::Result<InferenceRouter> {
     for entry in &config.inference {
         let (provider, model, sampling) = build_provider(entry)?;
         builder = builder.endpoint(InferenceEndpoint {
-            provider,
+            protocol: provider,
             model,
             sampling,
             capabilities: entry.capabilities.clone(),
@@ -823,7 +823,7 @@ fn build_inference_router(config: &Config) -> anyhow::Result<InferenceRouter> {
 
 fn build_provider(
     entry: &InferenceEntry,
-) -> anyhow::Result<(Arc<dyn inference::Provider>, String, SamplingConfig)> {
+) -> anyhow::Result<(InferenceProtocol, String, SamplingConfig)> {
     match &entry.provider {
         ProviderConfig::OpenAi(opts) => {
             let base_url = opts
@@ -847,14 +847,18 @@ fn build_provider(
                 top_k: opts.top_k,
                 min_p: opts.min_p,
             };
-            Ok((Arc::new(retry), opts.model.clone(), sampling))
+            Ok((
+                InferenceProtocol::OpenAiCompatible(Arc::new(retry)),
+                opts.model.clone(),
+                sampling,
+            ))
         }
         ProviderConfig::Codex(opts) => {
             let provider = CodexProvider::new(opts.clone());
             let retry = Retry::new(provider, entry.max_retries)
                 .with_base_delay(std::time::Duration::from_millis(entry.retry_delay_ms));
             Ok((
-                Arc::new(retry),
+                InferenceProtocol::CodexAppServer(Arc::new(retry)),
                 opts.model.clone(),
                 SamplingConfig::default(),
             ))

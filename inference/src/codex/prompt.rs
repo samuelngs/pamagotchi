@@ -40,7 +40,7 @@ pub(super) fn prompt_from_request(request: &ChatRequest) -> String {
             &tools_text(&request.tools),
         );
         out.push_str(
-            "\nThe application tool list above is contextual. Do not claim that you executed those tools unless their results are present in the transcript.\n",
+            "\nReturn application tool calls through the structured output object only. Put calls in tool_calls as {\"name\":\"tool_name\",\"arguments\":{...}}. Do not write the user-facing reply as plain assistant text when a tool such as send_message is needed; plain text is private thought and will not be delivered.\n",
         );
     }
 

@@ -19,7 +19,7 @@ impl InferenceRouter {
             .or_else(|| self.chat.first().and_then(|(_, c)| c.first()))
             .expect("router has no endpoints");
         ResolvedInference {
-            provider: route.provider.clone(),
+            protocol: route.protocol.clone(),
             model: route.model.clone(),
             sampling: route.sampling.clone(),
             capabilities: route.capabilities.clone(),
@@ -91,7 +91,7 @@ impl InferenceRouter {
             .embedding
             .first()
             .ok_or_else(|| anyhow::anyhow!("no embedding endpoint configured"))?;
-        route.provider.embed(&route.model, input).await
+        route.protocol.embed(&route.model, input).await
     }
 
     fn find_chat(&self, level: Reasoning) -> Option<&ResolvedRoute> {

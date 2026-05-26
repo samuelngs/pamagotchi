@@ -1,3 +1,4 @@
+mod app_server;
 mod events;
 mod options;
 mod prompt;

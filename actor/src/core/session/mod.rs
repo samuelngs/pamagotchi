@@ -128,13 +128,13 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
             log_turn_start(&ctx, turn, &llm_messages);
 
             let required_caps = required_capabilities(&ctx.messages, &state.injected_messages);
-            let mut stream =
+            let mut opened =
                 match try_open_stream(&ctx, &llm_messages, &tool_defs, &required_caps).await {
                     Some(s) => s,
                     None => break,
                 };
 
-            let collected = collect_stream(&mut stream, &mut ctx, &mut state).await;
+            let collected = collect_stream(&mut opened, &mut ctx, &mut state).await;
             info!(action = %ctx.action_id, turn, "LLM stream ended");
 
             let tool_calls = finalize_tool_calls(collected.partial_tools);
@@ -147,6 +147,11 @@ pub async fn run_session(mut ctx: SessionContext) -> SessionResult {
 
             if !collected.text.is_empty() {
                 info!(action = %ctx.action_id, thought = %collected.text, "internal monologue");
+            }
+
+            if let Some(verdict) = collected.app_server_decision {
+                mind_verdict = Some(verdict);
+                break;
             }
 
             if tool_calls.is_empty() {

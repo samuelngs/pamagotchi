@@ -21,6 +21,7 @@ impl ChatRequest {
     }
 }
 
+#[derive(Clone)]
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<Message>,
@@ -91,7 +92,7 @@ impl ChatRequest {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum ResponseFormat {
     #[serde(rename = "text")]
@@ -102,7 +103,7 @@ pub enum ResponseFormat {
     JsonSchema { json_schema: JsonSchemaSpec },
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct JsonSchemaSpec {
     pub name: String,
     pub schema: serde_json::Value,

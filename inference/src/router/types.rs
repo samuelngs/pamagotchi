@@ -1,6 +1,5 @@
-use crate::Provider;
+use crate::InferenceProtocol;
 use crate::request::SamplingConfig;
-use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -53,7 +52,7 @@ pub enum RouteContext {
 }
 
 pub(super) struct ResolvedRoute {
-    pub(super) provider: Arc<dyn Provider>,
+    pub(super) protocol: InferenceProtocol,
     pub(super) model: String,
     pub(super) sampling: SamplingConfig,
     pub(super) capabilities: Vec<Capability>,
@@ -61,14 +60,14 @@ pub(super) struct ResolvedRoute {
 
 #[derive(Clone)]
 pub struct ResolvedInference {
-    pub provider: Arc<dyn Provider>,
+    pub protocol: InferenceProtocol,
     pub model: String,
     pub sampling: SamplingConfig,
     pub capabilities: Vec<Capability>,
 }
 
 pub struct InferenceEndpoint {
-    pub provider: Arc<dyn Provider>,
+    pub protocol: InferenceProtocol,
     pub model: String,
     pub sampling: SamplingConfig,
     pub capabilities: Vec<Capability>,
@@ -83,7 +82,7 @@ pub(super) fn resolved_from_routes(routes: Vec<&ResolvedRoute>) -> Vec<ResolvedI
     routes
         .into_iter()
         .map(|r| ResolvedInference {
-            provider: r.provider.clone(),
+            protocol: r.protocol.clone(),
             model: r.model.clone(),
             sampling: r.sampling.clone(),
             capabilities: r.capabilities.clone(),
