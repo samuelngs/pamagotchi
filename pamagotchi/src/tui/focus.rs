@@ -8,6 +8,7 @@ pub enum FocusId {
     GatewayAdd,
     GatewayAddKind,
     GatewayDetailBack,
+    GatewayDetailVar,
     GatewayDetailRemove,
     GatewayDetailRestart,
 }

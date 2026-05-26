@@ -11,7 +11,8 @@ use inference::{
     SamplingConfig,
 };
 use protocol::{
-    ClientRequest, ConversationId, GatewayKindView, GatewayView, InboundMessage, ServerEvent,
+    ClientRequest, ConversationId, GatewayKindView, GatewayVarKind, GatewayVarSpec, GatewayView,
+    InboundMessage, ServerEvent,
 };
 use relay::{ApiClientRequest, ApiServer, ApiServerHandle};
 use std::path::PathBuf;
@@ -279,9 +280,7 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
         ClientRequest::ListAvailableGateways { request_id } => {
             let gateways = supported_gateway_kinds()
                 .iter()
-                .map(|kind| GatewayKindView {
-                    kind: (*kind).to_string(),
-                })
+                .map(|kind| gateway_kind_view(kind))
                 .collect();
 
             let _ = ctx
@@ -476,16 +475,79 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
                 .send_to(message.client_id, ServerEvent::RequestOk { request_id })
                 .await;
         }
-        ClientRequest::UpdateGatewayVars { request_id, .. } => {
+        ClientRequest::UpdateGatewayVars {
+            request_id,
+            id,
+            vars,
+        } => {
+            let entry_vars: std::collections::BTreeMap<String, serde_json::Value> =
+                serde_json::from_value(vars.clone()).unwrap_or_default();
+
+            if let Err(e) = validate_gateway_vars(&entry_vars) {
+                let _ = ctx
+                    .api_handle
+                    .send_to(
+                        message.client_id,
+                        ServerEvent::RequestError {
+                            request_id: Some(request_id),
+                            message: format!("invalid gateway vars: {e}"),
+                        },
+                    )
+                    .await;
+                return;
+            }
+
+            let entry = match ctx.gateway_store.update_vars(&id, entry_vars) {
+                Ok(Some(entry)) => entry,
+                Ok(None) => {
+                    let _ = ctx
+                        .api_handle
+                        .send_to(
+                            message.client_id,
+                            ServerEvent::RequestError {
+                                request_id: Some(request_id),
+                                message: format!("gateway not found: {id}"),
+                            },
+                        )
+                        .await;
+                    return;
+                }
+                Err(e) => {
+                    let _ = ctx
+                        .api_handle
+                        .send_to(
+                            message.client_id,
+                            ServerEvent::RequestError {
+                                request_id: Some(request_id),
+                                message: format!("failed to update gateway vars: {e}"),
+                            },
+                        )
+                        .await;
+                    return;
+                }
+            };
+
+            ctx.gw_router.unregister(&id);
+            if let Err(e) = attach_configured_gateway(
+                &ctx.gw_router,
+                &ctx.data_dir,
+                &entry,
+                ctx.inbound_tx.clone(),
+                ctx.gateway_event_tx.clone(),
+            )
+            .await
+            {
+                warn!(%e, gateway = %entry.id, "failed to restart gateway after vars update");
+            }
+
+            ctx.api_handle
+                .broadcast(ServerEvent::GatewayUpdated {
+                    gateway: gateway_view(&entry, &ctx.gw_router),
+                })
+                .await;
             let _ = ctx
                 .api_handle
-                .send_to(
-                    message.client_id,
-                    ServerEvent::RequestError {
-                        request_id: Some(request_id),
-                        message: "gateway vars update is not implemented yet".into(),
-                    },
-                )
+                .send_to(message.client_id, ServerEvent::RequestOk { request_id })
                 .await;
         }
     }
@@ -514,6 +576,71 @@ fn is_supported_gateway_kind(kind: &str) -> bool {
 
 fn supported_gateway_kinds() -> &'static [&'static str] {
     &["whatsapp", "discord"]
+}
+
+fn gateway_kind_view(kind: &str) -> GatewayKindView {
+    GatewayKindView {
+        kind: kind.to_string(),
+        vars: gateway_var_specs(kind),
+    }
+}
+
+fn gateway_var_specs(kind: &str) -> Vec<GatewayVarSpec> {
+    match kind {
+        "discord" => vec![
+            GatewayVarSpec {
+                key: "bot_token".into(),
+                label: "Bot token".into(),
+                kind: GatewayVarKind::String,
+                required: true,
+                secret: true,
+                default: None,
+                help: Some("Discord bot token from the Discord developer portal.".into()),
+            },
+            GatewayVarSpec {
+                key: "allowed_channel_ids".into(),
+                label: "Allowed channel IDs".into(),
+                kind: GatewayVarKind::StringList,
+                required: false,
+                secret: false,
+                default: Some(serde_json::json!([])),
+                help: Some(
+                    "Optional Discord channel ID allowlist. Empty allows all channels.".into(),
+                ),
+            },
+            GatewayVarSpec {
+                key: "ignore_bots".into(),
+                label: "Ignore bots".into(),
+                kind: GatewayVarKind::Bool,
+                required: false,
+                secret: false,
+                default: Some(serde_json::json!(true)),
+                help: Some("Ignore messages from Discord bot users.".into()),
+            },
+        ],
+        _ => vec![],
+    }
+}
+
+fn validate_gateway_vars(
+    vars: &std::collections::BTreeMap<String, serde_json::Value>,
+) -> anyhow::Result<()> {
+    for (key, value) in vars {
+        match (key.as_str(), value) {
+            ("bot_token", serde_json::Value::String(_)) => {}
+            ("allowed_channel_ids", serde_json::Value::Array(values)) => {
+                if !values.iter().all(|value| value.as_str().is_some()) {
+                    anyhow::bail!("allowed_channel_ids must be an array of strings");
+                }
+            }
+            ("ignore_bots", serde_json::Value::Bool(_)) => {}
+            ("bot_token", _) => anyhow::bail!("bot_token must be a string"),
+            ("allowed_channel_ids", _) => anyhow::bail!("allowed_channel_ids must be an array"),
+            ("ignore_bots", _) => anyhow::bail!("ignore_bots must be a boolean"),
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn now_secs() -> i64 {

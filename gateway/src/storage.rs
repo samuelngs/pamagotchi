@@ -103,6 +103,21 @@ impl GatewayStore {
         self.save(&settings)?;
         Ok(Some(removed))
     }
+
+    pub fn update_vars(
+        &self,
+        id: &str,
+        vars: BTreeMap<String, Value>,
+    ) -> anyhow::Result<Option<GatewayEntry>> {
+        let mut settings = self.load()?;
+        let Some(entry) = settings.gateway.iter_mut().find(|entry| entry.id == id) else {
+            return Ok(None);
+        };
+        entry.vars = vars;
+        let updated = entry.clone();
+        self.save(&settings)?;
+        Ok(Some(updated))
+    }
 }
 
 impl GatewaySettings {
@@ -205,6 +220,21 @@ mod tests {
         };
 
         assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn updates_gateway_vars() {
+        let path =
+            std::env::temp_dir().join(format!("pamagotchi-update-vars-{}.yml", nanoid::nanoid!()));
+        let store = GatewayStore::new(path);
+        let entry = store.add("discord", BTreeMap::new()).unwrap();
+        let vars = BTreeMap::from([("bot_token".into(), Value::String("secret".into()))]);
+
+        let updated = store.update_vars(&entry.id, vars.clone()).unwrap().unwrap();
+        let loaded = store.load().unwrap();
+
+        assert_eq!(updated.vars, vars);
+        assert_eq!(loaded.gateway[0].vars, vars);
     }
 
     #[test]

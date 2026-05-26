@@ -49,11 +49,31 @@ impl DiscordConfig {
 
 pub struct DiscordAdapter {
     id: String,
-    http: Arc<Http>,
+    http: Option<Arc<Http>>,
     runtime: Arc<GatewayRuntime>,
 }
 
 impl DiscordAdapter {
+    async fn setup_required(
+        id: impl Into<String>,
+        gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
+    ) -> Self {
+        let id = id.into();
+        let runtime = Arc::new(GatewayRuntime::new(gateway_event_tx));
+        runtime
+            .emit_state(&id, GatewayConnectionState::SetupRequired)
+            .await;
+        runtime
+            .emit_setup(&id, Some(discord_setup_instructions()))
+            .await;
+
+        Self {
+            id,
+            http: None,
+            runtime,
+        }
+    }
+
     pub async fn connect_with_config(
         id: impl Into<String>,
         config: DiscordConfig,
@@ -102,7 +122,11 @@ impl DiscordAdapter {
 
         info!(gateway = %id, "discord adapter started");
 
-        Ok(Self { id, http, runtime })
+        Ok(Self {
+            id,
+            http: Some(http),
+            runtime,
+        })
     }
 }
 
@@ -228,6 +252,10 @@ fn media_kind_from_mime(mime: Option<&str>) -> MediaKind {
     }
 }
 
+fn is_missing_bot_token_error(error: &anyhow::Error) -> bool {
+    error.to_string() == "Discord bot token is required in gateway vars.bot_token"
+}
+
 #[async_trait]
 impl GatewayAdapter for DiscordAdapter {
     async fn connect(
@@ -237,13 +265,15 @@ impl GatewayAdapter for DiscordAdapter {
         inbound_tx: mpsc::Sender<InboundMessage>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
     ) -> anyhow::Result<Self> {
-        Self::connect_with_config(
-            id,
-            DiscordConfig::from_vars(&vars)?,
-            inbound_tx,
-            gateway_event_tx,
-        )
-        .await
+        let config = match DiscordConfig::from_vars(&vars) {
+            Ok(config) => config,
+            Err(e) if is_missing_bot_token_error(&e) => {
+                return Ok(Self::setup_required(id, gateway_event_tx).await);
+            }
+            Err(e) => return Err(e),
+        };
+
+        Self::connect_with_config(id, config, inbound_tx, gateway_event_tx).await
     }
 
     fn kind(&self) -> &str {
@@ -289,14 +319,22 @@ impl GatewayAdapter for DiscordAdapter {
             warn!("discord media sending not yet implemented, sending text only");
         }
 
+        let http = self
+            .http
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Discord gateway is not configured"))?;
         let channel_id = parse_channel_id(external_id)?;
-        channel_id.say(&self.http, content).await?;
+        channel_id.say(http, content).await?;
         Ok(())
     }
 
     async fn start_composing(&self, external_id: &str) -> anyhow::Result<()> {
+        let http = self
+            .http
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Discord gateway is not configured"))?;
         let channel_id = parse_channel_id(external_id)?;
-        channel_id.broadcast_typing(&self.http).await?;
+        channel_id.broadcast_typing(http).await?;
         Ok(())
     }
 
@@ -361,6 +399,42 @@ mod tests {
         let vars = BTreeMap::new();
 
         assert!(DiscordConfig::from_vars(&vars).is_err());
+    }
+
+    #[tokio::test]
+    async fn connect_without_bot_token_returns_setup_required_adapter() {
+        let (inbound_tx, _inbound_rx) = mpsc::channel(1);
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+
+        let adapter = DiscordAdapter::connect(
+            "discord-1".into(),
+            String::new(),
+            BTreeMap::new(),
+            inbound_tx,
+            event_tx,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            adapter.connection_state(),
+            GatewayConnectionState::SetupRequired
+        );
+        assert!(adapter.setup_instructions().is_some());
+        assert!(adapter.http.is_none());
+        assert!(adapter.send_message("123", "hello", None).await.is_err());
+
+        assert!(matches!(
+            event_rx.recv().await,
+            Some(GatewayRuntimeEvent::ConnectionStateChanged {
+                state: GatewayConnectionState::SetupRequired,
+                ..
+            })
+        ));
+        assert!(matches!(
+            event_rx.recv().await,
+            Some(GatewayRuntimeEvent::SetupInstructionsChanged { setup: Some(_), .. })
+        ));
     }
 
     #[test]

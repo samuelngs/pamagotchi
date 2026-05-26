@@ -4,8 +4,8 @@ mod media;
 mod message;
 
 pub use api::{
-    ClientRequest, GatewayConnectionState, GatewayKindView, GatewaySetupInstructions, GatewayView,
-    ServerEvent, SubscriptionTopic,
+    ClientRequest, GatewayConnectionState, GatewayKindView, GatewaySetupInstructions,
+    GatewayVarKind, GatewayVarSpec, GatewayView, ServerEvent, SubscriptionTopic,
 };
 pub use id::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
 pub use media::{MediaAttachment, MediaKind};

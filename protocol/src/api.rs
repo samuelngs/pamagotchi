@@ -42,6 +42,35 @@ pub struct GatewayView {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GatewayKindView {
     pub kind: String,
+
+    #[serde(default)]
+    pub vars: Vec<GatewayVarSpec>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GatewayVarSpec {
+    pub key: String,
+    pub label: String,
+    pub kind: GatewayVarKind,
+
+    #[serde(default)]
+    pub required: bool,
+
+    #[serde(default)]
+    pub secret: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<Value>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GatewayVarKind {
+    String,
+    Bool,
+    StringList,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +241,7 @@ mod tests {
             request_id: "req-3".into(),
             gateways: vec![GatewayKindView {
                 kind: "whatsapp".into(),
+                vars: vec![],
             }],
         };
 
@@ -220,5 +250,32 @@ mod tests {
         assert_eq!(json["type"], "AvailableGatewayList");
         assert_eq!(json["request_id"], "req-3");
         assert_eq!(json["gateways"][0]["kind"], "whatsapp");
+        assert_eq!(json["gateways"][0]["vars"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn serializes_gateway_kind_var_specs() {
+        let event = ServerEvent::AvailableGatewayList {
+            request_id: "req-4".into(),
+            gateways: vec![GatewayKindView {
+                kind: "discord".into(),
+                vars: vec![GatewayVarSpec {
+                    key: "bot_token".into(),
+                    label: "Bot token".into(),
+                    kind: GatewayVarKind::String,
+                    required: true,
+                    secret: true,
+                    default: None,
+                    help: Some("Discord bot token".into()),
+                }],
+            }],
+        };
+
+        let json = serde_json::to_value(event).unwrap();
+
+        assert_eq!(json["gateways"][0]["vars"][0]["key"], "bot_token");
+        assert_eq!(json["gateways"][0]["vars"][0]["kind"], "String");
+        assert_eq!(json["gateways"][0]["vars"][0]["required"], true);
+        assert_eq!(json["gateways"][0]["vars"][0]["secret"], true);
     }
 }
