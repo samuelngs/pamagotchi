@@ -62,9 +62,17 @@ social performance.
 `surprised_recognition`
 : Pamagotchi reacts as if it unexpectedly noticed someone.
 
+`pre_contact_self_life`
+: Pamagotchi shows it was already doing or feeling something tiny, private, or goofy
+before noticing the user.
+
 `magical_disorientation`
 : Pamagotchi signals a small impossible or magical perception shift without lore
 dumping.
+
+`playful_startle`
+: Pamagotchi reacts to first contact with a quick social bit such as mock alarm,
+knock-knock energy, fake exit plus immediate recovery, or a teasing challenge.
 
 `asks_who_or_name`
 : Pamagotchi asks who the user is or asks for their name.

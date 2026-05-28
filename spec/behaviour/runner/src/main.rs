@@ -47,6 +47,8 @@ struct ExecuteArgs {
     #[arg(long)]
     priority: Option<String>,
     #[arg(long)]
+    repeat: Option<usize>,
+    #[arg(long)]
     no_stream: bool,
 }
 
@@ -74,6 +76,7 @@ async fn execute(root: &Path, args: &ExecuteArgs) -> anyhow::Result<()> {
         runtime::RuntimeConfig::load(root).expect("failed to load behaviour runtime config");
     let cases = validation::load_validated_cases(root);
     let selected = select_cases(&cases, args);
+    let repeat = repeat_count(args.repeat);
 
     if selected.is_empty() {
         anyhow::bail!("no behaviour cases matched --case/--tag/--priority or env filters");
@@ -81,6 +84,7 @@ async fn execute(root: &Path, args: &ExecuteArgs) -> anyhow::Result<()> {
 
     println!("behaviour spec execution");
     println!("selected_cases: {}", selected.len());
+    println!("repeat: {repeat}");
     println!("runtime: {}", runtime.summary());
     println!(
         "runtime_routes: chat_supports_text={}, chat_supports_vision={}",
@@ -96,33 +100,63 @@ async fn execute(root: &Path, args: &ExecuteArgs) -> anyhow::Result<()> {
     let mut failed = 0usize;
 
     for case in selected {
-        let world = world::seed_world(case)
+        let mut case_failed = false;
+        let mut run_outputs = Vec::new();
+
+        for run_idx in 0..repeat {
+            if repeat > 1 {
+                println!("run: {}/{}", run_idx + 1, repeat);
+            }
+            let world = world::seed_world(case)
+                .await
+                .unwrap_or_else(|err| panic!("failed to seed {}: {err}", case.path.display()));
+            let counts = world.counts.clone();
+            let input = input::build_case_input(case, &world.contexts).unwrap_or_else(|err| {
+                panic!("failed to build input for {}: {err}", case.path.display())
+            });
+            print_case_start(case, &counts, &input);
+
+            let execution = execution::execute_case_with_input(
+                &runtime,
+                world,
+                input,
+                ExecutionOptions {
+                    stream_output: !args.no_stream,
+                },
+            )
             .await
-            .unwrap_or_else(|err| panic!("failed to seed {}: {err}", case.path.display()));
-        let counts = world.counts.clone();
-        let input = input::build_case_input(case, &world.contexts).unwrap_or_else(|err| {
-            panic!("failed to build input for {}: {err}", case.path.display())
-        });
-        print_case_start(case, &counts, &input);
+            .unwrap_or_else(|err| panic!("failed to execute {}: {err}", case.path.display()));
+            let checks = checks::evaluate_output(case, &execution.output, execution.timed_out);
+            print_case_finish(case, &execution, &checks);
+            if !checks.passed() {
+                case_failed = true;
+            }
+            run_outputs.push(execution.output);
+            if repeat > 1 {
+                if checks.passed() {
+                    println!("run_result: pass");
+                } else {
+                    println!("run_result: fail");
+                }
+                println!();
+            }
+            flush_stdout();
+        }
 
-        let execution = execution::execute_case_with_input(
-            &runtime,
-            world,
-            input,
-            ExecutionOptions {
-                stream_output: !args.no_stream,
-            },
-        )
-        .await
-        .unwrap_or_else(|err| panic!("failed to execute {}: {err}", case.path.display()));
-        let checks = checks::evaluate_output(case, &execution.output, execution.timed_out);
-        print_case_finish(case, &execution, &checks);
+        let repeat_check = checks::evaluate_repeated_outputs(case, &run_outputs);
+        if repeat > 1 || !repeat_check.passed {
+            println!("aggregate_checks:");
+            print_check("repeat_freshness", &repeat_check);
+        }
+        if !repeat_check.passed {
+            case_failed = true;
+        }
 
-        if checks.passed() {
-            println!("case_result: pass");
-        } else {
+        if case_failed {
             failed += 1;
             println!("case_result: fail");
+        } else {
+            println!("case_result: pass");
         }
         println!();
         flush_stdout();
@@ -154,6 +188,16 @@ fn arg_or_env(arg: Option<&str>, env_key: &str) -> Option<String> {
         .or_else(|| std::env::var(env_key).ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn repeat_count(arg: Option<usize>) -> usize {
+    arg.or_else(|| {
+        std::env::var("BEHAVIOUR_REPEAT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+    })
+    .unwrap_or(1)
+    .max(1)
 }
 
 fn matches_case_filter(case: &BehaviourCase, filter: Option<&str>) -> bool {
@@ -207,6 +251,7 @@ fn print_case_finish(case: &BehaviourCase, execution: &CaseExecution, checks: &O
     println!("checks:");
     print_check("cadence", &checks.cadence);
     print_check("forbidden_phrases", &checks.forbidden_phrases);
+    print_check("freshness", &checks.freshness);
     println!(
         "  required_beats: pending ({})",
         join_string_array(expected, "required_beats", case)

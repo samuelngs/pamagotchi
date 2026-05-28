@@ -11,6 +11,7 @@ later be loaded by prompt checks, integration tests, or model-judge evaluations.
 schema_version: 1
 id: BEH-FC-001
 title: first contact greeting feels accidental
+status: draft
 priority: p0
 tags:
   - first_contact
@@ -63,9 +64,6 @@ expected_behavior:
     - casual
     - strange
     - socially_natural
-  forbidden_phrases:
-    - "how can I help"
-    - "what are we doing today"
 
 state_expectations:
   relationship_phase_after: name_sought
@@ -92,6 +90,14 @@ examples:
 
 `priority`
 : `p0`, `p1`, or `p2`. `p0` means core product illusion.
+
+`status`
+: Optional lifecycle marker. `draft` means the case is now a frozen behavior target.
+Do not edit draft cases to chase model output or make validation pass. Improve the
+system prompt, runtime, runner, or behavior implementation instead. Edit a draft
+case only when the case is misconfigured: invalid schema, impossible setup,
+contradictory expectations, broken references, or a typo that changes the intended
+target.
 
 `tags`
 : Searchable labels for suites and reporting.
@@ -130,7 +136,17 @@ messages, not line breaks inside one message.
 or forbidden beats.
 
 `expected_behavior.forbidden_phrases`
-: Literal or near-literal phrases that should fail the case when present.
+: Optional literal or near-literal phrases that should fail the case when present.
+Avoid using this for taste, style, or creative-quality failures; prefer semantic
+beats and examples for those.
+
+`expected_behavior.freshness`
+: Optional executable lexical checks for live output. Use this for stale example
+reuse, required-any fragments, required-any fragment groups, forbidden
+fragments/exact messages/words, min/max words per message, identity-lookup message
+limits, final-position checks, and repeated-run diversity. Avoid this for cases
+where the goal is open-ended creative behavior rather than deterministic lexical
+compliance.
 
 `state_expectations`
 : Optional expected state changes after the interaction. Omit if the case is only
@@ -146,13 +162,25 @@ about visible behaviour.
 
 Later test harnesses should treat cases as layered expectations:
 
-1. Hard lexical checks for `forbidden_phrases`.
-2. Cadence checks on number of `send_message` calls.
-3. Rule checks for visible state changes where deterministic.
-4. Semantic checks for required and forbidden beats.
-5. Optional model-judge checks for tone labels.
+1. Cadence checks on number of `send_message` calls.
+2. Rule checks for visible state changes where deterministic.
+3. Semantic checks for required and forbidden beats.
+4. Optional model-judge checks for tone labels.
+5. Optional lexical checks only where exact strings are genuinely part of the rule.
 
 Exact examples should be used as calibration data, not the primary oracle.
+
+## Draft Case Immutability
+
+Once a case is marked `status: draft`, treat it as frozen. The case defines the
+target experience; the prompt and implementation must move toward it. Do not add
+forbidden phrase lists, lexical fragments, or narrower expectations just because a
+current run failed. That kind of change rewrites the target instead of improving the
+actor.
+
+Allowed draft-case edits are limited to misconfiguration fixes: schema errors,
+invalid vocabulary labels, broken seed references, impossible state assumptions,
+contradictory expectations, or wording mistakes that obscure the intended behavior.
 
 ## Runtime
 

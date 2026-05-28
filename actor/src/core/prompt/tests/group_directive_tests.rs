@@ -584,7 +584,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
     assert!(prompt.contains("Alice seemed worried about deployment risk."));
     assert!(!prompt.contains("Bob seemed worried about hiring risk."));
     assert!(!prompt.contains("## Conversation summary backlog"));
-    assert!(prompt.contains("A new message just arrived."));
+    assert!(prompt.contains("A new message came in."));
     assert!(!prompt.contains("Post-turn review."));
 
     let mind_kind = SessionKind::Mind;

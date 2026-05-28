@@ -76,6 +76,9 @@ fn validate_case_header(path: &Path, case: &Value, ids: &mut BTreeSet<String>) {
     );
 
     assert_nonempty_str(case, "title", path);
+    if let Some(status) = optional_str(case, "status") {
+        assert_in(status, &["draft"], "status", path);
+    }
     assert_in(
         required_str(case, "priority", path),
         &["p0", "p1", "p2"],
@@ -172,7 +175,8 @@ fn validate_expected_behavior(case: &Value, vocab: &Vocabulary, path: &Path) {
     validate_string_array_enum(expected, "forbidden_beats", &vocab.forbidden_beats, path);
     validate_cadence(expected, vocab, path);
     validate_string_array_enum(expected, "tone", &vocab.tone_labels, path);
-    assert_nonempty_string_array(expected, "forbidden_phrases", path);
+    validate_optional_string_array(expected, "forbidden_phrases", path);
+    validate_freshness(expected, path);
 }
 
 fn validate_cadence(expected: &Value, vocab: &Vocabulary, path: &Path) {
@@ -190,6 +194,92 @@ fn validate_cadence(expected: &Value, vocab: &Vocabulary, path: &Path) {
         "{} cadence min_messages must be <= max_messages",
         path.display()
     );
+}
+
+fn validate_freshness(expected: &Value, path: &Path) {
+    let Some(freshness) = expected.get("freshness") else {
+        return;
+    };
+    assert!(
+        freshness.is_object(),
+        "{} expected_behavior.freshness must be an object",
+        path.display()
+    );
+
+    validate_optional_u64(freshness, "max_acceptable_example_message_reuse", path);
+    validate_optional_u64(freshness, "max_identity_lookup_messages", path);
+    validate_optional_u64(freshness, "max_repeated_message_occurrences", path);
+    validate_optional_u64(freshness, "min_words_per_message", path);
+    validate_optional_u64(freshness, "max_words_per_message", path);
+    validate_optional_bool(freshness, "identity_lookup_must_be_final", path);
+    if let Some(min_distinct) = freshness
+        .get("min_distinct_sequences")
+        .map(|_| required_u64(freshness, "min_distinct_sequences", path))
+    {
+        assert!(
+            min_distinct > 1,
+            "{} freshness.min_distinct_sequences must be > 1",
+            path.display()
+        );
+    }
+    validate_optional_string_array(freshness, "required_any_message_fragments", path);
+    validate_optional_string_array_groups(freshness, "required_any_message_fragment_groups", path);
+    validate_optional_string_array(freshness, "forbidden_message_fragments", path);
+    validate_optional_string_array(freshness, "forbidden_exact_messages", path);
+    validate_optional_string_array(freshness, "forbidden_words", path);
+    validate_optional_string_array(freshness, "identity_lookup_markers", path);
+}
+
+fn validate_optional_u64(value: &Value, key: &str, path: &Path) {
+    if value.get(key).is_some() {
+        required_u64(value, key, path);
+    }
+}
+
+fn validate_optional_bool(value: &Value, key: &str, path: &Path) {
+    if let Some(actual) = value.get(key) {
+        assert!(
+            actual.is_boolean(),
+            "{} field {key} must be a boolean",
+            path.display()
+        );
+    }
+}
+
+fn validate_optional_string_array(value: &Value, key: &str, path: &Path) {
+    for item in optional_array(value, key, path) {
+        let Some(text) = item.as_str() else {
+            panic!("{} field {key} must contain strings", path.display());
+        };
+        assert!(
+            !text.trim().is_empty(),
+            "{} field {key} must not contain empty strings",
+            path.display()
+        );
+    }
+}
+
+fn validate_optional_string_array_groups(value: &Value, key: &str, path: &Path) {
+    for group in optional_array(value, key, path) {
+        let Some(items) = group.as_array() else {
+            panic!("{} field {key} must contain string arrays", path.display());
+        };
+        assert!(
+            !items.is_empty(),
+            "{} field {key} must not contain empty groups",
+            path.display()
+        );
+        for item in items {
+            let Some(text) = item.as_str() else {
+                panic!("{} field {key} groups must contain strings", path.display());
+            };
+            assert!(
+                !text.trim().is_empty(),
+                "{} field {key} groups must not contain empty strings",
+                path.display()
+            );
+        }
+    }
 }
 
 fn validate_state_expectations(case: &Value, vocab: &Vocabulary, path: &Path) {

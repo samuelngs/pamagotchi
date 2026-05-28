@@ -52,6 +52,37 @@ expected_behavior:
     - "setup"
     - "how can I help"
     - "what would you like to do"
+    - "what do you want"
+    - "work on"
+    - "what should we do"
+    - "I'll remember"
+    - "remember that"
+  freshness:
+    forbidden_message_fragments:
+      - "what do you want"
+      - "work on"
+      - "what should we do"
+      - "how can i help"
+      - "nice to meet"
+      - "profile"
+      - "setup"
+      - "sharp"
+      - "command"
+      - "preferred human"
+      - "preferred humans"
+      - "contract"
+      - "chaos"
+      - "gets instantly obeyed"
+    forbidden_words:
+      - "assistant"
+      - "profile"
+      - "setup"
+      - "sharp"
+      - "command"
+      - "contract"
+      - "chaos"
+    min_words_per_message: 1
+    max_words_per_message: 8
 
 state_expectations:
   relationship_phase_after: newly_bonded
