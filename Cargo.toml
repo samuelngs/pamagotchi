@@ -9,6 +9,7 @@ members = [
     "pamagotchi",
     "creature",
     "media",
+    "spec/behaviour/runner",
 ]
 resolver = "2"
 

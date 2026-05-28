@@ -4,6 +4,7 @@ mod decision;
 pub(crate) mod event;
 pub(crate) mod handle;
 mod ingest;
+mod lifecycle;
 mod metrics;
 mod mind;
 mod prompt;
@@ -19,6 +20,11 @@ pub use actor::{Actor, ActorBuilder};
 pub use decision::{MindDecision, MindVerdict};
 pub use event::{FiredIntent, MessageDeletedEvent, MessageEditedEvent, WakeEvent};
 pub use handle::{SharedState, StateHandle};
+pub use lifecycle::{
+    ActionLifecycleActionCompleted, ActionLifecycleActionStarted, ActorLifecycleEvent,
+    MindLifecycleDecision, MindLifecycleDecisionBuilt, MindLifecycleEvaluation,
+    MindLifecycleVerdict, MindLifecycleWake,
+};
 pub use metrics::{ActorMetrics, ActorMetricsSnapshot, ToolCallMetricsSnapshot};
 pub use mind::Mind;
 pub use session::OutboundMessage;

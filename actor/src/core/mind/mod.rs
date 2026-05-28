@@ -15,6 +15,7 @@ use super::decision::MindDecision;
 use super::event::{WakeEvent, claim_and_send_persisted_event};
 use super::handle::StateHandle;
 use super::ingest;
+use super::lifecycle::ActorLifecycleEvent;
 use super::metrics::ActorMetrics;
 use super::registry::ActionRegistry;
 use super::tools::{TYPING_ACTIVE_SECS, TypingState};
@@ -50,6 +51,7 @@ pub struct Mind {
     pub(super) max_action_attempts: usize,
     pub(super) escalate_after: usize,
     pub(super) metrics: Arc<ActorMetrics>,
+    pub(super) lifecycle_tx: Option<mpsc::UnboundedSender<ActorLifecycleEvent>>,
     pub(super) reviewed_actions: HashSet<ActionId>,
     pub(super) typing: TypingState,
     pub(super) last_activity_at: Option<Instant>,
@@ -69,6 +71,7 @@ impl Mind {
         max_action_attempts: usize,
         escalate_after: usize,
         metrics: Arc<ActorMetrics>,
+        lifecycle_tx: Option<mpsc::UnboundedSender<ActorLifecycleEvent>>,
     ) -> Self {
         Self {
             event_rx,
@@ -83,6 +86,7 @@ impl Mind {
             max_action_attempts,
             escalate_after,
             metrics,
+            lifecycle_tx,
             reviewed_actions: HashSet::new(),
             typing: Arc::new(RwLock::new(Default::default())),
             last_activity_at: None,
@@ -91,6 +95,7 @@ impl Mind {
 
     pub async fn run(mut self) {
         info!("mind started");
+        self.emit_lifecycle(ActorLifecycleEvent::MindStarted);
         loop {
             match self.event_rx.recv().await {
                 Some(WakeEvent::Shutdown) => {
@@ -184,6 +189,9 @@ impl Mind {
                         self.prune_stale_context(chrono::Utc::now().timestamp())
                             .await;
                         let decision = self.respond_to(&event, None).await;
+                        self.emit_lifecycle(ActorLifecycleEvent::mind_decision_built(
+                            &event, &decision,
+                        ));
                         self.execute_decision(decision).await;
                         self.registry.gc();
                         debug!(
@@ -228,7 +236,11 @@ impl Mind {
                         }
                     }
                     let verdict = self.evaluate(&event).await;
+                    self.emit_lifecycle(ActorLifecycleEvent::mind_evaluated(&event, &verdict));
                     let decision = self.build_decision(verdict, &event).await;
+                    self.emit_lifecycle(ActorLifecycleEvent::mind_decision_built(
+                        &event, &decision,
+                    ));
                     self.retire_dropped_fired_intent(&event, &decision).await;
                     self.execute_decision(decision).await;
                     self.registry.gc();
@@ -244,6 +256,7 @@ impl Mind {
                 }
             }
         }
+        self.emit_lifecycle(ActorLifecycleEvent::MindStopped);
         info!("mind stopped");
     }
 
@@ -287,6 +300,12 @@ impl Mind {
             self.registry.running_len() as u64,
             self.registry.retained_completed_len() as u64,
         );
+    }
+
+    pub(super) fn emit_lifecycle(&self, event: ActorLifecycleEvent) {
+        if let Some(tx) = &self.lifecycle_tx {
+            let _ = tx.send(event);
+        }
     }
 }
 

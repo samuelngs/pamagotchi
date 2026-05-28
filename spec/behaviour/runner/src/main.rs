@@ -1,0 +1,321 @@
+mod capture;
+mod checks;
+mod execution;
+mod input;
+mod json;
+mod runtime;
+mod seed;
+mod validation;
+mod vocabulary;
+mod world;
+
+use checks::OutputChecks;
+use clap::{Args, Parser, Subcommand};
+use execution::{CaseExecution, ExecutionOptions};
+use input::CaseInput;
+use json::{required_array, required_object, required_str};
+use serde_json::Value;
+use std::fs;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+
+pub struct BehaviourCase {
+    pub path: PathBuf,
+    pub value: Value,
+}
+
+#[derive(Parser)]
+#[command(name = "behaviour-runner")]
+#[command(about = "Validate and execute Pamagotchi behaviour specs")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    Validate,
+    Execute(ExecuteArgs),
+}
+
+#[derive(Args)]
+struct ExecuteArgs {
+    #[arg(long)]
+    case: Option<String>,
+    #[arg(long)]
+    tag: Option<String>,
+    #[arg(long)]
+    priority: Option<String>,
+    #[arg(long)]
+    no_stream: bool,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let root = repo_root();
+
+    match cli.command {
+        Command::Validate => validate(&root),
+        Command::Execute(args) => execute(&root, &args).await,
+    }
+}
+
+fn validate(root: &Path) -> anyhow::Result<()> {
+    let cases = validation::load_validated_cases(root);
+    println!("behaviour spec validation");
+    println!("cases: {}", cases.len());
+    println!("status: ok");
+    Ok(())
+}
+
+async fn execute(root: &Path, args: &ExecuteArgs) -> anyhow::Result<()> {
+    let runtime =
+        runtime::RuntimeConfig::load(root).expect("failed to load behaviour runtime config");
+    let cases = validation::load_validated_cases(root);
+    let selected = select_cases(&cases, args);
+
+    if selected.is_empty() {
+        anyhow::bail!("no behaviour cases matched --case/--tag/--priority or env filters");
+    }
+
+    println!("behaviour spec execution");
+    println!("selected_cases: {}", selected.len());
+    println!("runtime: {}", runtime.summary());
+    println!(
+        "runtime_routes: chat_supports_text={}, chat_supports_vision={}",
+        runtime.router.chat_supports(&[]),
+        runtime
+            .router
+            .chat_supports(&[inference::Capability::Vision])
+    );
+    println!("actor_execution: live");
+    println!();
+    flush_stdout();
+
+    let mut failed = 0usize;
+
+    for case in selected {
+        let world = world::seed_world(case)
+            .await
+            .unwrap_or_else(|err| panic!("failed to seed {}: {err}", case.path.display()));
+        let counts = world.counts.clone();
+        let input = input::build_case_input(case, &world.contexts).unwrap_or_else(|err| {
+            panic!("failed to build input for {}: {err}", case.path.display())
+        });
+        print_case_start(case, &counts, &input);
+
+        let execution = execution::execute_case_with_input(
+            &runtime,
+            world,
+            input,
+            ExecutionOptions {
+                stream_output: !args.no_stream,
+            },
+        )
+        .await
+        .unwrap_or_else(|err| panic!("failed to execute {}: {err}", case.path.display()));
+        let checks = checks::evaluate_output(case, &execution.output, execution.timed_out);
+        print_case_finish(case, &execution, &checks);
+
+        if checks.passed() {
+            println!("case_result: pass");
+        } else {
+            failed += 1;
+            println!("case_result: fail");
+        }
+        println!();
+        flush_stdout();
+    }
+
+    if failed > 0 {
+        anyhow::bail!("{failed} behaviour case(s) failed");
+    }
+    Ok(())
+}
+
+fn select_cases<'a>(cases: &'a [BehaviourCase], args: &ExecuteArgs) -> Vec<&'a BehaviourCase> {
+    let case_filter = arg_or_env(args.case.as_deref(), "BEHAVIOUR_CASE");
+    let tag_filter = arg_or_env(args.tag.as_deref(), "BEHAVIOUR_TAG");
+    let priority_filter = arg_or_env(args.priority.as_deref(), "BEHAVIOUR_PRIORITY");
+
+    cases
+        .iter()
+        .filter(|case| {
+            matches_case_filter(case, case_filter.as_deref())
+                && matches_tag_filter(case, tag_filter.as_deref())
+                && matches_priority_filter(case, priority_filter.as_deref())
+        })
+        .collect()
+}
+
+fn arg_or_env(arg: Option<&str>, env_key: &str) -> Option<String> {
+    arg.map(str::to_string)
+        .or_else(|| std::env::var(env_key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn matches_case_filter(case: &BehaviourCase, filter: Option<&str>) -> bool {
+    let Some(filter) = filter else {
+        return true;
+    };
+    required_str(&case.value, "id", &case.path) == filter
+}
+
+fn matches_tag_filter(case: &BehaviourCase, filter: Option<&str>) -> bool {
+    let Some(filter) = filter else {
+        return true;
+    };
+    required_array(&case.value, "tags", &case.path)
+        .iter()
+        .any(|tag| tag.as_str() == Some(filter))
+}
+
+fn matches_priority_filter(case: &BehaviourCase, filter: Option<&str>) -> bool {
+    let Some(filter) = filter else {
+        return true;
+    };
+    required_str(&case.value, "priority", &case.path) == filter
+}
+
+fn print_case_start(case: &BehaviourCase, counts: &world::SeedCounts, input: &CaseInput) {
+    let id = required_str(&case.value, "id", &case.path);
+    let title = required_str(&case.value, "title", &case.path);
+    let priority = required_str(&case.value, "priority", &case.path);
+
+    println!("{id} {title}");
+    println!("priority: {priority}");
+    print_tags(case);
+    print_scenario(case);
+    print_seed_counts(counts);
+    print_input(input);
+    println!();
+    println!("output:");
+    flush_stdout();
+}
+
+fn print_case_finish(case: &BehaviourCase, execution: &CaseExecution, checks: &OutputChecks) {
+    let expected = required_object(&case.value, "expected_behavior", &case.path);
+    if execution.output.is_empty() {
+        println!("  <none>");
+    }
+    if execution.timed_out {
+        println!("  status: timed out waiting for expected output");
+    }
+    println!();
+    println!("checks:");
+    print_check("cadence", &checks.cadence);
+    print_check("forbidden_phrases", &checks.forbidden_phrases);
+    println!(
+        "  required_beats: pending ({})",
+        join_string_array(expected, "required_beats", case)
+    );
+    println!(
+        "  forbidden_beats: pending ({})",
+        join_string_array(expected, "forbidden_beats", case)
+    );
+    if case.value.get("state_expectations").is_some() {
+        println!("  state: pending");
+    } else {
+        println!("  state: none");
+    }
+    flush_stdout();
+}
+
+fn print_seed_counts(counts: &world::SeedCounts) {
+    println!();
+    println!("seed:");
+    println!(
+        "  people: {}, profiles: {}, identities: {}, groups: {}, memories: {}, conversations: {}, conversation_messages: {}, pending_identity_claims: {}",
+        counts.people,
+        counts.profiles,
+        counts.identities,
+        counts.groups,
+        counts.memories,
+        counts.conversations,
+        counts.conversation_messages,
+        counts.pending_identity_claims,
+    );
+}
+
+fn print_tags(case: &BehaviourCase) {
+    println!("tags: {}", join_string_array(&case.value, "tags", case));
+}
+
+fn print_scenario(case: &BehaviourCase) {
+    let scenario = required_object(&case.value, "scenario", &case.path);
+    println!();
+    println!("scenario:");
+    println!("  who: {}", required_str(scenario, "who", &case.path));
+    println!("  when: {}", required_str(scenario, "when", &case.path));
+    println!(
+        "  what_happened: {}",
+        required_str(scenario, "what_happened", &case.path)
+    );
+}
+
+fn print_input(input: &CaseInput) {
+    println!();
+    println!("input:");
+    for message in &input.messages {
+        let profile = message
+            .profile
+            .as_ref()
+            .map(|profile| profile.0.as_str())
+            .unwrap_or("unseeded");
+        println!(
+            "  user({}/{}, profile={}): {}",
+            message.gateway_id, message.sender_external_id, profile, message.content
+        );
+    }
+}
+
+fn print_check(name: &str, outcome: &checks::CheckOutcome) {
+    let status = if outcome.passed { "pass" } else { "fail" };
+    println!("  {name}: {status} ({})", outcome.detail);
+}
+
+fn join_string_array(value: &Value, key: &str, case: &BehaviourCase) -> String {
+    required_array(value, key, &case.path)
+        .iter()
+        .map(|item| {
+            item.as_str().unwrap_or_else(|| {
+                panic!("{} field {key} must contain strings", case.path.display())
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+pub fn repo_root() -> PathBuf {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .ancestors()
+        .find(|path| path.join("spec/runtime.yaml").is_file())
+        .unwrap_or_else(|| panic!("failed to find repo root from {}", manifest_dir.display()))
+        .to_path_buf()
+}
+
+pub fn case_paths(dir: &Path) -> Vec<PathBuf> {
+    fs::read_dir(dir)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", dir.display()))
+        .map(|entry| {
+            entry
+                .expect("failed to read behaviour case dir entry")
+                .path()
+        })
+        .filter(|path| path.extension().is_some_and(|ext| ext == "yaml"))
+        .collect()
+}
+
+pub fn load_yaml(path: &Path) -> Value {
+    let raw = fs::read_to_string(path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    yaml_serde::from_str(&raw)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", path.display()))
+}
+
+fn flush_stdout() {
+    let _ = io::stdout().flush();
+}

@@ -1,3 +1,4 @@
+use super::super::lifecycle::ActorLifecycleEvent;
 use super::*;
 
 impl Mind {
@@ -64,6 +65,12 @@ impl Mind {
             self.metrics.record_action_completed(failed);
         }
         self.refresh_registry_metrics();
+
+        if let Some(action) = self.registry.get(action_id) {
+            if let Some(event) = ActorLifecycleEvent::action_completed(action) {
+                self.emit_lifecycle(event);
+            }
+        }
 
         if let Some(action) = self.registry.get(action_id) {
             if let crate::core::action::Phase::Done { outcome } = &action.phase {

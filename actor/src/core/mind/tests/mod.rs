@@ -111,6 +111,7 @@ fn test_mind_with_gateway_state_and_event_receiver(
             1,
             1,
             Arc::new(ActorMetrics::default()),
+            None,
         ),
         external_rx,
     )
@@ -148,6 +149,7 @@ fn test_mind_with_state_task(store: Arc<SqliteStore>) -> (Mind, tokio::task::Joi
             1,
             1,
             Arc::new(ActorMetrics::default()),
+            None,
         ),
         state_join,
     )
@@ -317,6 +319,7 @@ mod consolidation_tests;
 mod deferral_tests;
 mod event_recovery_tests;
 mod intent_completion_tests;
+mod lifecycle_tests;
 mod proactive_tests;
 mod profile_ingest_tests;
 mod review_trigger_tests;

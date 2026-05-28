@@ -1,6 +1,7 @@
 use super::super::action::ActionId;
 use super::super::decision::MindDecision;
 use super::super::event::{WakeEvent, claim_and_send_persisted_event};
+use super::super::lifecycle::ActorLifecycleEvent;
 use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
 use super::{Mind, mark_failed_injection_target};
@@ -201,6 +202,7 @@ impl Mind {
             Some(a) => a,
             None => return,
         };
+        self.emit_lifecycle(ActorLifecycleEvent::action_started(action));
 
         let kind = action.kind.clone();
         let task_desc = action.task.clone();

@@ -1,5 +1,6 @@
 use super::event::WakeEvent;
 use super::handle::{self, SharedState, StateHandle};
+use super::lifecycle::ActorLifecycleEvent;
 use super::metrics::{ActorMetrics, ActorMetricsSnapshot};
 use super::mind::Mind;
 use super::scheduler::spawn_scheduler;
@@ -36,6 +37,7 @@ pub struct ActorBuilder {
     escalate_after: usize,
     event_buffer: usize,
     event_channel: Option<(mpsc::Sender<WakeEvent>, mpsc::Receiver<WakeEvent>)>,
+    lifecycle_tx: Option<mpsc::UnboundedSender<ActorLifecycleEvent>>,
     metrics: Arc<ActorMetrics>,
 }
 
@@ -54,6 +56,7 @@ impl ActorBuilder {
             escalate_after: 1,
             event_buffer: 256,
             event_channel: None,
+            lifecycle_tx: None,
             metrics: Arc::new(ActorMetrics::default()),
         }
     }
@@ -105,6 +108,11 @@ impl ActorBuilder {
         rx: mpsc::Receiver<WakeEvent>,
     ) -> Self {
         self.event_channel = Some((tx, rx));
+        self
+    }
+
+    pub fn with_lifecycle_events(mut self, tx: mpsc::UnboundedSender<ActorLifecycleEvent>) -> Self {
+        self.lifecycle_tx = Some(tx);
         self
     }
 
@@ -164,6 +172,7 @@ impl ActorBuilder {
             self.max_action_attempts,
             self.escalate_after,
             self.metrics.clone(),
+            self.lifecycle_tx,
         );
 
         let state_join = tokio::spawn(async move {
