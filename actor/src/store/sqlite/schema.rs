@@ -233,7 +233,7 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             last_fired_at INTEGER,
-            owner_approved INTEGER NOT NULL DEFAULT 0
+            chosen_person_approved INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_intents_due ON intents(status, fire_at, priority);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_intents_dedupe

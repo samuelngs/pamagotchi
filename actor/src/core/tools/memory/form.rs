@@ -978,7 +978,7 @@ mod tests {
 
         let result = form(
             &json!({
-                "content": "Alice prefers concise release notes with owners.",
+                "content": "Alice prefers concise release notes with chosen_people.",
                 "kind": "semantic",
                 "memory_type": "preference",
                 "truth_status": "confirmed",
@@ -996,7 +996,7 @@ mod tests {
         assert!(
             memory
                 .content
-                .contains("Alice prefers concise release notes with owners.")
+                .contains("Alice prefers concise release notes with chosen_people.")
         );
         assert_eq!(memory.truth_status, TruthStatus::Confirmed);
 
@@ -1070,7 +1070,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(memory.privacy_category, PrivacyCategory::Secret);
-        assert_eq!(memory.visibility_scope, VisibilityScope::OwnerOnly);
+        assert_eq!(memory.visibility_scope, VisibilityScope::ChosenPersonOnly);
         assert!(memory.next_review_at.is_some());
     }
 
@@ -1111,7 +1111,7 @@ mod tests {
             identity: Some(injected_identity.clone()),
             profile: Some(injected_profile.clone()),
             person: None,
-            content: "For release notes, include the owner and rollback path.".into(),
+            content: "For release notes, include the chosen person and rollback path.".into(),
             attachments: vec![],
             timestamp: 1001,
             metadata: serde_json::Value::Null,
@@ -1192,12 +1192,12 @@ mod tests {
 
         let result = form(
             &json!({
-                "content": "The injected profile wants release notes to include owners and rollback paths.",
+                "content": "The injected profile wants release notes to include chosen_people and rollback paths.",
                 "kind": "semantic",
                 "memory_type": "preference",
                 "truth_status": "stated",
                 "evidence_message_ids": ["msg-injected"],
-                "dedupe_key": "preference:profile-injected:release-note-owner-rollback"
+                "dedupe_key": "preference:profile-injected:release-note-chosen_person-rollback"
             }),
             &ctx,
             &mut state,
@@ -1327,7 +1327,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn form_memory_can_store_owner_approved_actor_self_memory() {
+    async fn form_memory_can_store_chosen_person_approved_actor_self_memory() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let store_dyn: Arc<dyn Store> = store.clone();
         let (_inject_tx, inject_rx) = mpsc::channel(1);
@@ -1351,7 +1351,7 @@ mod tests {
             kind: SessionKind::Action(ActionKind::Respond),
             messages: vec![],
             conversation: None,
-            authority: Authority::Owner,
+            authority: Authority::ChosenPerson,
             style_directive: None,
             cancelled_note: None,
             concurrent_summaries: vec![],

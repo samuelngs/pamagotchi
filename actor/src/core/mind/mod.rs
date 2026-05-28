@@ -1410,7 +1410,7 @@ mod tests {
             "sam-local",
             "relay:sam-local",
             None,
-            "relay-owner-msg-1",
+            "relay-chosen_person-msg-1",
         );
 
         ingest::resolve_person(&mind.state, &mind.store, &mut msg).await;
@@ -1421,7 +1421,7 @@ mod tests {
             .expect("relay contact resolves to a person");
         {
             let actor = mind.state.read_state();
-            assert_eq!(actor.bonds[&person].authority, Authority::Owner);
+            assert_eq!(actor.bonds[&person].authority, Authority::ChosenPerson);
         }
         let records = store.state_journal_after(None, 10).await.unwrap();
         let relationship_record = records
@@ -1434,7 +1434,7 @@ mod tests {
         );
         assert_eq!(
             relationship_record.payload["authority"].as_str(),
-            Some("owner")
+            Some("chosen_person")
         );
 
         drop(mind);
@@ -1909,7 +1909,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -1932,7 +1932,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2012,7 +2012,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2035,7 +2035,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2101,7 +2101,7 @@ mod tests {
                 created_at: now - 120,
                 updated_at: now - 60,
                 last_fired_at: Some(now - 60),
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2156,7 +2156,7 @@ mod tests {
                 created_at: now - 120,
                 updated_at: now - 60,
                 last_fired_at: Some(now - 60),
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2221,16 +2221,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn defer_verdict_reemits_intent_with_owner_approval_and_bounded_count() {
+    async fn defer_verdict_reemits_intent_with_chosen_person_approval_and_bounded_count() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let mind = test_mind(store);
         let intent = FiredIntent {
-            id: "intent-owner-approved".into(),
+            id: "intent-chosen-person-approved".into(),
             task: "Follow up after the deploy".into(),
             conversation: Some(ConversationId("relay:local".into())),
             person: Some(PersonId("person-sam".into())),
             scheduled_at: None,
-            owner_approved: true,
+            chosen_person_approved: true,
             defer_count: 1,
         };
 
@@ -2244,8 +2244,8 @@ mod tests {
         match decision {
             MindDecision::DeferIntent(deferred, delay_secs) => {
                 assert_eq!(delay_secs, 300);
-                assert_eq!(deferred.id, "intent-owner-approved");
-                assert!(deferred.owner_approved);
+                assert_eq!(deferred.id, "intent-chosen-person-approved");
+                assert!(deferred.chosen_person_approved);
                 assert_eq!(deferred.defer_count, 2);
             }
             _ => panic!("expected deferred intent"),
@@ -2919,7 +2919,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -2996,7 +2996,7 @@ mod tests {
                     conversation: Some(conversation),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3054,7 +3054,7 @@ mod tests {
                 created_at: now - 240,
                 updated_at: now - 240,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -3092,7 +3092,7 @@ mod tests {
             conversation: Some(conversation),
             person: Some(person),
             scheduled_at: Some(now - 240),
-            owner_approved: false,
+            chosen_person_approved: false,
             defer_count: 0,
         });
         let decision = mind
@@ -3163,7 +3163,7 @@ mod tests {
                 created_at: now - 600,
                 updated_at: now - 30,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -3185,7 +3185,7 @@ mod tests {
                     conversation: Some(conversation),
                     person: Some(person),
                     scheduled_at: Some(now - 30),
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3226,7 +3226,7 @@ mod tests {
                     conversation: None,
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3293,7 +3293,7 @@ mod tests {
                     conversation: None,
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3341,7 +3341,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3373,7 +3373,7 @@ mod tests {
                 created_at: 900,
                 updated_at: 900,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -3391,7 +3391,7 @@ mod tests {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(PersonId("person-sam".into())),
                 scheduled_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
                 defer_count: 0,
             }),
             &MindDecision::Drop,
@@ -3425,7 +3425,7 @@ mod tests {
                 created_at: 900,
                 updated_at: 900,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -3443,7 +3443,7 @@ mod tests {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(PersonId("person-sam".into())),
                 scheduled_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
                 defer_count: 0,
             }),
             &MindDecision::Drop,
@@ -3486,7 +3486,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3536,7 +3536,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3582,7 +3582,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3621,7 +3621,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3646,7 +3646,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:unknown".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3685,7 +3685,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3740,7 +3740,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3771,7 +3771,7 @@ mod tests {
                     conversation: None,
                     person: None,
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3836,7 +3836,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3846,7 +3846,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn blocked_intent_without_owner_approval_drops() {
+    async fn blocked_intent_without_chosen_person_approval_drops() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let mind = test_mind(store);
         let person = PersonId("blocked-person".into());
@@ -3868,7 +3868,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: false,
+                    chosen_person_approved: false,
                     defer_count: 0,
                 }),
             )
@@ -3878,7 +3878,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_approved_restricted_intent_can_spawn_outreach() {
+    async fn chosen_person_approved_restricted_intent_can_spawn_outreach() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let mind = test_mind(store.clone());
         let person = PersonId("restricted-person".into());
@@ -3912,7 +3912,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: true,
+                    chosen_person_approved: true,
                     defer_count: 0,
                 }),
             )
@@ -3923,12 +3923,12 @@ mod tests {
                 assert!(matches!(action.kind, ActionKind::Outreach));
                 assert_eq!(action.authority, Authority::Restricted);
             }
-            _ => panic!("expected owner-approved restricted outreach to spawn"),
+            _ => panic!("expected chosen-person-approved restricted outreach to spawn"),
         }
     }
 
     #[tokio::test]
-    async fn owner_approved_blocked_intent_can_spawn_outreach() {
+    async fn chosen_person_approved_blocked_intent_can_spawn_outreach() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let mind = test_mind(store.clone());
         let person = PersonId("blocked-person".into());
@@ -3962,7 +3962,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: true,
+                    chosen_person_approved: true,
                     defer_count: 0,
                 }),
             )
@@ -3973,12 +3973,12 @@ mod tests {
                 assert!(matches!(action.kind, ActionKind::Outreach));
                 assert_eq!(action.authority, Authority::Blocked);
             }
-            _ => panic!("expected owner-approved blocked outreach to spawn"),
+            _ => panic!("expected chosen-person-approved blocked outreach to spawn"),
         }
     }
 
     #[tokio::test]
-    async fn owner_approved_intent_still_respects_denied_proactive_consent() {
+    async fn chosen_person_approved_intent_still_respects_denied_proactive_consent() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let mind = test_mind(store.clone());
         let person = PersonId("person-sam".into());
@@ -4007,7 +4007,7 @@ mod tests {
                     conversation: Some(ConversationId("relay:local".into())),
                     person: Some(person),
                     scheduled_at: None,
-                    owner_approved: true,
+                    chosen_person_approved: true,
                     defer_count: 0,
                 }),
             )

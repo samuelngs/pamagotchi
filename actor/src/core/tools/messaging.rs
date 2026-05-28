@@ -345,7 +345,7 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
         }
         Err(e) => {
             let error = e.to_string();
-            let supervisor_notified = notify_owner_of_delivery_failure(
+            let supervisor_notified = notify_chosen_person_of_delivery_failure(
                 ctx,
                 &target_gateway,
                 &target_id,
@@ -363,7 +363,7 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
             );
             if supervisor_notified {
                 format!(
-                    "Delivery failed; message was not added to visible conversation history and is not marked delivered. Owner review is queued: {error}"
+                    "Delivery failed; message was not added to visible conversation history and is not marked delivered. Chosen-person review is queued: {error}"
                 )
             } else {
                 format!(
@@ -564,7 +564,7 @@ fn read_evidence_message(
 }
 
 fn can_read_recent_without_current_conversation(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::Owner)
+    matches!(ctx.authority, Authority::ChosenPerson)
         || matches!(
             ctx.kind,
             SessionKind::Action(
@@ -713,7 +713,7 @@ fn outbound_metadata(attachments: &[MediaAttachment]) -> Value {
     }
 }
 
-async fn notify_owner_of_delivery_failure(
+async fn notify_chosen_person_of_delivery_failure(
     ctx: &SessionContext,
     target_gateway: &str,
     target_id: &str,
@@ -722,7 +722,7 @@ async fn notify_owner_of_delivery_failure(
     error: &str,
     now: i64,
 ) -> bool {
-    let Some(owner) = owner_person(ctx) else {
+    let Some(chosen_person) = chosen_person(ctx) else {
         return false;
     };
     let conversation_label = conversation
@@ -737,7 +737,7 @@ async fn notify_owner_of_delivery_failure(
             ctx.action_id.0,
             content.chars().count()
         ),
-        person: Some(owner),
+        person: Some(chosen_person),
         profile: None,
         conversation: None,
         fire_at: Some(now),
@@ -753,7 +753,7 @@ async fn notify_owner_of_delivery_failure(
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        owner_approved: true,
+        chosen_person_approved: true,
     };
     match ctx.store.create_intent(&intent).await {
         Ok(()) => true,
@@ -761,19 +761,19 @@ async fn notify_owner_of_delivery_failure(
             warn!(
                 action = %ctx.action_id,
                 %e,
-                "failed to create owner review intent for delivery failure"
+                "failed to create chosen-person review intent for delivery failure"
             );
             false
         }
     }
 }
 
-fn owner_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
     let actor = ctx.state.read_state();
     actor
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::Owner))
+        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenPerson))
         .map(|(person, _)| person.clone())
 }
 
@@ -1051,17 +1051,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_delivery_schedules_deduped_owner_review_intent() {
+    async fn failed_delivery_schedules_deduped_chosen_person_review_intent() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let gateway = Arc::new(GatewayRouter::new());
-        let owner = PersonId("person-owner".into());
+        let chosen_person = PersonId("person-chosen_person".into());
         let (ctx, _inject_tx) = test_context(store.clone(), gateway, inbound());
         ctx.state
             .shared
             .actor
             .write()
             .unwrap()
-            .set_relationship_config(&owner, Some(Authority::Owner));
+            .set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
         let mut state = SessionState {
             responded: false,
             attempted_send: false,
@@ -1084,13 +1084,13 @@ mod tests {
         let result = send(&json!({"content": "hi"}), &ctx, &mut state).await;
         let result_again = send(&json!({"content": "hi again"}), &ctx, &mut state).await;
 
-        assert!(result.contains("Owner review is queued"));
-        assert!(result_again.contains("Owner review is queued"));
+        assert!(result.contains("Chosen-person review is queued"));
+        assert!(result_again.contains("Chosen-person review is queued"));
         let intents = store.due_intents(i64::MAX, 10).await.unwrap();
         assert_eq!(intents.len(), 1);
         let intent = &intents[0];
-        assert_eq!(intent.person.as_ref(), Some(&owner));
-        assert!(intent.owner_approved);
+        assert_eq!(intent.person.as_ref(), Some(&chosen_person));
+        assert!(intent.chosen_person_approved);
         assert_eq!(intent.priority, 100);
         assert_eq!(intent.source_action.as_deref(), Some("action-test"));
         assert_eq!(

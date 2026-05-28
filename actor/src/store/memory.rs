@@ -169,7 +169,7 @@ impl PrivacyCategory {
 pub enum VisibilityScope {
     Profile,
     Person,
-    OwnerOnly,
+    ChosenPersonOnly,
     Global,
 }
 
@@ -178,7 +178,7 @@ impl VisibilityScope {
         match self {
             Self::Profile => "profile",
             Self::Person => "person",
-            Self::OwnerOnly => "owner_only",
+            Self::ChosenPersonOnly => "chosen_person_only",
             Self::Global => "global",
         }
     }
@@ -187,7 +187,7 @@ impl VisibilityScope {
         match s {
             "profile" => Some(Self::Profile),
             "person" => Some(Self::Person),
-            "owner_only" => Some(Self::OwnerOnly),
+            "chosen_person_only" => Some(Self::ChosenPersonOnly),
             "global" => Some(Self::Global),
             _ => None,
         }
@@ -285,9 +285,9 @@ pub fn memory_privacy_policy_for_subject(
     let derived = derived_privacy_category(sensitivity, sensitivity_category, actor_subject);
     let privacy = explicit_privacy.unwrap_or_default().max(derived);
     let visibility = match privacy {
-        PrivacyCategory::Secret => VisibilityScope::OwnerOnly,
+        PrivacyCategory::Secret => VisibilityScope::ChosenPersonOnly,
         PrivacyCategory::Sensitive => match explicit_visibility {
-            Some(VisibilityScope::OwnerOnly) => VisibilityScope::OwnerOnly,
+            Some(VisibilityScope::ChosenPersonOnly) => VisibilityScope::ChosenPersonOnly,
             Some(scope) => scope,
             None => VisibilityScope::Profile,
         },

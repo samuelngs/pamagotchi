@@ -33,7 +33,7 @@ fn init_schema_records_ordered_migrations() {
             (13, "display_name_observations".into()),
             (14, "review_outputs".into()),
             (15, "action_prompt_snapshots".into()),
-            (16, "intent_owner_approval".into()),
+            (16, "intent_chosen_person_approval".into()),
             (17, "event_inbox_failure_error".into()),
             (18, "action_run_outcome_memory_artifacts".into()),
             (19, "social_graph_direction".into()),
@@ -251,7 +251,7 @@ fn init_schema_migrates_action_run_outcome_memory_columns() {
 }
 
 #[test]
-fn init_schema_migrates_intent_owner_approval_column() {
+fn init_schema_migrates_intent_chosen_person_approval_column() {
     let conn = schema_test_conn();
     conn.execute_batch(
         "CREATE TABLE intents (
@@ -284,13 +284,13 @@ fn init_schema_migrates_intent_owner_approval_column() {
     schema::init_schema(&conn, 4).unwrap();
 
     let columns = table_columns(&conn, "intents");
-    assert!(columns.contains(&"owner_approved".to_string()));
-    let owner_approved: i64 = conn
+    assert!(columns.contains(&"chosen_person_approved".to_string()));
+    let chosen_person_approved: i64 = conn
         .query_row(
-            "SELECT owner_approved FROM intents WHERE id = 'intent-old'",
+            "SELECT chosen_person_approved FROM intents WHERE id = 'intent-old'",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(owner_approved, 0);
+    assert_eq!(chosen_person_approved, 0);
 }

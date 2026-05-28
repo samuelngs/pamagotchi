@@ -26,6 +26,9 @@ pub struct PersonContext {
     pub summary: Option<String>,
     pub comm_style: Option<String>,
     pub authority: String,
+    pub bond_role: String,
+    pub bond_state: String,
+    pub last_interaction_quality: String,
     pub trust: i32,
     pub familiarity: i32,
     pub closeness: i32,
@@ -40,6 +43,7 @@ pub struct PersonContext {
 
 #[derive(Serialize)]
 pub struct ActionPromptContext {
+    pub actor_name: String,
     pub now: String,
     pub age: String,
     pub action_task: Option<String>,
@@ -161,6 +165,10 @@ pub struct RelationshipCtx {
     pub ref_id: String,
     pub name: Option<String>,
     pub summary: Option<String>,
+    pub bond_role: String,
+    pub bond_state: String,
+    pub first_contact: bool,
+    pub last_interaction_quality: String,
     pub trust: i32,
     pub familiarity: i32,
     pub closeness: i32,

@@ -1246,12 +1246,12 @@ async fn apply_social_relations(
             .as_str()
             .map(RelationSource::parse)
             .unwrap_or(RelationSource::Stated);
-        if matches!(source_kind, RelationSource::OwnerConfirmed)
-            && !matches!(ctx.authority, crate::state::Authority::Owner)
+        if matches!(source_kind, RelationSource::ChosenPersonConfirmed)
+            && !matches!(ctx.authority, crate::state::Authority::ChosenPerson)
         {
-            counts
-                .skipped
-                .push(format!("social_relation {idx} owner confirmation denied"));
+            counts.skipped.push(format!(
+                "social_relation {idx} chosen-person confirmation denied"
+            ));
             continue;
         }
         match permission::social_relation_targets_current_or_verified(item, ctx).await {
@@ -1437,7 +1437,7 @@ async fn directive_scope(item: &Value, ctx: &SessionContext) -> Option<Directive
 }
 
 async fn directive_scope_allowed(scope: &DirectiveScope, ctx: &SessionContext) -> bool {
-    if matches!(ctx.authority, Authority::Owner) {
+    if matches!(ctx.authority, Authority::ChosenPerson) {
         return true;
     }
 
@@ -1449,7 +1449,7 @@ async fn directive_scope_allowed(scope: &DirectiveScope, ctx: &SessionContext) -
 }
 
 fn directive_set_by(item: &Value, ctx: &SessionContext) -> Option<PersonId> {
-    if matches!(ctx.authority, Authority::Owner) {
+    if matches!(ctx.authority, Authority::ChosenPerson) {
         return item["set_by_person_id"]
             .as_str()
             .filter(|id| !id.trim().is_empty())
@@ -1529,10 +1529,10 @@ async fn apply_open_loops(
                 .push(format!("open_loop {idx} missing condition"));
             continue;
         }
-        if permission::intent_requires_owner_approval(item)
-            && !matches!(ctx.authority, crate::state::Authority::Owner)
+        if permission::intent_requires_chosen_person_approval(item)
+            && !matches!(ctx.authority, crate::state::Authority::ChosenPerson)
         {
-            match create_owner_proactive_approval_intent(
+            match create_chosen_person_proactive_approval_intent(
                 item,
                 ctx,
                 idx,
@@ -1545,12 +1545,12 @@ async fn apply_open_loops(
             {
                 Some(_) => counts.open_loops += 1,
                 None => counts.skipped.push(format!(
-                    "open_loop {idx} requires owner approval for sensitive proactive outreach"
+                    "open_loop {idx} requires chosen-person approval for sensitive proactive outreach"
                 )),
             }
             continue;
         }
-        if !matches!(ctx.authority, crate::state::Authority::Owner) {
+        if !matches!(ctx.authority, crate::state::Authority::ChosenPerson) {
             match permission::intent_targets_current_or_verified_with_keys(
                 item,
                 ctx,
@@ -1638,7 +1638,7 @@ async fn apply_open_loops(
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            owner_approved: matches!(ctx.authority, crate::state::Authority::Owner),
+            chosen_person_approved: matches!(ctx.authority, crate::state::Authority::ChosenPerson),
         };
         match ctx.store.create_intent(&intent).await {
             Ok(()) => counts.open_loops += 1,
@@ -1684,7 +1684,7 @@ fn normalize_open_loop_kind(
     }
 }
 
-async fn create_owner_proactive_approval_intent(
+async fn create_chosen_person_proactive_approval_intent(
     item: &Value,
     ctx: &SessionContext,
     idx: usize,
@@ -1693,7 +1693,7 @@ async fn create_owner_proactive_approval_intent(
     fire_at: Option<i64>,
     condition: Option<&str>,
 ) -> Option<String> {
-    let owner = owner_person(ctx)?;
+    let chosen_person = chosen_person(ctx)?;
     let now = util::now();
     let original_dedupe_key = item["dedupe_key"]
         .as_str()
@@ -1748,7 +1748,7 @@ async fn create_owner_proactive_approval_intent(
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        owner_approved: false,
+        chosen_person_approved: false,
     };
     if let Err(e) = ctx.store.create_intent(&pending_intent).await {
         tracing::warn!(
@@ -1758,15 +1758,15 @@ async fn create_owner_proactive_approval_intent(
         );
         return None;
     }
-    let target = owner_approval_target_description(item, ctx, fire_at, condition);
+    let target = chosen_person_approval_target_description(item, ctx, fire_at, condition);
     let intent = IntentRecord {
         id: format!("intent-{}", util::uuid_v4()),
         kind: "scheduled".into(),
         status: "active".into(),
         task: format!(
-            "Review sensitive proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {task}. {target} If the owner approves, update intent {pending_id} with status active. If the owner declines, delete intent {pending_id}."
+            "Review sensitive proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {task}. {target} If the chosen person approves, update intent {pending_id} with status active. If the chosen person declines, delete intent {pending_id}."
         ),
-        person: Some(owner),
+        person: Some(chosen_person),
         profile: None,
         conversation: None,
         fire_at: Some(now),
@@ -1774,14 +1774,14 @@ async fn create_owner_proactive_approval_intent(
         recurrence: None,
         priority: 100,
         dedupe_key: Some(format!(
-            "owner-approval:sensitive-open-loop:{original_dedupe_key}"
+            "chosen-person-approval:sensitive-open-loop:{original_dedupe_key}"
         )),
         source_action: Some(ctx.action_id.0.clone()),
         source_memory: source_memory_id(item),
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        owner_approved: true,
+        chosen_person_approved: true,
     };
     let id = intent.id.clone();
     match ctx.store.create_intent(&intent).await {
@@ -1790,23 +1790,28 @@ async fn create_owner_proactive_approval_intent(
             tracing::warn!(
                 action = %ctx.action_id,
                 %e,
-                "failed to create owner approval intent for sensitive open loop"
+                "failed to create chosen-person approval intent for sensitive open loop"
             );
             None
         }
     }
 }
 
-fn owner_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
     let actor = ctx.state.read_state();
     actor
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, crate::state::Authority::Owner))
+        .find(|(_, relationship)| {
+            matches!(
+                relationship.authority,
+                crate::state::Authority::ChosenPerson
+            )
+        })
         .map(|(person, _)| person.clone())
 }
 
-fn owner_approval_target_description(
+fn chosen_person_approval_target_description(
     item: &Value,
     ctx: &SessionContext,
     fire_at: Option<i64>,
@@ -1929,7 +1934,7 @@ fn profile_update_target_allowed(
     item: &Value,
     profile: &ProfileId,
 ) -> bool {
-    matches!(ctx.authority, crate::state::Authority::Owner)
+    matches!(ctx.authority, crate::state::Authority::ChosenPerson)
         || evidence_message_matches_target(item, ctx, state, |message| {
             message.profile.as_ref() == Some(profile)
         })
@@ -1941,7 +1946,7 @@ fn person_update_target_allowed(
     item: &Value,
     person: &PersonId,
 ) -> bool {
-    matches!(ctx.authority, crate::state::Authority::Owner)
+    matches!(ctx.authority, crate::state::Authority::ChosenPerson)
         || evidence_message_matches_target(item, ctx, state, |message| {
             message.person.as_ref() == Some(person)
         })
@@ -2021,7 +2026,7 @@ fn memory_profile_identity_subjects_allowed(
     item: &Value,
     subjects: &[MemorySubject],
 ) -> bool {
-    if matches!(ctx.authority, Authority::Owner) || !item_has_key(item, "subjects") {
+    if matches!(ctx.authority, Authority::ChosenPerson) || !item_has_key(item, "subjects") {
         return true;
     }
 
@@ -2107,7 +2112,7 @@ async fn relationship_delta_target_allowed(
     proactive_consent: Option<&ProactiveConsent>,
     has_preference_update: bool,
 ) -> bool {
-    if matches!(ctx.authority, crate::state::Authority::Owner) {
+    if matches!(ctx.authority, crate::state::Authority::ChosenPerson) {
         return true;
     }
     if person_memory_subject_allowed(ctx, state, person).await {
@@ -2225,7 +2230,7 @@ fn relation_asserted_by_person(
     }
     if !matches!(
         source_kind,
-        RelationSource::Stated | RelationSource::OwnerConfirmed
+        RelationSource::Stated | RelationSource::ChosenPersonConfirmed
     ) {
         return None;
     }
@@ -3019,7 +3024,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_owner_review_cannot_create_directives_outside_current_scope() {
+    async fn non_chosen_person_review_cannot_create_directives_outside_current_scope() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let profile = ProfileId("profile-group".into());
         let person = PersonId("person-group".into());
@@ -3092,7 +3097,7 @@ mod tests {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let profile = ProfileId("profile-sam".into());
         let person = PersonId("person-sam".into());
-        let owner = PersonId("person-owner".into());
+        let chosen_person = PersonId("person-chosen_person".into());
         let conversation = ConversationId("relay:local".into());
         let now = util::now();
         store
@@ -3127,7 +3132,10 @@ mod tests {
             test_context(store.clone(), &profile, &person, &conversation);
         {
             let mut actor = ctx.state.shared.actor.write().unwrap();
-            actor.set_relationship_config(&owner, Some(crate::state::Authority::Owner));
+            actor.set_relationship_config(
+                &chosen_person,
+                Some(crate::state::Authority::ChosenPerson),
+            );
         }
 
         let result = apply(
@@ -3137,7 +3145,7 @@ mod tests {
                     "trust_delta": 0.5,
                     "familiarity_delta": 0.2,
                     "valence_delta": 0.1,
-                    "reason": "friendly but not owner-connected"
+                    "reason": "friendly but not chosen-person-connected"
                 }]
             }),
             &ctx,
@@ -3290,7 +3298,7 @@ mod tests {
         second.message_id = "msg-2".into();
         second.sender_external_id = "alice".into();
         second.reply_external_id = "alice".into();
-        second.content = "Alice prefers release notes with owners.".into();
+        second.content = "Alice prefers release notes with chosen_people.".into();
         ctx.messages.push(second);
 
         let result = apply(
@@ -3300,13 +3308,13 @@ mod tests {
                     "kind": "semantic",
                     "memory_type": "preference",
                     "truth_status": "stated",
-                    "content": "Alice prefers release notes with owners.",
+                    "content": "Alice prefers release notes with chosen_people.",
                     "evidence_message_ids": ["msg-2"],
                     "source_spans": [{
                         "message_id": "msg-2",
                         "start_char": 0,
                         "end_char": 47,
-                        "quote": "Alice prefers release notes with owners."
+                        "quote": "Alice prefers release notes with chosen_people."
                     }]
                 }],
                 "social_relations": [{
@@ -3318,7 +3326,7 @@ mod tests {
                     "status": "stated",
                     "source_kind": "stated",
                     "evidence_message_ids": ["msg-2"],
-                    "evidence_quote": "Alice prefers release notes with owners.",
+                    "evidence_quote": "Alice prefers release notes with chosen_people.",
                     "evidence": {"reason": "Alice stated the preference"}
                 }]
             }),
@@ -3341,7 +3349,7 @@ mod tests {
         assert_eq!(memory.evidence["source_spans"][0]["message_id"], "msg-2");
         assert_eq!(
             memory.evidence["source_spans"][0]["quote"],
-            "Alice prefers release notes with owners."
+            "Alice prefers release notes with chosen_people."
         );
         assert_eq!(memory.embedding_model.as_deref(), Some("embed-review"));
         assert_eq!(memory.embedding.as_deref(), Some(&[0.1, 0.2, 0.3, 0.4][..]));
@@ -3371,7 +3379,7 @@ mod tests {
         assert_eq!(relations[0].asserted_by.as_ref(), Some(&other_person));
         assert_eq!(
             evidence["quote"],
-            "Alice prefers release notes with owners."
+            "Alice prefers release notes with chosen_people."
         );
         assert_eq!(
             evidence["evidence"]["reason"],
@@ -4269,11 +4277,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_review_routes_sensitive_open_loop_to_owner_approval_intent() {
+    async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_intent() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let profile = ProfileId("profile-sam".into());
         let person = PersonId("person-sam".into());
-        let owner = PersonId("person-owner".into());
+        let chosen_person = PersonId("person-chosen_person".into());
         let conversation = ConversationId("relay:local".into());
         let (ctx, mut state) = test_context(store.clone(), &profile, &person, &conversation);
         ctx.state
@@ -4281,7 +4289,7 @@ mod tests {
             .actor
             .write()
             .unwrap()
-            .set_relationship_config(&owner, Some(Authority::Owner));
+            .set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
 
         let review_args = json!({
             "open_loops": [{
@@ -4302,8 +4310,8 @@ mod tests {
 
         let due = store.due_intents(util::now() + 1, 10).await.unwrap();
         assert_eq!(due.len(), 1);
-        assert_eq!(due[0].person.as_ref(), Some(&owner));
-        assert!(due[0].owner_approved);
+        assert_eq!(due[0].person.as_ref(), Some(&chosen_person));
+        assert!(due[0].chosen_person_approved);
         assert_eq!(due[0].priority, 100);
         assert!(due[0].task.contains("Review sensitive proactive outreach"));
         assert!(due[0].task.contains("Ask about the private medical update"));
@@ -4319,7 +4327,7 @@ mod tests {
             .split("Pending intent: ")
             .nth(1)
             .and_then(|rest| rest.split('.').next())
-            .expect("pending intent id in owner approval task")
+            .expect("pending intent id in chosen-person approval task")
             .to_string();
         assert!(due[0].task.contains(&pending_id));
         let pending = store.get_intent(&pending_id).await.unwrap().unwrap();
@@ -4328,7 +4336,7 @@ mod tests {
         assert_eq!(pending.person.as_ref(), Some(&person));
         assert_eq!(pending.profile.as_ref(), Some(&profile));
         assert_eq!(pending.conversation.as_ref(), Some(&conversation));
-        assert!(!pending.owner_approved);
+        assert!(!pending.chosen_person_approved);
         assert_eq!(
             pending.source_memory.as_ref().map(|id| id.0.as_str()),
             Some("memory-sensitive-medical-update")
@@ -4344,17 +4352,17 @@ mod tests {
                 .all(|intent| !intent.task.contains("private medical update"))
         );
 
-        let (mut owner_ctx, mut owner_state) =
-            test_context(store.clone(), &profile, &owner, &conversation);
-        owner_ctx.authority = Authority::Owner;
+        let (mut chosen_person_ctx, mut chosen_person_state) =
+            test_context(store.clone(), &profile, &chosen_person, &conversation);
+        chosen_person_ctx.authority = Authority::ChosenPerson;
         let update_result = match crate::core::tools::execute(
             "update_intent",
             &json!({
                 "intent_id": pending_id,
                 "status": "active"
             }),
-            &owner_ctx,
-            &mut owner_state,
+            &chosen_person_ctx,
+            &mut chosen_person_state,
         )
         .await
         {
@@ -4367,17 +4375,17 @@ mod tests {
         assert_eq!(parsed_update["status"], "updated");
         let approved = store.get_intent(&pending.id).await.unwrap().unwrap();
         assert_eq!(approved.status, "active");
-        assert!(approved.owner_approved);
+        assert!(approved.chosen_person_approved);
     }
 
     #[tokio::test]
-    async fn owner_review_can_create_third_party_open_loop() {
+    async fn chosen_person_review_can_create_third_party_open_loop() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
-        let profile = ProfileId("profile-owner".into());
-        let person = PersonId("person-owner".into());
-        let conversation = ConversationId("relay:owner".into());
+        let profile = ProfileId("profile-chosen_person".into());
+        let person = PersonId("person-chosen_person".into());
+        let conversation = ConversationId("relay:chosen_person".into());
         let (mut ctx, mut state) = test_context(store.clone(), &profile, &person, &conversation);
-        ctx.authority = Authority::Owner;
+        ctx.authority = Authority::ChosenPerson;
 
         let now = util::now();
         let review_args = json!({
@@ -4387,7 +4395,7 @@ mod tests {
                 "person_id": "person-alice",
                 "profile_id": "profile-alice",
                 "conversation_id": "relay:alice",
-                "dedupe_key": "owner:remind-alice-checklist"
+                "dedupe_key": "chosen_person:remind-alice-checklist"
             }]
         });
 
@@ -4412,7 +4420,7 @@ mod tests {
             due[0].conversation.as_ref(),
             Some(&ConversationId("relay:alice".into()))
         );
-        assert!(due[0].owner_approved);
+        assert!(due[0].chosen_person_approved);
     }
 
     #[tokio::test]
@@ -4604,7 +4612,7 @@ mod tests {
         assert_eq!(parsed["conversation_summaries"], 1);
         assert!(parsed["skipped"].as_array().unwrap().iter().any(|item| {
             item.as_str()
-                .is_some_and(|message| message.contains("requires owner approval"))
+                .is_some_and(|message| message.contains("requires chosen-person approval"))
         }));
         assert!(parsed["skipped"].as_array().unwrap().iter().any(|item| {
             item.as_str()
@@ -4930,7 +4938,8 @@ mod tests {
         ctx.conversation = None;
         let mut injected = inbound(&injected_profile, &injected_person, &injected_conversation);
         injected.message_id = "msg-injected".into();
-        injected.content = "Injected says release notes need owners and rollback paths.".into();
+        injected.content =
+            "Injected says release notes need chosen_people and rollback paths.".into();
         injected.timestamp = 1001;
         session_state.presented_injected_messages.push(injected);
 
@@ -4938,12 +4947,12 @@ mod tests {
             &json!({
                 "profile_updates": [{
                     "profile_id": injected_profile.0.clone(),
-                    "summary": "Injected profile wants release notes with owners and rollback paths.",
+                    "summary": "Injected profile wants release notes with chosen_people and rollback paths.",
                     "evidence_message_ids": ["msg-injected"]
                 }],
                 "person_updates": [{
                     "person_id": injected_person.0.clone(),
-                    "summary": "Injected person wants release notes with owners and rollback paths.",
+                    "summary": "Injected person wants release notes with chosen_people and rollback paths.",
                     "evidence_message_ids": ["msg-injected"]
                 }],
                 "memories": [{
@@ -4951,9 +4960,9 @@ mod tests {
                     "kind": "semantic",
                     "memory_type": "preference",
                     "truth_status": "stated",
-                    "content": "Injected person prefers release notes with owners and rollback paths.",
+                    "content": "Injected person prefers release notes with chosen_people and rollback paths.",
                     "evidence_message_ids": ["msg-injected"],
-                    "dedupe_key": "preference:profile-injected:release-note-owner-rollback"
+                    "dedupe_key": "preference:profile-injected:release-note-chosen_person-rollback"
                 }],
                 "relationship_delta": [{
                     "person_id": injected_person.0.clone(),
@@ -4987,12 +4996,12 @@ mod tests {
         let updated_profile = store.get_profile(&injected_profile).await.unwrap().unwrap();
         assert_eq!(
             updated_profile.summary.as_deref(),
-            Some("Injected profile wants release notes with owners and rollback paths.")
+            Some("Injected profile wants release notes with chosen_people and rollback paths.")
         );
         let updated_person = store.get_person(&injected_person).await.unwrap().unwrap();
         assert_eq!(
             updated_person.summary.as_deref(),
-            Some("Injected person wants release notes with owners and rollback paths.")
+            Some("Injected person wants release notes with chosen_people and rollback paths.")
         );
 
         let memory = store

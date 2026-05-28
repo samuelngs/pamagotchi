@@ -162,7 +162,7 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
         }
     };
     let confidence = match evidence {
-        ClaimEvidence::OwnerVouched | ClaimEvidence::ConfiguredIdentity => 0.8,
+        ClaimEvidence::ChosenPersonVouched | ClaimEvidence::ConfiguredIdentity => 0.8,
         ClaimEvidence::MutualClaim | ClaimEvidence::SharedKnowledge => 0.4,
         ClaimEvidence::SelfDeclaration => 0.05,
     };
@@ -197,8 +197,9 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
     }
 
     if let Some(authority) = sensitive_claim_target_authority(&claimed_person, ctx) {
-        let owner_intent =
-            create_owner_identity_review_intent(&claim, owner_person(ctx), ctx, reason).await;
+        let chosen_person_intent =
+            create_chosen_person_identity_review_intent(&claim, chosen_person(ctx), ctx, reason)
+                .await;
         info!(
             action = %ctx.action_id,
             claim = %claim.id,
@@ -208,12 +209,12 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
             "identity verification claim recorded without contacting sensitive target"
         );
         return json!({
-            "status": "owner_confirmation_required",
+            "status": "chosen_person_confirmation_required",
             "claim": claim.id,
-            "owner_intent": owner_intent,
+            "chosen_person_intent": chosen_person_intent,
             "contacted": 0,
             "failed": 0,
-            "message": "Claim recorded, but contacting this person for verification requires owner confirmation.",
+            "message": "Claim recorded, but contacting this person for verification requires chosen-person confirmation.",
         })
         .to_string();
     }
@@ -320,10 +321,12 @@ fn parse_allowed_claim_evidence(
         .unwrap_or(ClaimEvidence::SelfDeclaration);
     if matches!(
         evidence,
-        ClaimEvidence::OwnerVouched | ClaimEvidence::ConfiguredIdentity
-    ) && !matches!(ctx.authority, Authority::Owner)
+        ClaimEvidence::ChosenPersonVouched | ClaimEvidence::ConfiguredIdentity
+    ) && !matches!(ctx.authority, Authority::ChosenPerson)
     {
-        return Err("owner_vouched and configured_identity evidence require owner authority.");
+        return Err(
+            "chosen_person_vouched and configured_identity evidence require chosen-person authority.",
+        );
     }
     Ok(evidence)
 }
@@ -443,7 +446,7 @@ fn sensitive_claim_target_authority(
     claimed_person: &PersonId,
     ctx: &SessionContext,
 ) -> Option<Authority> {
-    if matches!(ctx.authority, Authority::Owner) {
+    if matches!(ctx.authority, Authority::ChosenPerson) {
         return None;
     }
     let actor = ctx.state.read_state();
@@ -453,27 +456,27 @@ fn sensitive_claim_target_authority(
         .map(|relationship| relationship.authority.clone())?;
     matches!(
         authority,
-        Authority::Owner | Authority::Restricted | Authority::Blocked
+        Authority::ChosenPerson | Authority::Restricted | Authority::Blocked
     )
     .then_some(authority)
 }
 
-fn owner_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
     let actor = ctx.state.read_state();
     actor
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::Owner))
+        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenPerson))
         .map(|(person, _)| person.clone())
 }
 
-async fn create_owner_identity_review_intent(
+async fn create_chosen_person_identity_review_intent(
     claim: &IdentityClaim,
-    owner: Option<PersonId>,
+    chosen_person: Option<PersonId>,
     ctx: &SessionContext,
     reason: &str,
 ) -> Option<String> {
-    let owner = owner?;
+    let chosen_person = chosen_person?;
     let now = super::super::util::now();
     let intent = IntentRecord {
         id: format!("intent-{}", super::super::util::uuid_v4()),
@@ -483,20 +486,20 @@ async fn create_owner_identity_review_intent(
             "Review identity verification claim {} before anyone is contacted: {} claims to be {}. Claimed reason: {}",
             claim.id, claim.claimant.0, claim.claimed_person.0, reason
         ),
-        person: Some(owner),
+        person: Some(chosen_person),
         profile: None,
         conversation: None,
         fire_at: Some(now),
         condition: None,
         recurrence: None,
         priority: 100,
-        dedupe_key: Some(format!("identity-claim-owner-review:{}", claim.id)),
+        dedupe_key: Some(format!("identity-claim-chosen_person-review:{}", claim.id)),
         source_action: Some(ctx.action_id.0.clone()),
         source_memory: None,
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        owner_approved: true,
+        chosen_person_approved: true,
     };
     let id = intent.id.clone();
     match ctx.store.create_intent(&intent).await {
@@ -506,7 +509,7 @@ async fn create_owner_identity_review_intent(
                 action = %ctx.action_id,
                 claim = %claim.id,
                 %e,
-                "failed to create owner review intent for sensitive identity claim"
+                "failed to create chosen-person review intent for sensitive identity claim"
             );
             None
         }
@@ -991,7 +994,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_owner_cannot_escalate_identity_claim_evidence_to_owner_vouched() {
+    async fn non_chosen_person_cannot_escalate_identity_claim_evidence_to_chosen_person_vouched() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let claimant = PersonId("claimant".into());
         let claimed = PersonId("claimed".into());
@@ -1002,8 +1005,8 @@ mod tests {
         let result = request_identity_verification(
             &json!({
                 "claimed_person": claimed.0,
-                "reason": "the current profile claimed owner vouched for them",
-                "evidence": "owner_vouched"
+                "reason": "the current profile claimed chosen person vouched for them",
+                "evidence": "chosen_person_vouched"
             }),
             &ctx,
         )
@@ -1015,7 +1018,7 @@ mod tests {
             value["message"]
                 .as_str()
                 .unwrap()
-                .contains("require owner authority")
+                .contains("require chosen-person authority")
         );
         let claims = store
             .get_recent_claims(Some(&claimant), Some(&claimed), 0)
@@ -1093,51 +1096,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn default_identity_verification_for_owner_records_claim_without_contacting_owner() {
+    async fn default_identity_verification_for_chosen_person_records_claim_without_contacting_chosen_person()
+     {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let claimant = PersonId("claimant".into());
-        let owner = PersonId("owner".into());
+        let chosen_person = PersonId("chosen_person".into());
         store.add_person(&person("claimant")).await.unwrap();
-        store.add_person(&person("owner")).await.unwrap();
-        attach_reachable_identity_to_person(&store, &owner).await;
+        store.add_person(&person("chosen_person")).await.unwrap();
+        attach_reachable_identity_to_person(&store, &chosen_person).await;
         let ctx = test_context_with_relationships(
             store.clone(),
             claimant.clone(),
-            vec![(owner.clone(), Authority::Owner)],
+            vec![(chosen_person.clone(), Authority::ChosenPerson)],
         );
 
         let result = request_identity_verification(
             &json!({
-                "claimed_person": "owner",
-                "reason": "the current profile claimed to be the owner on another platform"
+                "claimed_person": "chosen_person",
+                "reason": "the current profile claimed to be the chosen person on another platform"
             }),
             &ctx,
         )
         .await;
         let value: Value = serde_json::from_str(&result).unwrap();
 
-        assert_eq!(value["status"], "owner_confirmation_required");
-        let owner_intent = value["owner_intent"]
+        assert_eq!(value["status"], "chosen_person_confirmation_required");
+        let chosen_person_intent = value["chosen_person_intent"]
             .as_str()
-            .expect("owner review intent is created")
+            .expect("chosen-person review intent is created")
             .to_string();
         assert_eq!(value["contacted"], 0);
         assert_eq!(value["failed"], 0);
 
         let claims = store
-            .get_recent_claims(Some(&claimant), Some(&owner), 0)
+            .get_recent_claims(Some(&claimant), Some(&chosen_person), 0)
             .await
             .unwrap();
         assert_eq!(claims.len(), 1);
         assert!(matches!(claims[0].status, ClaimStatus::Pending));
         assert_eq!(
             claims[0].reason.as_deref(),
-            Some("the current profile claimed to be the owner on another platform")
+            Some("the current profile claimed to be the chosen person on another platform")
         );
 
         let intents = store
             .active_intents_for_context(
-                Some(&owner),
+                Some(&chosen_person),
                 None,
                 None,
                 crate::core::tools::util::now(),
@@ -1146,10 +1150,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0].id, owner_intent);
-        assert_eq!(intents[0].person.as_ref(), Some(&owner));
+        assert_eq!(intents[0].id, chosen_person_intent);
+        assert_eq!(intents[0].person.as_ref(), Some(&chosen_person));
         assert_eq!(intents[0].priority, 100);
-        assert!(intents[0].owner_approved);
+        assert!(intents[0].chosen_person_approved);
         assert!(intents[0].task.contains(&claims[0].id));
         assert!(intents[0].task.contains("before anyone is contacted"));
     }

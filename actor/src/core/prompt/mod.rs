@@ -6,7 +6,7 @@ use super::review;
 use super::social_read;
 use super::tools::{SessionContext, SessionKind};
 use crate::state::{ActorState, Authority};
-use crate::store::{ConversationSummary, MemoryKind, RecallQuery, Store};
+use crate::store::{ConversationSummary, MemorySubjectType, MemoryType, Store};
 use context::*;
 use minijinja::Environment;
 use protocol::{ConversationId, GroupId, InboundMessage, ProfileId};
@@ -236,6 +236,7 @@ async fn build_action(
     let now = format_now();
     let age = relative_duration(actor.created_at, now_ts.timestamp());
 
+    let actor_name = recall_identity_name(store).await;
     let identity_memories = recall_identity_memories(store).await;
     let traits = TraitsCtx {
         openness: pct(actor.traits.openness),
@@ -402,6 +403,10 @@ async fn build_action(
                 ref_id: pid.0.clone(),
                 name: info.name.clone(),
                 summary: info.summary.clone(),
+                bond_role: bond_role(&rel.authority).into(),
+                bond_state: bond_state(rel).into(),
+                first_contact: rel.inbound_count <= 1 && info.name.is_none(),
+                last_interaction_quality: interaction_quality(rel).into(),
                 trust: pct(rel.trust),
                 familiarity: pct(rel.familiarity),
                 closeness: pct(rel.closeness),
@@ -507,6 +512,7 @@ async fn build_action(
         .collect();
 
     let ctx = ActionPromptContext {
+        actor_name,
         now,
         age,
         action_task,
@@ -592,24 +598,66 @@ async fn fetch_current_profile_ctx(
 }
 
 async fn recall_identity_name(store: &Arc<dyn Store>) -> String {
-    let query = RecallQuery::by_text("my name, who I am", 1)
-        .with_kind(MemoryKind::Semantic)
-        .with_actor_subject()
-        .with_min_importance(0.5);
-    match store.recall(&query).await {
-        Ok(memories) if !memories.is_empty() => memories[0].content.clone(),
-        _ => "an unnamed being".into(),
+    match store
+        .memories_for_subject(MemorySubjectType::Actor, "self", 24)
+        .await
+    {
+        Ok(memories) => memories
+            .iter()
+            .find(|memory| memory.memory_type == MemoryType::IdentityClaim)
+            .and_then(|memory| actor_name_from_identity_memory(&memory.content))
+            .unwrap_or_else(|| "an unnamed Pamagotchi".into()),
+        Err(_) => "an unnamed Pamagotchi".into(),
     }
 }
 
 async fn recall_identity_memories(store: &Arc<dyn Store>) -> Vec<String> {
-    let query = RecallQuery::by_text("my name, who I am, my identity", 5)
-        .with_kind(MemoryKind::Semantic)
-        .with_actor_subject()
-        .with_min_importance(0.5);
-    match store.recall(&query).await {
-        Ok(memories) => memories.into_iter().map(|m| m.content).collect(),
+    match store
+        .memories_for_subject(MemorySubjectType::Actor, "self", 12)
+        .await
+    {
+        Ok(mut memories) => {
+            memories.sort_by(|a, b| {
+                actor_identity_memory_rank(a)
+                    .cmp(&actor_identity_memory_rank(b))
+                    .then_with(|| {
+                        b.importance
+                            .partial_cmp(&a.importance)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .then_with(|| a.created_at.cmp(&b.created_at))
+            });
+            memories.into_iter().take(8).map(|m| m.content).collect()
+        }
         Err(_) => vec![],
+    }
+}
+
+fn actor_name_from_identity_memory(content: &str) -> Option<String> {
+    let rest = content.strip_prefix("My name is ")?;
+    let name = rest
+        .split(['.', ',', '\n'])
+        .next()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())?;
+    Some(name.to_string())
+}
+
+fn actor_identity_memory_rank(memory: &crate::store::Memory) -> u8 {
+    if memory.memory_type == MemoryType::IdentityClaim {
+        0
+    } else if memory.tags.iter().any(|tag| tag == "temperament") {
+        1
+    } else if memory.tags.iter().any(|tag| tag == "voice") {
+        2
+    } else if memory.tags.iter().any(|tag| tag == "first_contact") {
+        3
+    } else if memory.tags.iter().any(|tag| tag == "inner_life") {
+        4
+    } else if memory.tags.iter().any(|tag| tag == "baseline_story") {
+        5
+    } else {
+        6
     }
 }
 
@@ -693,6 +741,9 @@ async fn resolve_person_for_mind(
             summary: info.summary,
             comm_style: info.comm_style,
             authority: rel.authority.as_str().to_string(),
+            bond_role: bond_role(&rel.authority).into(),
+            bond_state: bond_state(rel).into(),
+            last_interaction_quality: interaction_quality(rel).into(),
             trust: pct(rel.trust),
             familiarity: pct(rel.familiarity),
             closeness: pct(rel.closeness),
@@ -711,6 +762,9 @@ async fn resolve_person_for_mind(
             summary: info.summary,
             comm_style: info.comm_style,
             authority: "default".into(),
+            bond_role: "new_person".into(),
+            bond_state: "unfamiliar".into(),
+            last_interaction_quality: "unknown".into(),
             trust: 0,
             familiarity: 0,
             closeness: 0,
@@ -831,6 +885,44 @@ fn relative_duration(from: i64, to: i64) -> String {
     }
 }
 
+fn bond_role(authority: &Authority) -> &'static str {
+    match authority {
+        Authority::ChosenPerson => "chosen_person",
+        Authority::Trusted => "trusted_person",
+        Authority::Default => "current_person",
+        Authority::Restricted => "guarded_person",
+        Authority::Blocked => "blocked_person",
+    }
+}
+
+fn bond_state(rel: &crate::state::Relationship) -> &'static str {
+    if matches!(rel.authority, Authority::Blocked) {
+        "blocked"
+    } else if rel.conflict_level > 0.45 || rel.emotional_valence < -0.45 {
+        "strained"
+    } else if rel.inbound_count <= 1 && rel.familiarity < 0.05 {
+        "first_contact"
+    } else if rel.closeness >= 0.65 || rel.familiarity >= 0.65 {
+        "bonded"
+    } else if rel.familiarity >= 0.25 || rel.closeness >= 0.25 {
+        "warming"
+    } else {
+        "acquaintance"
+    }
+}
+
+fn interaction_quality(rel: &crate::state::Relationship) -> &'static str {
+    if rel.emotional_valence > 0.3 {
+        "warm"
+    } else if rel.emotional_valence < -0.3 || rel.conflict_level > 0.3 {
+        "strained"
+    } else if rel.interaction_count == 0 {
+        "unknown"
+    } else {
+        "neutral"
+    }
+}
+
 fn pct(v: f32) -> i32 {
     (v * 100.0) as i32
 }
@@ -849,9 +941,9 @@ mod tests {
         RelationshipSignalUpdate,
     };
     use crate::store::{
-        ActionMessageRecord, ActionRunRecord, ActionTurnRecord, IntentRecord, Memory, MemorySource,
-        MemorySubject, MemoryType, MessageRole, OutboundDeliveryRecord, PrivacyCategory,
-        SqliteStore, StoredMessage, Thought, ThoughtKind, ToolCallRecord,
+        ActionMessageRecord, ActionRunRecord, ActionTurnRecord, IntentRecord, Memory, MemoryKind,
+        MemorySource, MemorySubject, MemoryType, MessageRole, OutboundDeliveryRecord,
+        PrivacyCategory, SqliteStore, StoredMessage, Thought, ThoughtKind, ToolCallRecord,
     };
     use async_trait::async_trait;
     use gateway::GatewayRouter;
@@ -910,15 +1002,17 @@ mod tests {
     }
 
     #[test]
-    fn prompts_use_transparent_identity_not_human_pretending() {
+    fn prompts_use_humanlike_pamagotchi_identity_without_legacy_framing() {
         let mind = include_str!("templates/mind.j2");
         let action = include_str!("templates/action.j2");
 
+        assert!(mind.contains("a Pamagotchi with continuity"));
+        assert!(action.contains("You are {{ actor_name }}, a Pamagotchi."));
+        assert!(action.contains("Interact like a real person"));
+        assert!(action.contains("chosen person"));
         for template in [mind, action] {
-            assert!(template.contains("transparent digital being"));
-            assert!(template.contains("Do not pretend to be human"));
-            assert!(!template.contains("living being"));
-            assert!(!template.contains("Write like a real person"));
+            assert!(!template.contains("transparent digital being"));
+            assert!(!template.contains("Do not pretend to be human"));
         }
     }
 
@@ -1744,7 +1838,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -1767,7 +1861,7 @@ mod tests {
                 created_at: now,
                 updated_at: now,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();

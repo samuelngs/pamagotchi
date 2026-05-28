@@ -61,11 +61,11 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "sensitive": {
                         "type": "boolean",
-                        "description": "Set true when the follow-up involves private, medical, legal, financial, identity, credential, or otherwise sensitive content. Sensitive outreach requires owner approval."
+                        "description": "Set true when the follow-up involves private, medical, legal, financial, identity, credential, or otherwise sensitive content. Sensitive outreach requires chosen-person approval."
                     },
-                    "requires_owner_approval": {
+                    "requires_chosen_person_approval": {
                         "type": "boolean",
-                        "description": "Set true when this intent should not proactively contact anyone until the owner has approved it."
+                        "description": "Set true when this intent should not proactively contact anyone until the chosen person has approved it."
                     }
                 },
                 "required": ["task", "kind"]
@@ -133,11 +133,11 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "sensitive": {
                         "type": "boolean",
-                        "description": "Set true when the updated follow-up involves sensitive content. Sensitive outreach requires owner approval."
+                        "description": "Set true when the updated follow-up involves sensitive content. Sensitive outreach requires chosen-person approval."
                     },
-                    "requires_owner_approval": {
+                    "requires_chosen_person_approval": {
                         "type": "boolean",
-                        "description": "Set true when this intent should not proactively contact anyone until the owner has approved it."
+                        "description": "Set true when this intent should not proactively contact anyone until the chosen person has approved it."
                     }
                 },
                 "required": ["intent_id"]
@@ -182,8 +182,10 @@ pub async fn create(args: &Value, ctx: &SessionContext) -> String {
     }
 
     let now = super::util::now();
-    let owner_approved = matches!(ctx.authority, Authority::Owner);
-    let status = if super::permission::intent_requires_owner_approval(args) && !owner_approved {
+    let chosen_person_approved = matches!(ctx.authority, Authority::ChosenPerson);
+    let status = if super::permission::intent_requires_chosen_person_approval(args)
+        && !chosen_person_approved
+    {
         "pending_approval"
     } else {
         "active"
@@ -215,11 +217,11 @@ pub async fn create(args: &Value, ctx: &SessionContext) -> String {
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        owner_approved,
+        chosen_person_approved,
     };
 
     if intent.status == "pending_approval" {
-        return create_pending_owner_approval_intent(intent, args, ctx, now).await;
+        return create_pending_chosen_person_approval_intent(intent, args, ctx, now).await;
     }
 
     match ctx.store.create_intent(&intent).await {
@@ -236,16 +238,16 @@ pub async fn create(args: &Value, ctx: &SessionContext) -> String {
     }
 }
 
-async fn create_pending_owner_approval_intent(
+async fn create_pending_chosen_person_approval_intent(
     pending_intent: IntentRecord,
     args: &Value,
     ctx: &SessionContext,
     now: i64,
 ) -> String {
-    let Some(owner) = owner_person(ctx) else {
+    let Some(chosen_person) = chosen_person(ctx) else {
         return json!({
             "status": "error",
-            "message": "Owner approval is required, but no owner person is configured."
+            "message": "Chosen-person approval is required, but no chosen person is configured."
         })
         .to_string();
     };
@@ -269,29 +271,31 @@ async fn create_pending_owner_approval_intent(
         kind: "scheduled".into(),
         status: "active".into(),
         task: format!(
-            "Review proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {pending_task}. {} If the owner approves, update intent {pending_id} with status active. If the owner declines, delete intent {pending_id}.",
-            owner_approval_target_description(&pending_intent, args),
+            "Review proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {pending_task}. {} If the chosen person approves, update intent {pending_id} with status active. If the chosen person declines, delete intent {pending_id}.",
+            chosen_person_approval_target_description(&pending_intent, args),
         ),
-        person: Some(owner),
+        person: Some(chosen_person),
         profile: None,
         conversation: None,
         fire_at: Some(now),
         condition: None,
         recurrence: None,
         priority: 100,
-        dedupe_key: Some(format!("owner-approval:intent-tool:{original_dedupe_key}")),
+        dedupe_key: Some(format!(
+            "chosen-person-approval:intent-tool:{original_dedupe_key}"
+        )),
         source_action: Some(ctx.action_id.0.clone()),
         source_memory: pending_intent.source_memory.clone(),
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        owner_approved: true,
+        chosen_person_approved: true,
     };
-    let owner_intent_id = approval_intent.id.clone();
+    let chosen_person_intent_id = approval_intent.id.clone();
     if let Err(e) = ctx.store.create_intent(&approval_intent).await {
         return json!({
             "status": "error",
-            "message": format!("Created pending intent {pending_id}, but failed to create owner approval intent: {e}"),
+            "message": format!("Created pending intent {pending_id}, but failed to create chosen-person approval intent: {e}"),
             "intent_id": pending_id,
         })
         .to_string();
@@ -300,21 +304,21 @@ async fn create_pending_owner_approval_intent(
     json!({
         "status": "pending_approval",
         "intent_id": pending_id,
-        "owner_intent_id": owner_intent_id,
+        "chosen_person_intent_id": chosen_person_intent_id,
     })
     .to_string()
 }
 
-fn owner_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
     ctx.state
         .read_state()
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::Owner))
+        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenPerson))
         .map(|(person, _)| person.clone())
 }
 
-fn owner_approval_target_description(intent: &IntentRecord, args: &Value) -> String {
+fn chosen_person_approval_target_description(intent: &IntentRecord, args: &Value) -> String {
     let mut parts = Vec::new();
     if let Some(person) = &intent.person {
         parts.push(format!("Target person: {}.", person.0));
@@ -328,8 +332,11 @@ fn owner_approval_target_description(intent: &IntentRecord, args: &Value) -> Str
     if args["sensitive"].as_bool().unwrap_or(false) {
         parts.push("The request was marked sensitive.".into());
     }
-    if args["requires_owner_approval"].as_bool().unwrap_or(false) {
-        parts.push("The request explicitly requires owner approval.".into());
+    if args["requires_chosen_person_approval"]
+        .as_bool()
+        .unwrap_or(false)
+    {
+        parts.push("The request explicitly requires chosen-person approval.".into());
     }
     if parts.is_empty() {
         "No explicit target was provided.".into()
@@ -349,13 +356,13 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
             .to_string();
     }
 
-    let is_owner = matches!(ctx.authority, Authority::Owner);
-    if !is_owner && args["status"].as_str() == Some("active") {
+    let is_chosen_person = matches!(ctx.authority, Authority::ChosenPerson);
+    if !is_chosen_person && args["status"].as_str() == Some("active") {
         match ctx.store.get_intent(id).await {
             Ok(Some(intent)) if intent.status == "pending_approval" => {
                 return json!({
                     "status": "error",
-                    "message": "Activating an owner-approval intent requires owner authority.",
+                    "message": "Activating an chosen-person-approval intent requires chosen-person authority.",
                 })
                 .to_string();
             }
@@ -363,14 +370,14 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
             Err(e) => {
                 return json!({
                     "status": "error",
-                    "message": format!("Could not verify intent owner approval status: {e}"),
+                    "message": format!("Could not verify intent chosen-person approval status: {e}"),
                 })
                 .to_string();
             }
         }
     }
 
-    let owner_approved = if is_owner {
+    let chosen_person_approved = if is_chosen_person {
         Some(true)
     } else if update_changes_approved_intent_surface(args) {
         Some(false)
@@ -392,7 +399,7 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
         priority: args["priority"].as_u64().map(|v| v.min(100) as u8),
         dedupe_key: args["dedupe_key"].as_str().map(str::to_string),
         source_memory: source_memory_arg(args),
-        owner_approved,
+        chosen_person_approved,
         updated_at: super::util::now(),
     };
 
@@ -408,7 +415,7 @@ fn update_changes_approved_intent_surface(args: &Value) -> bool {
         object.keys().any(|key| {
             !matches!(
                 key.as_str(),
-                "intent_id" | "sensitive" | "requires_owner_approval"
+                "intent_id" | "sensitive" | "requires_chosen_person_approval"
             )
         })
     })
@@ -481,13 +488,13 @@ mod tests {
         store: Arc<SqliteStore>,
         authority: Authority,
         current_person: Option<PersonId>,
-        owner: Option<PersonId>,
+        chosen_person: Option<PersonId>,
     ) -> SessionContext {
         let (_inject_tx, inject_rx) = mpsc::channel(1);
         let (delta_tx, _delta_rx) = mpsc::channel(1);
         let mut actor = ActorState::new(Default::default());
-        if let Some(owner) = owner {
-            actor.set_relationship_config(&owner, Some(Authority::Owner));
+        if let Some(chosen_person) = chosen_person {
+            actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
         }
         let shared = Arc::new(SharedState {
             actor: RwLock::new(actor),
@@ -562,15 +569,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_sensitive_current_intent_routes_to_owner_approval() {
+    async fn create_sensitive_current_intent_routes_to_chosen_person_approval() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
-        let owner = PersonId("person-owner".into());
+        let chosen_person = PersonId("person-chosen_person".into());
         let current = PersonId("person-current".into());
         let ctx = test_context(
             store.clone(),
             Authority::Default,
             Some(current.clone()),
-            Some(owner.clone()),
+            Some(chosen_person.clone()),
         );
         let args = serde_json::json!({
             "task": "Ask Sam about the private medical update",
@@ -587,30 +594,34 @@ mod tests {
 
         assert_eq!(value["status"], "pending_approval");
         let pending_id = value["intent_id"].as_str().unwrap();
-        let owner_intent_id = value["owner_intent_id"].as_str().unwrap();
+        let chosen_person_intent_id = value["chosen_person_intent_id"].as_str().unwrap();
         let pending = store.get_intent(pending_id).await.unwrap().unwrap();
         assert_eq!(pending.status, "pending_approval");
-        assert!(!pending.owner_approved);
+        assert!(!pending.chosen_person_approved);
         assert_eq!(pending.person.as_ref(), Some(&current));
 
-        let owner_intent = store.get_intent(owner_intent_id).await.unwrap().unwrap();
-        assert_eq!(owner_intent.status, "active");
-        assert!(owner_intent.owner_approved);
-        assert_eq!(owner_intent.person.as_ref(), Some(&owner));
-        assert!(owner_intent.task.contains(pending_id));
-        assert!(owner_intent.task.contains("private medical update"));
+        let chosen_person_intent = store
+            .get_intent(chosen_person_intent_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(chosen_person_intent.status, "active");
+        assert!(chosen_person_intent.chosen_person_approved);
+        assert_eq!(chosen_person_intent.person.as_ref(), Some(&chosen_person));
+        assert!(chosen_person_intent.task.contains(pending_id));
+        assert!(chosen_person_intent.task.contains("private medical update"));
     }
 
     #[tokio::test]
-    async fn non_owner_cannot_activate_pending_owner_approval_intent() {
+    async fn non_chosen_person_cannot_activate_pending_chosen_person_approval_intent() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
-        let owner = PersonId("person-owner".into());
+        let chosen_person = PersonId("person-chosen_person".into());
         let current = PersonId("person-current".into());
         let ctx = test_context(
             store.clone(),
             Authority::Default,
             Some(current.clone()),
-            Some(owner.clone()),
+            Some(chosen_person.clone()),
         );
         let create_args = serde_json::json!({
             "task": "Ask Sam about the private medical update",
@@ -639,17 +650,17 @@ mod tests {
             denied["message"]
                 .as_str()
                 .unwrap()
-                .contains("requires owner authority")
+                .contains("requires chosen-person authority")
         );
         let pending = store.get_intent(pending_id).await.unwrap().unwrap();
         assert_eq!(pending.status, "pending_approval");
-        assert!(!pending.owner_approved);
+        assert!(!pending.chosen_person_approved);
 
-        let owner_ctx = test_context(
+        let chosen_person_ctx = test_context(
             store.clone(),
-            Authority::Owner,
+            Authority::ChosenPerson,
             Some(current.clone()),
-            Some(owner),
+            Some(chosen_person),
         );
         let approved: serde_json::Value = serde_json::from_str(
             &update(
@@ -657,7 +668,7 @@ mod tests {
                     "intent_id": pending_id,
                     "status": "active"
                 }),
-                &owner_ctx,
+                &chosen_person_ctx,
             )
             .await,
         )
@@ -665,6 +676,6 @@ mod tests {
         assert_eq!(approved["status"], "updated");
         let intent = store.get_intent(pending_id).await.unwrap().unwrap();
         assert_eq!(intent.status, "active");
-        assert!(intent.owner_approved);
+        assert!(intent.chosen_person_approved);
     }
 }

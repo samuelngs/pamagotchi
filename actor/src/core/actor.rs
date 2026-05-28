@@ -666,7 +666,7 @@ mod tests {
                 created_at: 900,
                 updated_at: 900,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -704,7 +704,7 @@ mod tests {
                 created_at: 900,
                 updated_at: 900,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -746,7 +746,7 @@ mod tests {
                 created_at: 900,
                 updated_at: 900,
                 last_fired_at: None,
-                owner_approved: true,
+                chosen_person_approved: true,
             })
             .await
             .unwrap();
@@ -764,7 +764,7 @@ mod tests {
                 );
                 assert_eq!(intent.person, Some(PersonId("person-sam".into())));
                 assert_eq!(intent.scheduled_at, Some(900));
-                assert!(intent.owner_approved);
+                assert!(intent.chosen_person_approved);
             }
             _ => panic!("expected fired intent"),
         }
@@ -781,16 +781,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scheduler_preserves_owner_approval_on_deferred_intent_events() {
+    async fn scheduler_preserves_chosen_person_approval_on_deferred_intent_events() {
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         let store_dyn: Arc<dyn Store> = store.clone();
         let intent = FiredIntent {
-            id: "intent-owner-approved".into(),
+            id: "intent-chosen-person-approved".into(),
             task: "Check in".into(),
             conversation: Some(ConversationId("relay:local".into())),
             person: Some(PersonId("person-sam".into())),
             scheduled_at: Some(900),
-            owner_approved: true,
+            chosen_person_approved: true,
             defer_count: 1,
         };
         store
@@ -815,9 +815,9 @@ mod tests {
 
         match rx.recv().await.unwrap() {
             WakeEvent::IntentFired(intent) => {
-                assert_eq!(intent.id, "intent-owner-approved");
+                assert_eq!(intent.id, "intent-chosen-person-approved");
                 assert_eq!(intent.scheduled_at, Some(900));
-                assert!(intent.owner_approved);
+                assert!(intent.chosen_person_approved);
                 assert_eq!(intent.defer_count, 1);
             }
             _ => panic!("expected deferred intent event"),
@@ -1038,8 +1038,8 @@ mod tests {
             .append_state_journal(
                 "relationship_config",
                 &serde_json::json!({
-                    "person_id": "person-owner",
-                    "authority": "owner",
+                    "person_id": "person-chosen_person",
+                    "authority": "chosen_person",
                 }),
                 1002,
             )
@@ -1050,7 +1050,7 @@ mod tests {
                 "person_context_merge",
                 &serde_json::json!({
                     "from_person_id": "person-claimant",
-                    "into_person_id": "person-owner",
+                    "into_person_id": "person-chosen_person",
                 }),
                 1003,
             )
@@ -1070,8 +1070,8 @@ mod tests {
                     .contains_key(&PersonId("person-claimant".into()))
             );
             assert_eq!(
-                state.bonds[&PersonId("person-owner".into())].authority,
-                crate::state::Authority::Owner
+                state.bonds[&PersonId("person-chosen_person".into())].authority,
+                crate::state::Authority::ChosenPerson
             );
         }
 

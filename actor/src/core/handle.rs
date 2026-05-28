@@ -207,13 +207,13 @@ impl StateTask {
     }
 
     async fn relationship_trust_ceiling(&self, person: &PersonId) -> f32 {
-        let (authority, current_trust, owner_ids) = {
+        let (authority, current_trust, chosen_person_ids) = {
             let actor = self.shared.actor.read().unwrap();
             let relationship = actor.bonds.get(person);
-            let owner_ids = actor
+            let chosen_person_ids = actor
                 .bonds
                 .iter()
-                .filter(|(_, rel)| rel.authority == Authority::Owner)
+                .filter(|(_, rel)| rel.authority == Authority::ChosenPerson)
                 .map(|(person, _)| person.clone())
                 .collect::<Vec<_>>();
             (
@@ -223,18 +223,21 @@ impl StateTask {
                 relationship
                     .map(|rel| rel.trust)
                     .unwrap_or_else(|| crate::state::Relationship::default().trust),
-                owner_ids,
+                chosen_person_ids,
             )
         };
 
         match authority {
-            Authority::Owner | Authority::Trusted | Authority::Restricted | Authority::Blocked => {
-                authority.trust_ceiling()
-            }
+            Authority::ChosenPerson
+            | Authority::Trusted
+            | Authority::Restricted
+            | Authority::Blocked => authority.trust_ceiling(),
             Authority::Default => {
-                if owner_ids.iter().any(|owner| owner == person)
+                if chosen_person_ids
+                    .iter()
+                    .any(|chosen_person| chosen_person == person)
                     || self
-                        .social_graph_connects_to_owner(person, &owner_ids)
+                        .social_graph_connects_to_chosen_person(person, &chosen_person_ids)
                         .await
                 {
                     Authority::Default.trust_ceiling()
@@ -245,19 +248,22 @@ impl StateTask {
         }
     }
 
-    async fn social_graph_connects_to_owner(
+    async fn social_graph_connects_to_chosen_person(
         &self,
         person: &PersonId,
-        owner_ids: &[PersonId],
+        chosen_person_ids: &[PersonId],
     ) -> bool {
-        if owner_ids.is_empty() {
+        if chosen_person_ids.is_empty() {
             return false;
         }
-        if owner_ids.iter().any(|owner| owner == person) {
+        if chosen_person_ids
+            .iter()
+            .any(|chosen_person| chosen_person == person)
+        {
             return true;
         }
 
-        let owner_ids = owner_ids.iter().cloned().collect::<HashSet<_>>();
+        let chosen_person_ids = chosen_person_ids.iter().cloned().collect::<HashSet<_>>();
         let mut visited = HashSet::from([person.clone()]);
         let mut queue = VecDeque::from([person.clone()]);
 
@@ -281,7 +287,7 @@ impl StateTask {
                 if !visited.insert(next.clone()) {
                     continue;
                 }
-                if owner_ids.contains(&next) {
+                if chosen_person_ids.contains(&next) {
                     return true;
                 }
                 if visited.len() >= SOCIAL_TRUST_GRAPH_MAX_NODES {
@@ -400,21 +406,21 @@ mod tests {
             state_task.run().await;
         });
         let handle = StateHandle::new(shared.clone(), tx);
-        let person = PersonId("person-owner".into());
+        let person = PersonId("person-chosen_person".into());
 
         handle
-            .set_relationship_config(&person, Some(Authority::Owner))
+            .set_relationship_config(&person, Some(Authority::ChosenPerson))
             .await;
 
         assert_eq!(
             shared.actor.read().unwrap().bonds[&person].authority,
-            Authority::Owner
+            Authority::ChosenPerson
         );
         let records = store.state_journal_after(None, 10).await.unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].kind, "relationship_config");
-        assert_eq!(records[0].payload["person_id"], "person-owner");
-        assert_eq!(records[0].payload["authority"], "owner");
+        assert_eq!(records[0].payload["person_id"], "person-chosen_person");
+        assert_eq!(records[0].payload["authority"], "chosen_person");
 
         drop(handle);
         state_join.await.unwrap();
@@ -531,8 +537,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn state_task_allows_trust_for_owner_connected_social_path() {
-        let owner = PersonId("person-owner".into());
+    async fn state_task_allows_trust_for_chosen_person_connected_social_path() {
+        let chosen_person = PersonId("person-chosen_person".into());
         let middle = PersonId("person-middle".into());
         let person = PersonId("person-connected".into());
         let shared = Arc::new(SharedState {
@@ -541,21 +547,21 @@ mod tests {
         });
         {
             let mut actor = shared.actor.write().unwrap();
-            actor.set_relationship_config(&owner, Some(Authority::Owner));
+            actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
         }
 
         let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
         store
             .upsert_relation(&SocialRelation {
-                person_a: owner.clone(),
+                person_a: chosen_person.clone(),
                 person_b: middle.clone(),
                 relation: Relation::Friend,
                 direction: Relation::Friend.default_direction(),
                 confidence: 0.9,
                 status: RelationStatus::Confirmed,
                 evidence: Some(serde_json::json!({"source": "test"})),
-                source_kind: RelationSource::OwnerConfirmed,
-                asserted_by: Some(owner.clone()),
+                source_kind: RelationSource::ChosenPersonConfirmed,
+                asserted_by: Some(chosen_person.clone()),
                 created_at: 1000,
                 updated_at: 1000,
             })

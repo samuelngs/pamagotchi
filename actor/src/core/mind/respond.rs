@@ -94,7 +94,7 @@ impl Mind {
                 };
                 let authority = self.authority_for_person(&target_person);
                 if matches!(authority, Authority::Restricted | Authority::Blocked)
-                    && !intent.owner_approved
+                    && !intent.chosen_person_approved
                 {
                     warn!(
                         intent_id = %intent.id,
@@ -104,13 +104,13 @@ impl Mind {
                     return MindDecision::Drop;
                 }
                 if !self.proactive_outreach_has_consent(&target_person) {
-                    if intent.owner_approved
+                    if intent.chosen_person_approved
                         && !self.proactive_outreach_consent_denied(&target_person)
                     {
                         warn!(
                             intent_id = %intent.id,
                             person = %target_person.0,
-                            "allowing proactive outreach without prior consent because the owner approved this intent"
+                            "allowing proactive outreach without prior consent because the chosen person approved this intent"
                         );
                     } else {
                         warn!(
@@ -249,7 +249,7 @@ impl Mind {
         if rel.proactive_consent == ProactiveConsent::Denied {
             return false;
         }
-        matches!(rel.authority, Authority::Owner | Authority::Trusted)
+        matches!(rel.authority, Authority::ChosenPerson | Authority::Trusted)
             || rel.proactive_consent == ProactiveConsent::Allowed
     }
 
@@ -289,7 +289,7 @@ impl Mind {
         conversation: &ConversationId,
         target_person: &PersonId,
     ) -> bool {
-        if intent.owner_approved {
+        if intent.chosen_person_approved {
             return false;
         }
         let stored = match self.store.get_intent(&intent.id).await {

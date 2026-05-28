@@ -138,7 +138,7 @@ pub(super) fn active_intents(conn: &Connection, limit: usize) -> anyhow::Result<
     let mut stmt = conn.prepare(
         "SELECT id, kind, status, task, person_id, profile_id, conversation_id, fire_at,
                 condition, recurrence, priority, dedupe_key, source_action_id, source_memory_id,
-                created_at, updated_at, last_fired_at, owner_approved
+                created_at, updated_at, last_fired_at, chosen_person_approved
          FROM intents
          WHERE status IN ('active', 'pending_approval')
          ORDER BY

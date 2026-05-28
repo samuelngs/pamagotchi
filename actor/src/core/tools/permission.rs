@@ -11,8 +11,8 @@ use protocol::{ConversationId, MemoryId, PersonId, ProfileId};
 use serde_json::Value;
 
 pub(crate) const STRONG_LIKELY_PERSON_LINK_CONFIDENCE: f32 = 0.75;
-const OWNER_SOCIAL_PATH_MIN_CONFIDENCE: f32 = 0.5;
-const OWNER_SOCIAL_PATH_MAX_NODES: usize = 128;
+const CHOSEN_PERSON_SOCIAL_PATH_MIN_CONFIDENCE: f32 = 0.5;
+const CHOSEN_PERSON_SOCIAL_PATH_MAX_NODES: usize = 128;
 
 pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(), String> {
     match name {
@@ -52,7 +52,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                             gateway == gateway_id && target == external_id
                         });
                 let has_outbound_authority =
-                    matches!(ctx.authority, Authority::Owner | Authority::Trusted);
+                    matches!(ctx.authority, Authority::ChosenPerson | Authority::Trusted);
                 let is_scheduled_outreach_target =
                     explicit_scheduled_outreach_target_matches(ctx, gateway_id, external_id)
                         .await?;
@@ -61,7 +61,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     && !is_scheduled_outreach_target
                 {
                     return Err(
-                        "Explicit outbound messaging requires owner/trusted authority or the scheduled outreach target."
+                        "Explicit outbound messaging requires chosen-person/trusted authority or the scheduled outreach target."
                             .into(),
                     );
                 }
@@ -76,7 +76,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     .and_then(|message| message.profile.as_ref());
                 if target.is_some_and(|target| current.is_none_or(|current| current.0 != target)) {
                     return Err(
-                        "Updating another profile requires owner authority or review context."
+                        "Updating another profile requires chosen-person authority or review context."
                             .into(),
                     );
                 }
@@ -91,14 +91,14 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     .and_then(|message| message.person.as_ref());
                 if target.is_some_and(|target| current.is_none_or(|current| current.0 != target)) {
                     return Err(
-                        "Updating another person requires owner authority or review context."
+                        "Updating another person requires chosen-person authority or review context."
                             .into(),
                     );
                 }
             }
         }
         "update_conversation_summary" => {
-            if !matches!(ctx.authority, Authority::Owner)
+            if !matches!(ctx.authority, Authority::ChosenPerson)
                 && !matches!(
                     ctx.kind,
                     SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -109,50 +109,56 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     current_conversation(ctx).is_none_or(|current| current != target)
                 }) {
                     return Err(
-                        "Updating another conversation summary requires owner authority or review/consolidation context."
+                        "Updating another conversation summary requires chosen-person authority or review/consolidation context."
                             .into(),
                     );
                 }
             }
         }
         "upsert_social_relation" => {
-            if !matches!(ctx.authority, Authority::Owner)
+            if !matches!(ctx.authority, Authority::ChosenPerson)
                 && !matches!(
                     ctx.kind,
                     SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
                 )
             {
                 return Err(
-                    "Social graph updates require owner authority or review context.".into(),
+                    "Social graph updates require chosen-person authority or review context."
+                        .into(),
                 );
             }
-            if args["source_kind"].as_str() == Some("owner_confirmed")
-                && !matches!(ctx.authority, Authority::Owner)
+            if args["source_kind"].as_str() == Some("chosen_person_confirmed")
+                && !matches!(ctx.authority, Authority::ChosenPerson)
             {
-                return Err("Owner-confirmed social relations require owner authority.".into());
+                return Err(
+                    "Chosen-person-confirmed social relations require chosen-person authority."
+                        .into(),
+                );
             }
             if !social_relation_targets_current_or_verified(args, ctx).await? {
                 return Err(
-                    "Social graph updates from review must include the current strongly verified person, or owner authority."
+                    "Social graph updates from review must include the current strongly verified person, or chosen-person authority."
                         .into(),
                 );
             }
         }
         "form_memory" => {
-            if identity_memory_write_requested(args) && !matches!(ctx.authority, Authority::Owner) {
+            if identity_memory_write_requested(args)
+                && !matches!(ctx.authority, Authority::ChosenPerson)
+            {
                 return Err("Something feels wrong about this. You don't want to change something this core about yourself.".into());
             }
         }
         "recall_memories" => {
             if sensitive_recall_requested(args) && !privileged_sensitive_recall(ctx) {
                 return Err(
-                    "Sensitive memory recall requires owner authority or internal review context."
+                    "Sensitive memory recall requires chosen-person authority or internal review context."
                         .into(),
                 );
             }
             if !privileged_memory_recall(ctx) && !memory_recall_targets_current(args, ctx) {
                 return Err(
-                    "Reading memories outside the current identity, profile, or person requires owner authority or internal review context."
+                    "Reading memories outside the current identity, profile, or person requires chosen-person authority or internal review context."
                         .into(),
                 );
             }
@@ -162,7 +168,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 let target = args["conversation"].as_str().filter(|id| !id.is_empty());
                 if target.is_none() && current_conversation(ctx).is_none() {
                     return Err(
-                        "Reading recent conversations without a current conversation requires owner authority or internal review/consolidation/rumination context."
+                        "Reading recent conversations without a current conversation requires chosen-person authority or internal review/consolidation/rumination context."
                             .into(),
                     );
                 }
@@ -170,23 +176,24 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     current_conversation(ctx).is_none_or(|current| current != target)
                 }) {
                     return Err(
-                        "Reading another conversation requires owner authority or review/consolidation/rumination context."
+                        "Reading another conversation requires chosen-person authority or review/consolidation/rumination context."
                             .into(),
                     );
                 }
             }
         }
         "inspect_memory" | "delete_memory" => {
-            if !matches!(ctx.authority, Authority::Owner) {
+            if !matches!(ctx.authority, Authority::ChosenPerson) {
                 return Err(
-                    "Owner authority is required to inspect or delete memories by id.".into(),
+                    "Chosen-person authority is required to inspect or delete memories by id."
+                        .into(),
                 );
             }
         }
         "forget_memory" => {
             let id = args["memory_id"].as_str().unwrap_or("");
             if let Ok(Some(mem)) = ctx.store.get_memory(&MemoryId(id.to_string())).await {
-                if matches!(ctx.authority, Authority::Owner)
+                if matches!(ctx.authority, Authority::ChosenPerson)
                     || matches!(
                         ctx.kind,
                         SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -201,14 +208,14 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 }
                 if !memory_is_current_profile_owned_for_forget(&mem, ctx) {
                     return Err(
-                        "Forgetting memories outside the current profile requires owner authority or review context."
+                        "Forgetting memories outside the current profile requires chosen-person authority or review context."
                             .into(),
                     );
                 }
             }
         }
         "promote_profile_memory_to_person" => {
-            if matches!(ctx.authority, Authority::Owner) {
+            if matches!(ctx.authority, Authority::ChosenPerson) {
                 return Ok(());
             }
             if !matches!(
@@ -216,7 +223,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
             ) {
                 return Err(
-                    "Promoting profile memories to person-level memories requires owner authority or internal review."
+                    "Promoting profile memories to person-level memories requires chosen-person authority or internal review."
                         .into(),
                 );
             }
@@ -228,54 +235,59 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
             }
         }
         "demote_person_memory_to_profile" => {
-            if !matches!(ctx.authority, Authority::Owner)
+            if !matches!(ctx.authority, Authority::ChosenPerson)
                 && !matches!(
                     ctx.kind,
                     SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
                 )
             {
                 return Err(
-                    "Demoting person-level memories requires owner authority or internal review."
+                    "Demoting person-level memories requires chosen-person authority or internal review."
                         .into(),
                 );
             }
         }
         "create_intent" => {
-            if !matches!(ctx.authority, Authority::Owner)
+            if !matches!(ctx.authority, Authority::ChosenPerson)
                 && privileged_intent_create(ctx)
                 && !intent_targets_current_or_verified(args, ctx).await?
             {
                 return Err(
-                    "Third-party proactive outreach requires owner authority or a verified target profile."
+                    "Third-party proactive outreach requires chosen-person authority or a verified target profile."
                         .into(),
                 );
             }
             if !privileged_intent_create(ctx) && !explicit_intent_targets_current(args, ctx) {
                 return Err(
-                    "Creating intents for another person, profile, or conversation requires owner authority or internal context."
+                    "Creating intents for another person, profile, or conversation requires chosen-person authority or internal context."
                         .into(),
                 );
             }
         }
         "update_intent" => {
-            if !matches!(ctx.authority, Authority::Owner)
-                && update_activates_pending_owner_approval_intent(args, ctx).await?
+            if !matches!(ctx.authority, Authority::ChosenPerson)
+                && update_activates_pending_chosen_person_approval_intent(args, ctx).await?
             {
-                return Err("Activating an owner-approval intent requires owner authority.".into());
-            }
-            if intent_requires_owner_approval(args) && !matches!(ctx.authority, Authority::Owner) {
                 return Err(
-                    "Sensitive proactive outreach requires owner approval before an intent is updated."
+                    "Activating an chosen-person-approval intent requires chosen-person authority."
                         .into(),
                 );
             }
-            if !matches!(ctx.authority, Authority::Owner) && privileged_intent_write(ctx) {
+            if intent_requires_chosen_person_approval(args)
+                && !matches!(ctx.authority, Authority::ChosenPerson)
+            {
+                return Err(
+                    "Sensitive proactive outreach requires chosen-person approval before an intent is updated."
+                        .into(),
+                );
+            }
+            if !matches!(ctx.authority, Authority::ChosenPerson) && privileged_intent_write(ctx) {
                 let id = args["intent_id"].as_str().unwrap_or("");
                 if !intent_id_targets_current_or_verified(id, ctx).await?
                     || !intent_targets_current_or_verified(args, ctx).await?
                 {
                     return Err(
-                        "Third-party proactive outreach requires owner authority or a verified target profile."
+                        "Third-party proactive outreach requires chosen-person authority or a verified target profile."
                             .into(),
                     );
                 }
@@ -284,13 +296,13 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 let id = args["intent_id"].as_str().unwrap_or("");
                 if !intent_id_targets_current(id, ctx).await? {
                     return Err(
-                        "Updating intents for another person, profile, or conversation requires owner authority or review context."
+                        "Updating intents for another person, profile, or conversation requires chosen-person authority or review context."
                             .into(),
                     );
                 }
                 if !explicit_intent_targets_current(args, ctx) {
                     return Err(
-                        "Retargeting intents to another person, profile, or conversation requires owner authority or review context."
+                        "Retargeting intents to another person, profile, or conversation requires chosen-person authority or review context."
                             .into(),
                     );
                 }
@@ -301,7 +313,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 let id = args["intent_id"].as_str().unwrap_or("");
                 if !intent_id_targets_current(id, ctx).await? {
                     return Err(
-                        "Cancelling intents for another person, profile, or conversation requires owner authority or review context."
+                        "Cancelling intents for another person, profile, or conversation requires chosen-person authority or review context."
                             .into(),
                     );
                 }
@@ -317,7 +329,9 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
         "reflect" => {
             if let Some(rels) = args["relationship_changes"].as_array() {
                 for r in rels {
-                    if r.get("authority").is_some() && !matches!(ctx.authority, Authority::Owner) {
+                    if r.get("authority").is_some()
+                        && !matches!(ctx.authority, Authority::ChosenPerson)
+                    {
                         return Err(
                             "Changing how you feel about someone isn't something you'd do on command."
                                 .into(),
@@ -329,7 +343,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                             current_person(ctx).is_none_or(|current| current != target)
                         }) {
                             return Err(
-                                "Reflecting on relationship changes for another person requires owner authority or review context."
+                                "Reflecting on relationship changes for another person requires chosen-person authority or review context."
                                     .into(),
                             );
                         }
@@ -343,7 +357,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
 }
 
 fn privileged_profile_write(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::Owner)
+    matches!(ctx.authority, Authority::ChosenPerson)
         || matches!(
             ctx.kind,
             SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -351,7 +365,7 @@ fn privileged_profile_write(ctx: &SessionContext) -> bool {
 }
 
 fn privileged_sensitive_recall(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::Owner)
+    matches!(ctx.authority, Authority::ChosenPerson)
         || matches!(
             ctx.kind,
             SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -359,7 +373,7 @@ fn privileged_sensitive_recall(ctx: &SessionContext) -> bool {
 }
 
 fn privileged_memory_recall(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::Owner)
+    matches!(ctx.authority, Authority::ChosenPerson)
         || matches!(
             ctx.kind,
             SessionKind::Action(
@@ -369,7 +383,7 @@ fn privileged_memory_recall(ctx: &SessionContext) -> bool {
 }
 
 fn privileged_conversation_read(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::Owner)
+    matches!(ctx.authority, Authority::ChosenPerson)
         || matches!(
             ctx.kind,
             SessionKind::Action(
@@ -379,7 +393,7 @@ fn privileged_conversation_read(ctx: &SessionContext) -> bool {
 }
 
 fn privileged_intent_write(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::Owner)
+    matches!(ctx.authority, Authority::ChosenPerson)
         || matches!(
             ctx.kind,
             SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -390,14 +404,16 @@ fn privileged_intent_create(ctx: &SessionContext) -> bool {
     privileged_intent_write(ctx) || matches!(ctx.kind, SessionKind::Action(ActionKind::Ruminate))
 }
 
-pub(crate) fn intent_requires_owner_approval(args: &Value) -> bool {
-    args["requires_owner_approval"].as_bool().unwrap_or(false)
+pub(crate) fn intent_requires_chosen_person_approval(args: &Value) -> bool {
+    args["requires_chosen_person_approval"]
+        .as_bool()
+        .unwrap_or(false)
         || args["sensitive"].as_bool().unwrap_or(false)
         || sensitive_outreach_text(args["task"].as_str())
         || sensitive_outreach_text(args["condition"].as_str())
 }
 
-async fn update_activates_pending_owner_approval_intent(
+async fn update_activates_pending_chosen_person_approval_intent(
     args: &Value,
     ctx: &SessionContext,
 ) -> Result<bool, String> {
@@ -415,7 +431,7 @@ async fn update_activates_pending_owner_approval_intent(
         .store
         .get_intent(id)
         .await
-        .map_err(|e| format!("Could not verify intent owner approval status: {e}"))?;
+        .map_err(|e| format!("Could not verify intent chosen-person approval status: {e}"))?;
     Ok(intent.is_some_and(|intent| intent.status == "pending_approval"))
 }
 
@@ -554,7 +570,7 @@ pub(crate) async fn social_relation_targets_current_or_verified(
     args: &Value,
     ctx: &SessionContext,
 ) -> Result<bool, String> {
-    if matches!(ctx.authority, Authority::Owner) {
+    if matches!(ctx.authority, Authority::ChosenPerson) {
         return Ok(true);
     }
 
@@ -572,7 +588,7 @@ pub(crate) async fn social_relation_targets_current_or_verified(
     else {
         return Ok(false);
     };
-    if social_relation_mentions_owner(ctx, &person_a, &person_b) {
+    if social_relation_mentions_chosen_person(ctx, &person_a, &person_b) {
         return Ok(false);
     }
 
@@ -590,7 +606,7 @@ pub(crate) async fn social_relation_targets_current_or_verified(
 }
 
 pub(crate) async fn relationship_trust_ceiling(ctx: &SessionContext, person: &PersonId) -> f32 {
-    let (authority, current_trust, owners) = {
+    let (authority, current_trust, chosen_people) = {
         let actor = ctx.state.read_state();
         let relationship = actor.bonds.get(person);
         let authority = relationship
@@ -599,35 +615,39 @@ pub(crate) async fn relationship_trust_ceiling(ctx: &SessionContext, person: &Pe
         let current_trust = relationship
             .map(|relationship| relationship.trust)
             .unwrap_or_else(|| crate::state::Relationship::default().trust);
-        let owners = actor
+        let chosen_people = actor
             .bonds
             .iter()
-            .filter_map(|(owner, relationship)| {
-                matches!(relationship.authority, Authority::Owner).then(|| owner.clone())
+            .filter_map(|(chosen_person, relationship)| {
+                matches!(relationship.authority, Authority::ChosenPerson)
+                    .then(|| chosen_person.clone())
             })
             .collect::<Vec<_>>();
-        (authority, current_trust, owners)
+        (authority, current_trust, chosen_people)
     };
 
     if !matches!(authority, Authority::Default) {
         return authority.trust_ceiling();
     }
-    if owners.iter().any(|owner| owner == person) {
-        return Authority::Owner.trust_ceiling();
+    if chosen_people
+        .iter()
+        .any(|chosen_person| chosen_person == person)
+    {
+        return Authority::ChosenPerson.trust_ceiling();
     }
-    if has_owner_social_path(ctx, person, &owners).await {
+    if has_chosen_person_social_path(ctx, person, &chosen_people).await {
         Authority::Default.trust_ceiling()
     } else {
         current_trust.clamp(0.0, Authority::Default.trust_ceiling())
     }
 }
 
-async fn has_owner_social_path(
+async fn has_chosen_person_social_path(
     ctx: &SessionContext,
     person: &PersonId,
-    owners: &[PersonId],
+    chosen_people: &[PersonId],
 ) -> bool {
-    let owner_set = owners
+    let chosen_person_set = chosen_people
         .iter()
         .cloned()
         .collect::<std::collections::HashSet<_>>();
@@ -647,11 +667,11 @@ async fn has_owner_social_path(
                 let Some(other) = other_relation_person(&relation, &current) else {
                     continue;
                 };
-                if owner_set.contains(&other) {
+                if chosen_person_set.contains(&other) {
                     return true;
                 }
                 if seen.insert(other.clone()) {
-                    if seen.len() >= OWNER_SOCIAL_PATH_MAX_NODES {
+                    if seen.len() >= CHOSEN_PERSON_SOCIAL_PATH_MAX_NODES {
                         return false;
                     }
                     next.push(other);
@@ -672,7 +692,7 @@ fn relation_allows_trust_path(relation: &crate::identity::SocialRelation) -> boo
         relation.status,
         RelationStatus::Confirmed | RelationStatus::Stated
     ) && !matches!(relation.source_kind, RelationSource::Inferred)
-        && relation.confidence >= OWNER_SOCIAL_PATH_MIN_CONFIDENCE
+        && relation.confidence >= CHOSEN_PERSON_SOCIAL_PATH_MIN_CONFIDENCE
 }
 
 fn other_relation_person(
@@ -688,14 +708,14 @@ fn other_relation_person(
     }
 }
 
-fn social_relation_mentions_owner(
+fn social_relation_mentions_chosen_person(
     ctx: &SessionContext,
     person_a: &PersonId,
     person_b: &PersonId,
 ) -> bool {
     let actor = ctx.state.read_state();
     actor.bonds.iter().any(|(person, relationship)| {
-        matches!(relationship.authority, Authority::Owner)
+        matches!(relationship.authority, Authority::ChosenPerson)
             && (person == person_a || person == person_b)
     })
 }
@@ -968,7 +988,7 @@ fn memory_is_current_profile_owned_for_forget(mem: &Memory, ctx: &SessionContext
         PrivacyCategory::Sensitive | PrivacyCategory::Secret
     ) || matches!(
         mem.visibility_scope,
-        VisibilityScope::Person | VisibilityScope::OwnerOnly | VisibilityScope::Global
+        VisibilityScope::Person | VisibilityScope::ChosenPersonOnly | VisibilityScope::Global
     ) {
         return false;
     }
@@ -1180,13 +1200,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn relationship_trust_ceiling_requires_owner_social_path_for_default_people() {
+    async fn relationship_trust_ceiling_requires_chosen_person_social_path_for_default_people() {
         let ctx = test_context(Authority::Default, ActionKind::Review);
-        let owner = PersonId("person-owner".into());
+        let chosen_person = PersonId("person-chosen_person".into());
         let stranger = PersonId("person-stranger".into());
         {
             let mut actor = ctx.state.shared.actor.write().unwrap();
-            actor.set_relationship_config(&owner, Some(Authority::Owner));
+            actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
         }
 
         let ceiling = relationship_trust_ceiling(&ctx, &stranger).await;
@@ -1195,26 +1215,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn relationship_trust_ceiling_allows_owner_connected_social_path() {
+    async fn relationship_trust_ceiling_allows_chosen_person_connected_social_path() {
         let ctx = test_context(Authority::Default, ActionKind::Review);
-        let owner = PersonId("person-owner".into());
+        let chosen_person = PersonId("person-chosen_person".into());
         let middle = PersonId("person-middle".into());
         let connected = PersonId("person-connected".into());
         {
             let mut actor = ctx.state.shared.actor.write().unwrap();
-            actor.set_relationship_config(&owner, Some(Authority::Owner));
+            actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
         }
         ctx.store
             .upsert_relation(&SocialRelation {
-                person_a: owner.clone(),
+                person_a: chosen_person.clone(),
                 person_b: middle.clone(),
                 relation: Relation::Friend,
                 direction: Relation::Friend.default_direction(),
                 confidence: 0.9,
                 status: RelationStatus::Confirmed,
                 evidence: Some(serde_json::json!({"source": "test"})),
-                source_kind: RelationSource::OwnerConfirmed,
-                asserted_by: Some(owner.clone()),
+                source_kind: RelationSource::ChosenPersonConfirmed,
+                asserted_by: Some(chosen_person.clone()),
                 created_at: 1000,
                 updated_at: 1000,
             })
@@ -1357,7 +1377,7 @@ mod tests {
         .unwrap_err();
         assert!(denied.contains("another person"));
 
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "reflect",
             &serde_json::json!({
@@ -1366,7 +1386,7 @@ mod tests {
                     "trust_delta": 0.01
                 }]
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -1387,15 +1407,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_or_review_can_update_other_profile_and_person() {
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+    async fn chosen_person_or_review_can_update_other_profile_and_person() {
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "update_profile",
             &serde_json::json!({
                 "ref": "profile-other",
-                "summary": "Owner-visible profile summary"
+                "summary": "Chosen-person-visible profile summary"
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -1456,8 +1476,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_can_write_structured_identity_memory() {
-        let ctx = test_context(Authority::Owner, ActionKind::Respond);
+    async fn chosen_person_can_write_structured_identity_memory() {
+        let ctx = test_context(Authority::ChosenPerson, ActionKind::Respond);
 
         check(
             "form_memory",
@@ -1492,7 +1512,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn review_can_update_social_graph_but_not_owner_confirm() {
+    async fn review_can_update_social_graph_but_not_chosen_person_confirm() {
         let mut ctx = test_context(Authority::Default, ActionKind::Review);
         let current_profile = ProfileId("profile-a".into());
         let current_person = PersonId("person-a".into());
@@ -1533,14 +1553,14 @@ mod tests {
                 "person_a": "person-a",
                 "person_b": "person-b",
                 "relation": "friend",
-                "source_kind": "owner_confirmed"
+                "source_kind": "chosen_person_confirmed"
             }),
             &ctx,
         )
         .await
         .unwrap_err();
 
-        assert!(denied.contains("Owner-confirmed"));
+        assert!(denied.contains("Chosen-person-confirmed"));
     }
 
     #[tokio::test]
@@ -1573,15 +1593,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_or_review_can_opt_into_sensitive_memory_recall() {
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+    async fn chosen_person_or_review_can_opt_into_sensitive_memory_recall() {
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "recall_memories",
             &serde_json::json!({
                 "query": "deployment credentials",
                 "include_sensitive": true
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -1694,15 +1714,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_or_review_can_recall_outside_current_target() {
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+    async fn chosen_person_or_review_can_recall_outside_current_target() {
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "recall_memories",
             &serde_json::json!({
                 "query": "other person preference",
                 "person": "person-other"
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -1789,8 +1809,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_can_create_cross_target_intent_and_review_requires_verified_target() {
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+    async fn chosen_person_can_create_cross_target_intent_and_review_requires_verified_target() {
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "create_intent",
             &serde_json::json!({
@@ -1799,7 +1819,7 @@ mod tests {
                 "fire_at": 1200,
                 "person": "person-alice"
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -1910,7 +1930,7 @@ mod tests {
                 created_at: 1000,
                 updated_at: 1000,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -1940,7 +1960,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sensitive_proactive_intent_creates_can_be_routed_for_owner_approval() {
+    async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_person_approval() {
         let mut current = test_context(Authority::Default, ActionKind::Respond);
         current.messages[0].person = Some(PersonId("person-current".into()));
 
@@ -1964,14 +1984,14 @@ mod tests {
                 "task": "Follow up about the confidential family issue",
                 "kind": "scheduled",
                 "fire_at": 1200,
-                "requires_owner_approval": true
+                "requires_chosen_person_approval": true
             }),
             &review,
         )
         .await
         .unwrap();
 
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "create_intent",
             &serde_json::json!({
@@ -1980,14 +2000,14 @@ mod tests {
                 "fire_at": 1200,
                 "sensitive": true
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
     }
 
     #[tokio::test]
-    async fn sensitive_intent_updates_require_owner_authority() {
+    async fn sensitive_intent_updates_require_chosen_person_authority() {
         let review = test_context(Authority::Default, ActionKind::Review);
         let denied = check(
             "update_intent",
@@ -2002,27 +2022,27 @@ mod tests {
         .unwrap_err();
         assert!(denied.contains("Sensitive proactive outreach"));
 
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "update_intent",
             &serde_json::json!({
                 "intent_id": "intent-1",
                 "task": "Follow up about a bank payment",
-                "requires_owner_approval": true
+                "requires_chosen_person_approval": true
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
     }
 
     #[tokio::test]
-    async fn pending_owner_approval_intents_can_only_be_activated_by_owner() {
+    async fn pending_chosen_person_approval_intents_can_only_be_activated_by_chosen_person() {
         let review = test_context(Authority::Default, ActionKind::Review);
         review
             .store
             .create_intent(&IntentRecord {
-                id: "intent-pending-owner-approval".into(),
+                id: "intent-pending-chosen-person-approval".into(),
                 kind: "scheduled".into(),
                 status: "pending_approval".into(),
                 task: "Ask Sam about the private medical update".into(),
@@ -2039,7 +2059,7 @@ mod tests {
                 created_at: 1000,
                 updated_at: 1000,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2047,20 +2067,20 @@ mod tests {
         let denied = check(
             "update_intent",
             &serde_json::json!({
-                "intent_id": "intent-pending-owner-approval",
+                "intent_id": "intent-pending-chosen-person-approval",
                 "status": "active"
             }),
             &review,
         )
         .await
         .unwrap_err();
-        assert!(denied.contains("owner authority"));
+        assert!(denied.contains("chosen-person authority"));
 
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
-        owner
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+        chosen_person
             .store
             .create_intent(&IntentRecord {
-                id: "intent-pending-owner-approval".into(),
+                id: "intent-pending-chosen-person-approval".into(),
                 kind: "scheduled".into(),
                 status: "pending_approval".into(),
                 task: "Ask Sam about the private medical update".into(),
@@ -2077,17 +2097,17 @@ mod tests {
                 created_at: 1000,
                 updated_at: 1000,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
         check(
             "update_intent",
             &serde_json::json!({
-                "intent_id": "intent-pending-owner-approval",
+                "intent_id": "intent-pending-chosen-person-approval",
                 "status": "active"
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -2095,7 +2115,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_review_is_review_only() {
-        let respond = test_context(Authority::Owner, ActionKind::Respond);
+        let respond = test_context(Authority::ChosenPerson, ActionKind::Respond);
         let denied = check("apply_review", &serde_json::json!({}), &respond)
             .await
             .unwrap_err();
@@ -2130,7 +2150,7 @@ mod tests {
                 created_at: 1000,
                 updated_at: 1000,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2184,7 +2204,7 @@ mod tests {
             ActionKind::Consolidate,
             ActionKind::Ruminate,
         ] {
-            let ctx = test_context(Authority::Owner, kind);
+            let ctx = test_context(Authority::ChosenPerson, kind);
             let denied = check(
                 "send_message",
                 &serde_json::json!({
@@ -2238,14 +2258,14 @@ mod tests {
         .await
         .unwrap();
 
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "update_conversation_summary",
             &serde_json::json!({
                 "conversation": "relay:other",
-                "summary": "Owner-directed summary maintenance."
+                "summary": "Chosen-person-directed summary maintenance."
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -2312,14 +2332,14 @@ mod tests {
         .await
         .unwrap();
 
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         check(
             "read_messages",
             &serde_json::json!({
                 "conversation": "relay:other",
                 "limit": 5
             }),
-            &owner,
+            &chosen_person,
         )
         .await
         .unwrap();
@@ -2702,7 +2722,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn memory_inspection_and_deletion_by_id_are_owner_only() {
+    async fn memory_inspection_and_deletion_by_id_are_chosen_person_only() {
         let default = test_context(Authority::Default, ActionKind::Respond);
         for tool in ["inspect_memory", "delete_memory"] {
             let denied = check(
@@ -2712,15 +2732,15 @@ mod tests {
             )
             .await
             .unwrap_err();
-            assert!(denied.contains("Owner authority"));
+            assert!(denied.contains("Chosen-person authority"));
         }
 
-        let owner = test_context(Authority::Owner, ActionKind::Respond);
+        let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
         for tool in ["inspect_memory", "delete_memory"] {
             check(
                 tool,
                 &serde_json::json!({"memory_id": "memory-secret"}),
-                &owner,
+                &chosen_person,
             )
             .await
             .unwrap();

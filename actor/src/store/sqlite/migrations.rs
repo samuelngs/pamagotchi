@@ -80,8 +80,8 @@ pub(super) fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
     run_migration(
         conn,
         16,
-        "intent_owner_approval",
-        ensure_intent_owner_approval_column,
+        "intent_chosen_person_approval",
+        ensure_intent_chosen_person_approval_column,
     )?;
     run_migration(
         conn,
@@ -342,7 +342,7 @@ fn ensure_action_intent_tables(conn: &Connection) -> anyhow::Result<()> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             last_fired_at INTEGER,
-            owner_approved INTEGER NOT NULL DEFAULT 0
+            chosen_person_approved INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_intents_due ON intents(status, fire_at, priority);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_intents_dedupe
@@ -425,15 +425,15 @@ fn ensure_action_run_outcome_memory_columns(conn: &Connection) -> anyhow::Result
     Ok(())
 }
 
-fn ensure_intent_owner_approval_column(conn: &Connection) -> anyhow::Result<()> {
+fn ensure_intent_chosen_person_approval_column(conn: &Connection) -> anyhow::Result<()> {
     let mut stmt = conn.prepare("PRAGMA table_info(intents)")?;
     let columns = stmt
         .query_map([], |row| row.get::<_, String>("name"))?
         .filter_map(|row| row.ok())
         .collect::<std::collections::HashSet<_>>();
-    if !columns.contains("owner_approved") {
+    if !columns.contains("chosen_person_approved") {
         conn.execute(
-            "ALTER TABLE intents ADD COLUMN owner_approved INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE intents ADD COLUMN chosen_person_approved INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }

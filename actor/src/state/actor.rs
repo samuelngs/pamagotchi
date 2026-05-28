@@ -284,8 +284,8 @@ fn merge_authority(a: &Authority, b: &Authority) -> Authority {
         Blocked
     } else if matches!(a, Restricted) || matches!(b, Restricted) {
         Restricted
-    } else if matches!(a, Owner) || matches!(b, Owner) {
-        Owner
+    } else if matches!(a, ChosenPerson) || matches!(b, ChosenPerson) {
+        ChosenPerson
     } else if matches!(a, Trusted) || matches!(b, Trusted) {
         Trusted
     } else {
@@ -373,7 +373,7 @@ mod tests {
     fn lowering_authority_lowers_existing_trust_ceiling() {
         let person = PersonId("person-restricted".into());
         let mut state = ActorState::new(CoreTraits::default());
-        state.set_relationship_config(&person, Some(Authority::Owner));
+        state.set_relationship_config(&person, Some(Authority::ChosenPerson));
         state.apply_delta(
             &Delta {
                 relationship_changes: vec![RelationshipChange {

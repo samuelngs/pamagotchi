@@ -21,7 +21,7 @@ pub struct IntentRecord {
     pub updated_at: i64,
     pub last_fired_at: Option<i64>,
     #[serde(default)]
-    pub owner_approved: bool,
+    pub chosen_person_approved: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -38,6 +38,6 @@ pub struct IntentUpdateRecord {
     pub priority: Option<u8>,
     pub dedupe_key: Option<String>,
     pub source_memory: Option<MemoryId>,
-    pub owner_approved: Option<bool>,
+    pub chosen_person_approved: Option<bool>,
     pub updated_at: i64,
 }

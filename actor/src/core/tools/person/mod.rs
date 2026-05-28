@@ -66,7 +66,7 @@ pub fn tools() -> Vec<Tool> {
         },
         Tool {
             name: "get_person".into(),
-            description: "Look up a person's current profile — name, summary, first/last seen. Set include_identities=true only when you need attached gateway identities; for privacy, only the owner or that same person can see them. Use request_identity_verification instead when someone claims to be a known person on another platform.".into(),
+            description: "Look up a person's current profile — name, summary, first/last seen. Set include_identities=true only when you need attached gateway identities; for privacy, only the chosen person or that same person can see them. Use request_identity_verification instead when someone claims to be a known person on another platform.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -76,7 +76,7 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "include_identities": {
                         "type": "boolean",
-                        "description": "Include attached gateway identities. Defaults to false and is allowed only for self or owner."
+                        "description": "Include attached gateway identities. Defaults to false and is allowed only for self or chosen person."
                     },
                     "reason": {
                         "type": "string",
@@ -92,7 +92,7 @@ pub fn tools() -> Vec<Tool> {
         },
         Tool {
             name: "request_identity_verification".into(),
-            description: "Start verification when the current profile claims to be a known person on another platform. Creates a pending claim and asks the known person's existing identities to confirm only when evidence is strong enough. Owner, restricted, and blocked targets require owner confirmation before any contact.".into(),
+            description: "Start verification when the current profile claims to be a known person on another platform. Creates a pending claim and asks the known person's existing identities to confirm only when evidence is strong enough. Chosen person, restricted, and blocked targets require chosen-person confirmation before any contact.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -106,8 +106,8 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "evidence": {
                         "type": "string",
-                        "enum": ["self_declaration", "owner_vouched", "mutual_claim", "shared_knowledge", "configured_identity"],
-                        "description": "Type of evidence supporting this verification request. Defaults to self_declaration. owner_vouched and configured_identity require owner authority; self_declaration records the claim without contacting anyone."
+                        "enum": ["self_declaration", "chosen_person_vouched", "mutual_claim", "shared_knowledge", "configured_identity"],
+                        "description": "Type of evidence supporting this verification request. Defaults to self_declaration. chosen_person_vouched and configured_identity require chosen-person authority; self_declaration records the claim without contacting anyone."
                     }
                 },
                 "required": ["claimed_person", "reason"]
@@ -177,7 +177,7 @@ pub fn tools() -> Vec<Tool> {
         },
         Tool {
             name: "upsert_social_relation".into(),
-            description: "Record or update an evidence-backed social graph relation between two person ids. Use during review/consolidation or owner-directed maintenance, not as casual response behavior.".into(),
+            description: "Record or update an evidence-backed social graph relation between two person ids. Use during review/consolidation or chosen-person-directed maintenance, not as casual response behavior.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -212,13 +212,13 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "source_kind": {
                         "type": "string",
-                        "enum": ["inferred", "stated", "owner_confirmed", "import", "system"],
-                        "description": "How the relation was sourced. owner_confirmed requires owner authority.",
+                        "enum": ["inferred", "stated", "chosen_person_confirmed", "import", "system"],
+                        "description": "How the relation was sourced. chosen_person_confirmed requires chosen-person authority.",
                         "default": "stated"
                     },
                     "asserted_by_person_id": {
                         "type": "string",
-                        "description": "Person id of the speaker/source who asserted this relation. Defaults to the cited current-conversation speaker for stated or owner-confirmed relations."
+                        "description": "Person id of the speaker/source who asserted this relation. Defaults to the cited current-conversation speaker for stated or chosen-person-confirmed relations."
                     },
                     "evidence": {
                         "type": "object",

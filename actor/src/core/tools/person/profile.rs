@@ -270,9 +270,9 @@ async fn visible_identities(
 ) -> Result<Value, String> {
     let current = ctx.messages.first().and_then(|m| m.person.as_ref());
     let is_self = current == Some(person);
-    let is_owner = ctx.authority == Authority::Owner;
+    let is_chosen_person = ctx.authority == Authority::ChosenPerson;
 
-    if !is_self && !is_owner {
+    if !is_self && !is_chosen_person {
         return Err("Identities are private. If this is an identity claim, use request_identity_verification instead.".into());
     }
 
@@ -500,7 +500,7 @@ mod tests {
                 metadata: serde_json::Value::Null,
             }],
             conversation: Some(ConversationId("relay:local".into())),
-            authority: Authority::Owner,
+            authority: Authority::ChosenPerson,
             style_directive: None,
             cancelled_note: None,
             concurrent_summaries: vec![],

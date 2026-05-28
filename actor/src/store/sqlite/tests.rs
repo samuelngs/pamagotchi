@@ -64,6 +64,70 @@ async fn persistent_store_seeds_actor_identity_memory() {
 }
 
 #[tokio::test]
+async fn persistent_store_replaces_obsolete_actor_identity_memory() {
+    let path = std::env::temp_dir().join(format!(
+        "pamagotchi-actor-identity-replace-{}.db",
+        nanoid::nanoid!()
+    ));
+    let path_string = path.to_string_lossy().into_owned();
+
+    let store = SqliteStore::open(SqliteConfig {
+        path: path_string.clone(),
+        embedding_dimensions: 4,
+    })
+    .unwrap();
+    store
+        .store_memory(&Memory {
+            id: MemoryId("obsolete-actor-identity".into()),
+            kind: MemoryKind::Semantic,
+            memory_type: MemoryType::IdentityClaim,
+            truth_status: TruthStatus::Confirmed,
+            content: "My name is Pamagotchi. I am a transparent digital being with continuity and memory, and I do not pretend to be human.".into(),
+            source: MemorySource::External,
+            importance: 1.0,
+            confidence: 1.0,
+            sensitivity: 0.0,
+            sensitivity_category: Some("identity".into()),
+            subjects: vec![MemorySubject::actor(Some("self".into()), 1.0)],
+            dedupe_key: Some("actor:self:identity".into()),
+            privacy_category: PrivacyCategory::Public,
+            visibility_scope: VisibilityScope::Global,
+            ..Memory::default()
+        })
+        .await
+        .unwrap();
+    drop(store);
+
+    let store = SqliteStore::open(SqliteConfig {
+        path: path_string.clone(),
+        embedding_dimensions: 4,
+    })
+    .unwrap();
+    let identity = store
+        .get_memory(&MemoryId("actor-self-identity-pamagotchi".into()))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!identity.content.contains("transparent digital being"));
+    assert!(!identity.content.contains("Do not pretend to be human"));
+    assert!(identity.content.contains("I am a Pamagotchi"));
+    let actor_memories = store
+        .memories_for_subject(MemorySubjectType::Actor, "self", 10)
+        .await
+        .unwrap();
+    assert!(
+        actor_memories
+            .iter()
+            .any(|memory| memory.id.0 == "actor-self-first-contact")
+    );
+
+    drop(store);
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{path_string}{suffix}"));
+    }
+}
+
+#[tokio::test]
 async fn memory_store_and_recall_by_text() {
     let store = test_store();
     let mem = sample_memory(
@@ -611,14 +675,17 @@ async fn memory_forget() {
     store
         .store_memory(&sample_memory(
             "m2",
-            "owner deleted",
+            "chosen_person deleted",
             vec![0.4, 0.3, 0.2, 0.1],
         ))
         .await
         .unwrap();
     assert!(
         store
-            .forget_with_reason(&MemoryId("m2".into()), Some("owner requested deletion"))
+            .forget_with_reason(
+                &MemoryId("m2".into()),
+                Some("chosen_person requested deletion")
+            )
             .await
             .unwrap()
     );
@@ -630,7 +697,7 @@ async fn memory_forget() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(reason.as_deref(), Some("owner requested deletion"));
+    assert_eq!(reason.as_deref(), Some("chosen_person requested deletion"));
     drop(conn);
 
     let mutations = store
@@ -640,7 +707,7 @@ async fn memory_forget() {
     assert_eq!(mutations[0].operation, "forget");
     assert_eq!(
         mutations[0].reason.as_deref(),
-        Some("owner requested deletion")
+        Some("chosen_person requested deletion")
     );
     assert!(
         mutations
@@ -1354,7 +1421,7 @@ async fn debug_views_return_bounded_recent_records() {
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            owner_approved: false,
+            chosen_person_approved: false,
         })
         .await
         .unwrap();
@@ -1377,7 +1444,7 @@ async fn debug_views_return_bounded_recent_records() {
             created_at: 1001,
             updated_at: 1001,
             last_fired_at: None,
-            owner_approved: false,
+            chosen_person_approved: false,
         })
         .await
         .unwrap();
@@ -1567,13 +1634,13 @@ async fn intents_are_persisted_updated_due_and_fired_once() {
         created_at: 900,
         updated_at: 900,
         last_fired_at: None,
-        owner_approved: true,
+        chosen_person_approved: true,
     };
 
     store.create_intent(&intent).await.unwrap();
     let stored = store.get_intent("intent-1").await.unwrap().unwrap();
     assert_eq!(stored.task, "Ask how the deployment went");
-    assert!(stored.owner_approved);
+    assert!(stored.chosen_person_approved);
     assert_eq!(
         stored.source_memory.as_ref().map(|id| id.0.as_str()),
         Some("memory-commitment-1")
@@ -1586,7 +1653,7 @@ async fn intents_are_persisted_updated_due_and_fired_once() {
                 task: Some("Ask whether the deployment recovered".into()),
                 priority: Some(90),
                 source_memory: Some(MemoryId("memory-commitment-2".into())),
-                owner_approved: Some(false),
+                chosen_person_approved: Some(false),
                 updated_at: 950,
                 ..Default::default()
             },
@@ -1597,7 +1664,7 @@ async fn intents_are_persisted_updated_due_and_fired_once() {
     assert_eq!(due.len(), 1);
     assert_eq!(due[0].priority, 90);
     assert_eq!(due[0].task, "Ask whether the deployment recovered");
-    assert!(!due[0].owner_approved);
+    assert!(!due[0].chosen_person_approved);
     assert_eq!(
         due[0].source_memory.as_ref().map(|id| id.0.as_str()),
         Some("memory-commitment-2")
@@ -1634,7 +1701,7 @@ async fn intents_can_be_marked_completed_once() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            owner_approved: false,
+            chosen_person_approved: false,
         })
         .await
         .unwrap();
@@ -1680,7 +1747,7 @@ async fn cancelled_intents_are_not_marked_completed() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            owner_approved: false,
+            chosen_person_approved: false,
         })
         .await
         .unwrap();
@@ -1720,7 +1787,7 @@ async fn recurring_intents_reschedule_when_fired() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            owner_approved: false,
+            chosen_person_approved: false,
         })
         .await
         .unwrap();
@@ -1802,7 +1869,7 @@ async fn due_intents_coalesce_by_target_per_scan() {
                 created_at: 900,
                 updated_at: 900,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -1914,7 +1981,7 @@ async fn active_intents_for_context_returns_matching_open_loops() {
                 created_at: 800,
                 updated_at: 800,
                 last_fired_at: None,
-                owner_approved: false,
+                chosen_person_approved: false,
             })
             .await
             .unwrap();
@@ -2640,7 +2707,7 @@ async fn social_graph() {
             "message_ids": ["msg-1"],
             "quote": "my mom"
         })),
-        source_kind: RelationSource::OwnerConfirmed,
+        source_kind: RelationSource::ChosenPersonConfirmed,
         asserted_by: Some(PersonId("p1".into())),
         created_at: 1000,
         updated_at: 1000,
@@ -2653,7 +2720,7 @@ async fn social_graph() {
     assert_eq!(rels[0].direction.as_str(), "a_to_b");
     assert_eq!(rels[0].confidence, 0.95);
     assert_eq!(rels[0].status, RelationStatus::Confirmed);
-    assert_eq!(rels[0].source_kind, RelationSource::OwnerConfirmed);
+    assert_eq!(rels[0].source_kind, RelationSource::ChosenPersonConfirmed);
     assert_eq!(
         rels[0].asserted_by.as_ref().map(|person| person.0.as_str()),
         Some("p1")
@@ -2772,7 +2839,7 @@ async fn merge_person_context_moves_person_scoped_store_records() {
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            owner_approved: false,
+            chosen_person_approved: false,
         })
         .await
         .unwrap();

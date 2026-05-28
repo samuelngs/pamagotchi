@@ -145,7 +145,7 @@ impl RelationStatus {
 pub enum RelationSource {
     Inferred,
     Stated,
-    OwnerConfirmed,
+    ChosenPersonConfirmed,
     Import,
     System,
 }
@@ -155,7 +155,7 @@ impl RelationSource {
         match self {
             Self::Inferred => "inferred",
             Self::Stated => "stated",
-            Self::OwnerConfirmed => "owner_confirmed",
+            Self::ChosenPersonConfirmed => "chosen_person_confirmed",
             Self::Import => "import",
             Self::System => "system",
         }
@@ -165,7 +165,7 @@ impl RelationSource {
         match s {
             "inferred" => Self::Inferred,
             "stated" => Self::Stated,
-            "owner_confirmed" => Self::OwnerConfirmed,
+            "chosen_person_confirmed" => Self::ChosenPersonConfirmed,
             "import" => Self::Import,
             _ => Self::System,
         }

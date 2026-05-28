@@ -14,7 +14,7 @@ pub(super) fn create_intent(conn: &Connection, intent: &IntentRecord) -> anyhow:
         "INSERT OR IGNORE INTO intents (
             id, kind, status, task, person_id, profile_id, conversation_id, fire_at,
             condition, recurrence, priority, dedupe_key, source_action_id, source_memory_id,
-            created_at, updated_at, last_fired_at, owner_approved
+            created_at, updated_at, last_fired_at, chosen_person_approved
          )
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         params![
@@ -35,7 +35,7 @@ pub(super) fn create_intent(conn: &Connection, intent: &IntentRecord) -> anyhow:
             intent.created_at,
             intent.updated_at,
             intent.last_fired_at,
-            intent.owner_approved,
+            intent.chosen_person_approved,
         ],
     )?;
     Ok(())
@@ -45,7 +45,7 @@ pub(super) fn get_intent(conn: &Connection, id: &str) -> anyhow::Result<Option<I
     conn.query_row(
         "SELECT id, kind, status, task, person_id, profile_id, conversation_id, fire_at,
                 condition, recurrence, priority, dedupe_key, source_action_id, source_memory_id,
-                created_at, updated_at, last_fired_at, owner_approved
+                created_at, updated_at, last_fired_at, chosen_person_approved
          FROM intents WHERE id = ?1",
         params![id],
         read_intent,
@@ -77,7 +77,7 @@ pub(super) fn update_intent(
             priority = COALESCE(?11, priority),
             dedupe_key = COALESCE(?12, dedupe_key),
             source_memory_id = COALESCE(?13, source_memory_id),
-            owner_approved = COALESCE(?14, owner_approved),
+            chosen_person_approved = COALESCE(?14, chosen_person_approved),
             updated_at = ?15
          WHERE id = ?1",
         params![
@@ -94,7 +94,7 @@ pub(super) fn update_intent(
             update.priority,
             update.dedupe_key.as_deref(),
             source_memory_id,
-            update.owner_approved,
+            update.chosen_person_approved,
             update.updated_at,
         ],
     )?;
@@ -138,7 +138,7 @@ pub(super) fn active_intents_for_context(
     let mut stmt = conn.prepare(
         "SELECT id, kind, status, task, person_id, profile_id, conversation_id, fire_at,
                 condition, recurrence, priority, dedupe_key, source_action_id, source_memory_id,
-                created_at, updated_at, last_fired_at, owner_approved
+                created_at, updated_at, last_fired_at, chosen_person_approved
          FROM intents
          WHERE status = 'active'
            AND (
@@ -171,7 +171,7 @@ pub(super) fn due_intents(
     let mut stmt = conn.prepare(
         "SELECT id, kind, status, task, person_id, profile_id, conversation_id, fire_at,
                 condition, recurrence, priority, dedupe_key, source_action_id, source_memory_id,
-                created_at, updated_at, last_fired_at, owner_approved
+                created_at, updated_at, last_fired_at, chosen_person_approved
          FROM intents
          WHERE status = 'active' AND fire_at IS NOT NULL AND fire_at <= ?1
          ORDER BY priority DESC, fire_at ASC

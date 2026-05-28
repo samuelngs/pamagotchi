@@ -76,7 +76,7 @@ impl Mind {
         event: &WakeEvent,
     ) -> MindDecision {
         if matches!(self.resolve_authority(event), Authority::Blocked)
-            && !matches!(event, WakeEvent::IntentFired(intent) if intent.owner_approved)
+            && !matches!(event, WakeEvent::IntentFired(intent) if intent.chosen_person_approved)
         {
             tracing::info!("blocked person — dropping silently");
             return MindDecision::Drop;
@@ -429,7 +429,7 @@ fn intent_context_message(
             "event": "intent_fired",
             "intent_id": intent.id,
             "scheduled_at": intent.scheduled_at,
-            "owner_approved": intent.owner_approved,
+            "chosen_person_approved": intent.chosen_person_approved,
             "defer_count": intent.defer_count,
         }),
     }
@@ -499,7 +499,7 @@ mod tests {
             conversation: Some(ConversationId("relay:local".into())),
             person: Some(PersonId("person-intent".into())),
             scheduled_at: Some(1200),
-            owner_approved: true,
+            chosen_person_approved: true,
             defer_count: 2,
         };
         let summary = ConversationSummary {
@@ -534,7 +534,7 @@ mod tests {
         assert_eq!(message.group, Some(GroupId("group-target".into())));
         assert_eq!(message.metadata["event"], "intent_fired");
         assert_eq!(message.metadata["scheduled_at"], 1200);
-        assert_eq!(message.metadata["owner_approved"], true);
+        assert_eq!(message.metadata["chosen_person_approved"], true);
         assert_eq!(message.metadata["defer_count"], 2);
     }
 
@@ -546,7 +546,7 @@ mod tests {
             conversation: Some(ConversationId("relay:local".into())),
             person: None,
             scheduled_at: None,
-            owner_approved: false,
+            chosen_person_approved: false,
             defer_count: 0,
         };
         let summary = ConversationSummary {
