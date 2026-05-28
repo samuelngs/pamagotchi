@@ -2,7 +2,10 @@ use super::DiscordConfig;
 use crate::{GatewayConnectionState, GatewayRuntime};
 use async_trait::async_trait;
 use protocol::{ConversationId, GroupId, InboundMessage, MediaAttachment, MediaKind};
-use serenity::all::{ChannelId, Context, EventHandler, Message, Ready};
+use serenity::all::{
+    ChannelId, Context, EventHandler, Message, MessageId, MessageUpdateEvent, Ready,
+    TypingStartEvent,
+};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -45,7 +48,9 @@ impl EventHandler for DiscordHandler {
         let inbound = InboundMessage {
             message_id: msg.id.to_string(),
             gateway_id: self.gateway_id.clone(),
-            external_id: channel_id.to_string(),
+            sender_external_id: msg.author.id.get().to_string(),
+            sender_display_name: Some(msg.author.name.clone()),
+            reply_external_id: channel_id.to_string(),
             conversation: ConversationId(format!("{}:{channel_id}", self.gateway_id)),
             group: msg
                 .guild_id
@@ -68,6 +73,115 @@ impl EventHandler for DiscordHandler {
 
         if let Err(e) = self.inbound_tx.send(inbound).await {
             warn!(%e, gateway = %self.gateway_id, "failed to forward discord message");
+        }
+    }
+
+    async fn typing_start(&self, _ctx: Context, event: TypingStartEvent) {
+        if self.config.ignore_bots && event.member.as_ref().is_some_and(|member| member.user.bot) {
+            return;
+        }
+
+        let channel_id = event.channel_id.get();
+        if !self.config.allows_channel(channel_id) {
+            return;
+        }
+
+        self.runtime
+            .emit_typing(
+                &self.gateway_id,
+                ConversationId(format!("{}:{channel_id}", self.gateway_id)),
+                event.user_id.get().to_string(),
+                true,
+            )
+            .await;
+    }
+
+    async fn message_update(
+        &self,
+        _ctx: Context,
+        _old_if_available: Option<Message>,
+        new: Option<Message>,
+        event: MessageUpdateEvent,
+    ) {
+        let channel_id = event.channel_id.get();
+        if !self.config.allows_channel(channel_id) {
+            return;
+        }
+        let is_bot_update = new.as_ref().is_some_and(|message| message.author.bot)
+            || event.author.as_ref().is_some_and(|author| author.bot);
+        if self.config.ignore_bots && is_bot_update {
+            return;
+        }
+
+        let content = match new.as_ref() {
+            Some(message) => extract_message_content(message).0,
+            None => match event.content.clone() {
+                Some(content) => content,
+                None => return,
+            },
+        };
+        let edited_at = event
+            .edited_timestamp
+            .or(event.timestamp)
+            .map(|timestamp| timestamp.unix_timestamp())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
+
+        self.runtime
+            .emit_message_edited(
+                &self.gateway_id,
+                ConversationId(format!("{}:{channel_id}", self.gateway_id)),
+                event.id.to_string(),
+                content,
+                edited_at,
+            )
+            .await;
+    }
+
+    async fn message_delete(
+        &self,
+        _ctx: Context,
+        channel_id: ChannelId,
+        deleted_message_id: MessageId,
+        _guild_id: Option<serenity::all::GuildId>,
+    ) {
+        let channel_id_raw = channel_id.get();
+        if !self.config.allows_channel(channel_id_raw) {
+            return;
+        }
+
+        self.runtime
+            .emit_message_deleted(
+                &self.gateway_id,
+                ConversationId(format!("{}:{channel_id_raw}", self.gateway_id)),
+                deleted_message_id.to_string(),
+                chrono::Utc::now().timestamp(),
+            )
+            .await;
+    }
+
+    async fn message_delete_bulk(
+        &self,
+        _ctx: Context,
+        channel_id: ChannelId,
+        multiple_deleted_messages_ids: Vec<MessageId>,
+        _guild_id: Option<serenity::all::GuildId>,
+    ) {
+        let channel_id_raw = channel_id.get();
+        if !self.config.allows_channel(channel_id_raw) {
+            return;
+        }
+        let conversation = ConversationId(format!("{}:{channel_id_raw}", self.gateway_id));
+        let deleted_at = chrono::Utc::now().timestamp();
+
+        for message_id in multiple_deleted_messages_ids {
+            self.runtime
+                .emit_message_deleted(
+                    &self.gateway_id,
+                    conversation.clone(),
+                    message_id.to_string(),
+                    deleted_at,
+                )
+                .await;
         }
     }
 }

@@ -1,44 +1,26 @@
 use super::super::action::{ActionId, RunningState};
 use super::super::decision::{MindDecision, MindVerdict};
-use super::super::event::WakeEvent;
+use super::super::event::{FiredIntent, WakeEvent};
 use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
-use super::Mind;
+use super::{MAX_DEFER_COUNT, Mind};
 use crate::state::Authority;
+use crate::store::ConversationSummary;
 use inference::{Reasoning, RouteContext};
-use protocol::InboundMessage;
+use protocol::{ConversationId, InboundMessage};
 
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
-use tracing::warn;
+use tracing::{info, warn};
 
 impl Mind {
     pub(super) async fn evaluate(&self, event: &WakeEvent) -> MindVerdict {
-        let messages = match event {
-            WakeEvent::Message(msg) => vec![msg.clone()],
-            _ => vec![],
+        let Some(evaluable) = EvaluableEvent::from_wake(event) else {
+            return MindVerdict::Drop;
         };
 
-        let event_desc = describe(event);
-
-        let eval_messages = if messages.is_empty() {
-            vec![InboundMessage {
-                message_id: String::new(),
-                gateway_id: String::new(),
-                external_id: String::new(),
-                conversation: protocol::ConversationId("mind".into()),
-                group: None,
-                identity: None,
-                profile: None,
-                person: None,
-                content: event_desc,
-                attachments: Vec::new(),
-                timestamp: 0,
-                metadata: serde_json::Value::Null,
-            }]
-        } else {
-            messages
-        };
+        let event_desc = describe(evaluable);
+        let eval_messages = self.evaluation_messages(evaluable, event_desc).await;
 
         let (_inject_tx, inject_rx) = mpsc::channel::<InboundMessage>(1);
 
@@ -72,6 +54,8 @@ impl Mind {
             max_action_attempts: 1,
             escalate_after: 1,
             gateway: self.gateway.clone(),
+            typing: self.typing.clone(),
+            metrics: self.metrics.clone(),
             session_start: std::time::Instant::now(),
         };
 
@@ -86,16 +70,92 @@ impl Mind {
         }
     }
 
-    pub(super) fn build_decision(&self, verdict: MindVerdict, event: &WakeEvent) -> MindDecision {
-        if matches!(self.resolve_authority(event), Authority::Blocked) {
+    pub(super) async fn build_decision(
+        &self,
+        verdict: MindVerdict,
+        event: &WakeEvent,
+    ) -> MindDecision {
+        if matches!(self.resolve_authority(event), Authority::Blocked)
+            && !matches!(event, WakeEvent::IntentFired(intent) if intent.owner_approved)
+        {
             tracing::info!("blocked person — dropping silently");
             return MindDecision::Drop;
         }
 
         match verdict {
-            MindVerdict::Drop | MindVerdict::Defer => MindDecision::Drop,
-            MindVerdict::Respond { style_directive } => self.respond_to(event, style_directive),
+            MindVerdict::Drop => MindDecision::Drop,
+            MindVerdict::Defer { delay_secs } => self.defer_event(event, delay_secs),
+            MindVerdict::Respond { style_directive } => {
+                self.respond_to(event, style_directive).await
+            }
         }
+    }
+
+    fn defer_event(&self, event: &WakeEvent, delay_secs: u64) -> MindDecision {
+        match event {
+            WakeEvent::Message(msg) => self.defer_message(msg, delay_secs),
+            WakeEvent::IntentFired(intent) => self.defer_intent(intent, delay_secs),
+            WakeEvent::ConsolidationDue => {
+                MindDecision::DeferConsolidation(delay_secs.clamp(5, 300))
+            }
+            WakeEvent::IdleTick { .. }
+            | WakeEvent::TypingUpdate { .. }
+            | WakeEvent::MessageEdited { .. }
+            | WakeEvent::MessageDeleted { .. }
+            | WakeEvent::ActionCompleted { .. }
+            | WakeEvent::Shutdown => MindDecision::Drop,
+        }
+    }
+
+    pub(super) fn defer_message(&self, msg: &InboundMessage, delay_secs: u64) -> MindDecision {
+        self.defer_message_with_reason(msg, delay_secs, None)
+    }
+
+    pub(super) fn defer_message_for_typing(
+        &self,
+        msg: &InboundMessage,
+        delay_secs: u64,
+    ) -> MindDecision {
+        self.defer_message_with_reason(msg, delay_secs, Some("typing"))
+    }
+
+    fn defer_message_with_reason(
+        &self,
+        msg: &InboundMessage,
+        delay_secs: u64,
+        reason: Option<&str>,
+    ) -> MindDecision {
+        let count = defer_count(msg);
+        if count >= MAX_DEFER_COUNT {
+            info!(
+                message_id = %msg.message_id,
+                count,
+                "message exceeded max defer count, dropping"
+            );
+            return MindDecision::Drop;
+        }
+
+        let mut deferred = msg.clone();
+        set_defer_count(&mut deferred, count + 1);
+        if let Some(reason) = reason {
+            set_defer_reason(&mut deferred, reason);
+        }
+        MindDecision::DeferMessage(deferred, delay_secs.clamp(5, 300))
+    }
+
+    fn defer_intent(&self, intent: &FiredIntent, delay_secs: u64) -> MindDecision {
+        if intent.defer_count >= MAX_DEFER_COUNT {
+            info!(
+                intent_id = %intent.id,
+                count = intent.defer_count,
+                "intent exceeded max defer count, dropping"
+            );
+            return MindDecision::Drop;
+        }
+
+        let mut deferred = intent.clone();
+        deferred.defer_count += 1;
+        MindDecision::DeferIntent(deferred, delay_secs.clamp(5, 300))
     }
 
     pub(super) fn resolve_authority(&self, event: &WakeEvent) -> Authority {
@@ -109,24 +169,173 @@ impl Mind {
             .and_then(|p| actor.bonds.get(p))
             .map_or(Authority::Default, |r| r.authority.clone())
     }
+
+    async fn evaluation_messages(
+        &self,
+        event: EvaluableEvent<'_>,
+        event_desc: String,
+    ) -> Vec<InboundMessage> {
+        match event {
+            EvaluableEvent::Message(msg) => vec![msg.clone()],
+            EvaluableEvent::IntentFired(intent) => {
+                vec![self.intent_evaluation_message(intent, event_desc).await]
+            }
+            _ => vec![control_event_message(event_desc)],
+        }
+    }
+
+    async fn intent_evaluation_message(
+        &self,
+        intent: &FiredIntent,
+        event_desc: String,
+    ) -> InboundMessage {
+        let summary = match intent.conversation.as_ref() {
+            Some(conversation) => {
+                self.store
+                    .list_conversations()
+                    .await
+                    .ok()
+                    .and_then(|conversations| {
+                        conversations
+                            .into_iter()
+                            .find(|summary| &summary.id == conversation)
+                    })
+            }
+            None => None,
+        };
+        intent_context_message(
+            intent,
+            event_desc,
+            summary.as_ref(),
+            chrono::Utc::now().timestamp(),
+        )
+    }
 }
 
-fn describe(event: &WakeEvent) -> String {
+#[derive(Clone, Copy)]
+enum EvaluableEvent<'a> {
+    Message(&'a InboundMessage),
+    IdleTick {
+        elapsed_secs: f64,
+    },
+    ConsolidationDue,
+    IntentFired(&'a FiredIntent),
+    TypingUpdate {
+        sender_external_id: &'a str,
+        typing: bool,
+    },
+    MessageEdited {
+        conversation: &'a ConversationId,
+        message_id: &'a str,
+    },
+    MessageDeleted {
+        conversation: &'a ConversationId,
+        message_id: &'a str,
+    },
+}
+
+impl<'a> EvaluableEvent<'a> {
+    fn from_wake(event: &'a WakeEvent) -> Option<Self> {
+        match event {
+            WakeEvent::Message(msg) => Some(Self::Message(msg)),
+            WakeEvent::IdleTick { elapsed_secs } => Some(Self::IdleTick {
+                elapsed_secs: *elapsed_secs,
+            }),
+            WakeEvent::ConsolidationDue => Some(Self::ConsolidationDue),
+            WakeEvent::IntentFired(intent) => Some(Self::IntentFired(intent)),
+            WakeEvent::TypingUpdate {
+                sender_external_id,
+                typing,
+                ..
+            } => Some(Self::TypingUpdate {
+                sender_external_id,
+                typing: *typing,
+            }),
+            WakeEvent::MessageEdited {
+                conversation,
+                message_id,
+                ..
+            } => Some(Self::MessageEdited {
+                conversation,
+                message_id,
+            }),
+            WakeEvent::MessageDeleted {
+                conversation,
+                message_id,
+                ..
+            } => Some(Self::MessageDeleted {
+                conversation,
+                message_id,
+            }),
+            WakeEvent::ActionCompleted { .. } | WakeEvent::Shutdown => None,
+        }
+    }
+}
+
+fn defer_count(msg: &InboundMessage) -> u64 {
+    msg.metadata
+        .get("mind_defer_count")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn set_defer_count(msg: &mut InboundMessage, count: u64) {
+    match &mut msg.metadata {
+        serde_json::Value::Object(obj) => {
+            obj.insert("mind_defer_count".into(), serde_json::json!(count));
+        }
+        serde_json::Value::Null => {
+            msg.metadata = serde_json::json!({ "mind_defer_count": count });
+        }
+        other => {
+            msg.metadata = serde_json::json!({
+                "source_metadata": other.clone(),
+                "mind_defer_count": count,
+            });
+        }
+    }
+}
+
+fn set_defer_reason(msg: &mut InboundMessage, reason: &str) {
+    match &mut msg.metadata {
+        serde_json::Value::Object(obj) => {
+            obj.insert("mind_defer_reason".into(), serde_json::json!(reason));
+        }
+        serde_json::Value::Null => {
+            msg.metadata = serde_json::json!({ "mind_defer_reason": reason });
+        }
+        other => {
+            msg.metadata = serde_json::json!({
+                "source_metadata": other.clone(),
+                "mind_defer_reason": reason,
+            });
+        }
+    }
+}
+
+pub(super) fn defer_reason(msg: &InboundMessage) -> Option<&str> {
+    msg.metadata
+        .get("mind_defer_reason")
+        .and_then(serde_json::Value::as_str)
+}
+
+fn describe(event: EvaluableEvent<'_>) -> String {
     match event {
-        WakeEvent::Message(msg) => {
+        EvaluableEvent::Message(msg) => {
             format!(
                 "New message in conversation {}:\n{}",
                 msg.conversation.0,
                 msg.display_content()
             )
         }
-        WakeEvent::IdleTick { elapsed_secs } => {
+        EvaluableEvent::IdleTick { elapsed_secs } => {
             format!(
                 "Idle tick. {:.0} seconds since last activity.",
                 elapsed_secs
             )
         }
-        WakeEvent::IntentFired(intent) => {
+        EvaluableEvent::ConsolidationDue => "Periodic memory consolidation is due.".into(),
+        EvaluableEvent::IntentFired(intent) => {
             let conv = intent
                 .conversation
                 .as_ref()
@@ -136,20 +345,233 @@ fn describe(event: &WakeEvent) -> String {
                 intent.task, conv
             )
         }
-        WakeEvent::ActionCompleted { action_id, outcome } => {
-            let has_delta = outcome.delta.is_some();
-            format!(
-                "Action {} completed. responded={} personality_delta={}",
-                action_id, outcome.responded, has_delta
-            )
-        }
-        WakeEvent::TypingUpdate { person, typing, .. } => {
+        EvaluableEvent::TypingUpdate {
+            sender_external_id,
+            typing,
+        } => {
             format!(
                 "{} {} typing.",
-                person.0,
-                if *typing { "started" } else { "stopped" }
+                sender_external_id,
+                if typing { "started" } else { "stopped" }
             )
         }
-        WakeEvent::Shutdown => unreachable!(),
+        EvaluableEvent::MessageEdited {
+            message_id,
+            conversation,
+        } => {
+            format!(
+                "Message {message_id} in conversation {} was edited.",
+                conversation.0
+            )
+        }
+        EvaluableEvent::MessageDeleted {
+            message_id,
+            conversation,
+        } => {
+            format!(
+                "Message {message_id} in conversation {} was deleted.",
+                conversation.0
+            )
+        }
+    }
+}
+
+fn control_event_message(event_desc: String) -> InboundMessage {
+    InboundMessage {
+        message_id: String::new(),
+        gateway_id: String::new(),
+        sender_external_id: String::new(),
+        sender_display_name: None,
+        reply_external_id: String::new(),
+        conversation: ConversationId("mind".into()),
+        group: None,
+        identity: None,
+        profile: None,
+        person: None,
+        content: event_desc,
+        attachments: Vec::new(),
+        timestamp: 0,
+        metadata: serde_json::Value::Null,
+    }
+}
+
+fn intent_context_message(
+    intent: &FiredIntent,
+    event_desc: String,
+    summary: Option<&ConversationSummary>,
+    now: i64,
+) -> InboundMessage {
+    let conversation = intent
+        .conversation
+        .clone()
+        .or_else(|| summary.map(|summary| summary.id.clone()))
+        .unwrap_or_else(|| ConversationId(format!("intent:{}", intent.id)));
+    InboundMessage {
+        message_id: format!("intent:{}", intent.id),
+        gateway_id: summary
+            .and_then(|summary| summary.gateway_id.clone())
+            .unwrap_or_default(),
+        sender_external_id: String::new(),
+        sender_display_name: None,
+        reply_external_id: String::new(),
+        conversation,
+        group: summary.and_then(|summary| summary.group.clone()),
+        identity: summary.and_then(|summary| summary.identity.clone()),
+        profile: summary.and_then(|summary| summary.profile.clone()),
+        person: intent
+            .person
+            .clone()
+            .or_else(|| summary.and_then(|summary| summary.person.clone())),
+        content: event_desc,
+        attachments: Vec::new(),
+        timestamp: now,
+        metadata: serde_json::json!({
+            "event": "intent_fired",
+            "intent_id": intent.id,
+            "scheduled_at": intent.scheduled_at,
+            "owner_approved": intent.owner_approved,
+            "defer_count": intent.defer_count,
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use protocol::{GroupId, IdentityId, PersonId, ProfileId};
+
+    fn message_with_metadata(metadata: serde_json::Value) -> InboundMessage {
+        InboundMessage {
+            message_id: "msg-1".into(),
+            gateway_id: "relay".into(),
+            sender_external_id: "local".into(),
+            sender_display_name: None,
+            reply_external_id: "local".into(),
+            conversation: protocol::ConversationId("relay:local".into()),
+            group: None,
+            identity: None,
+            profile: None,
+            person: None,
+            content: "hello".into(),
+            attachments: vec![],
+            timestamp: 1000,
+            metadata,
+        }
+    }
+
+    #[test]
+    fn defer_count_is_written_without_losing_metadata() {
+        let mut msg = message_with_metadata(serde_json::json!({"source": "test"}));
+
+        set_defer_count(&mut msg, 2);
+
+        assert_eq!(defer_count(&msg), 2);
+        assert_eq!(msg.metadata["source"], "test");
+    }
+
+    #[test]
+    fn completion_and_shutdown_are_control_only_events() {
+        let completed = WakeEvent::ActionCompleted {
+            action_id: ActionId("action-done".into()),
+            outcome: super::super::super::action::Outcome::default(),
+        };
+
+        assert!(EvaluableEvent::from_wake(&completed).is_none());
+        assert!(EvaluableEvent::from_wake(&WakeEvent::Shutdown).is_none());
+    }
+
+    #[test]
+    fn message_events_remain_evaluable() {
+        let message = message_with_metadata(serde_json::Value::Null);
+        let event = WakeEvent::Message(message);
+
+        assert!(matches!(
+            EvaluableEvent::from_wake(&event),
+            Some(EvaluableEvent::Message(_))
+        ));
+    }
+
+    #[test]
+    fn intent_context_message_uses_target_context() {
+        let intent = FiredIntent {
+            id: "intent-1".into(),
+            task: "Check in".into(),
+            conversation: Some(ConversationId("relay:local".into())),
+            person: Some(PersonId("person-intent".into())),
+            scheduled_at: Some(1200),
+            owner_approved: true,
+            defer_count: 2,
+        };
+        let summary = ConversationSummary {
+            id: ConversationId("relay:local".into()),
+            gateway_id: Some("relay".into()),
+            identity: Some(IdentityId("identity-target".into())),
+            profile: Some(ProfileId("profile-target".into())),
+            person: Some(PersonId("person-summary".into())),
+            group: Some(GroupId("group-target".into())),
+            summary: Some("Prior context.".into()),
+            summary_covered_message_ids: vec![],
+            summary_updated_at: None,
+            summary_version: 0,
+            message_count: 0,
+            started_at: 1000,
+            last_message_at: 1000,
+        };
+
+        let message = intent_context_message(
+            &intent,
+            "Scheduled intent fired: Check in".into(),
+            Some(&summary),
+            1234,
+        );
+
+        assert_eq!(message.message_id, "intent:intent-1");
+        assert_eq!(message.gateway_id, "relay");
+        assert_eq!(message.conversation, ConversationId("relay:local".into()));
+        assert_eq!(message.identity, Some(IdentityId("identity-target".into())));
+        assert_eq!(message.profile, Some(ProfileId("profile-target".into())));
+        assert_eq!(message.person, Some(PersonId("person-intent".into())));
+        assert_eq!(message.group, Some(GroupId("group-target".into())));
+        assert_eq!(message.metadata["event"], "intent_fired");
+        assert_eq!(message.metadata["scheduled_at"], 1200);
+        assert_eq!(message.metadata["owner_approved"], true);
+        assert_eq!(message.metadata["defer_count"], 2);
+    }
+
+    #[test]
+    fn intent_context_message_falls_back_to_summary_person() {
+        let intent = FiredIntent {
+            id: "intent-1".into(),
+            task: "Check in".into(),
+            conversation: Some(ConversationId("relay:local".into())),
+            person: None,
+            scheduled_at: None,
+            owner_approved: false,
+            defer_count: 0,
+        };
+        let summary = ConversationSummary {
+            id: ConversationId("relay:local".into()),
+            gateway_id: Some("relay".into()),
+            identity: None,
+            profile: None,
+            person: Some(PersonId("person-summary".into())),
+            group: None,
+            summary: None,
+            summary_covered_message_ids: vec![],
+            summary_updated_at: None,
+            summary_version: 0,
+            message_count: 0,
+            started_at: 1000,
+            last_message_at: 1000,
+        };
+
+        let message = intent_context_message(
+            &intent,
+            "Scheduled intent fired".into(),
+            Some(&summary),
+            1234,
+        );
+
+        assert_eq!(message.person, Some(PersonId("person-summary".into())));
     }
 }

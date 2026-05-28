@@ -23,6 +23,34 @@ fn build_media_attachment_preserves_asset_and_direct_path() {
 }
 
 #[test]
+fn whatsapp_chatstate_typing_uses_group_participant_as_sender() {
+    let (conversation, sender, typing) = events::typing_update_from_chatstate(
+        "whatsapp",
+        "12345-67890@g.us",
+        Some("15551234567@s.whatsapp.net"),
+        "Typing",
+    );
+
+    assert_eq!(conversation.0, "whatsapp:12345-67890@g.us");
+    assert_eq!(sender, "15551234567@s.whatsapp.net");
+    assert!(typing);
+}
+
+#[test]
+fn whatsapp_chatstate_idle_stops_direct_typing() {
+    let (conversation, sender, typing) = events::typing_update_from_chatstate(
+        "whatsapp",
+        "15557654321@s.whatsapp.net",
+        None,
+        "Idle",
+    );
+
+    assert_eq!(conversation.0, "whatsapp:15557654321@s.whatsapp.net");
+    assert_eq!(sender, "15557654321@s.whatsapp.net");
+    assert!(!typing);
+}
+
+#[test]
 fn maps_media_kind_to_whatsapp_media_type() {
     assert_eq!(
         outbound::whatsapp_media_type(&MediaKind::Image),

@@ -5,6 +5,7 @@ use protocol::{ConversationId, GroupId, InboundMessage};
 use qrcode::{QrCode, render::unicode};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
+use whatsapp_rust::ChatStateEvent;
 use whatsapp_rust::Client;
 use whatsapp_rust::proto_helpers::MessageExt;
 use whatsapp_rust::types::events::Event;
@@ -64,7 +65,12 @@ pub(super) async fn handle_event(
             let inbound = InboundMessage {
                 message_id: info.id.to_string(),
                 gateway_id: gateway_id.to_string(),
-                external_id: chat.clone(),
+                sender_external_id: sender.clone(),
+                sender_display_name: serde_json::to_value(&info.push_name)
+                    .ok()
+                    .and_then(|value| value.as_str().map(str::to_string))
+                    .filter(|name| !name.trim().is_empty()),
+                reply_external_id: chat.clone(),
                 conversation: ConversationId(format!("{gateway_id}:{chat}")),
                 group: if info.source.is_group {
                     Some(GroupId(chat))
@@ -90,6 +96,36 @@ pub(super) async fn handle_event(
         }
         _ => {}
     }
+}
+
+pub(super) async fn handle_chatstate_event(
+    gateway_id: &str,
+    event: ChatStateEvent,
+    runtime: &GatewayRuntime,
+) {
+    let chat = event.chat.to_string();
+    let participant = event.participant.as_ref().map(ToString::to_string);
+    let state = format!("{:?}", event.state);
+    let (conversation, sender_external_id, typing) =
+        typing_update_from_chatstate(gateway_id, &chat, participant.as_deref(), &state);
+    runtime
+        .emit_typing(gateway_id, conversation, sender_external_id, typing)
+        .await;
+}
+
+pub(super) fn typing_update_from_chatstate(
+    gateway_id: &str,
+    chat: &str,
+    participant: Option<&str>,
+    state: &str,
+) -> (ConversationId, String, bool) {
+    let sender_external_id = participant.unwrap_or(chat).to_string();
+    let typing = matches!(state, "Typing" | "RecordingAudio");
+    (
+        ConversationId(format!("{gateway_id}:{chat}")),
+        sender_external_id,
+        typing,
+    )
 }
 
 fn render_qr_compact(code: &str) -> String {

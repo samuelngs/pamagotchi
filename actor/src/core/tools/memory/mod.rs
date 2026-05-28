@@ -8,6 +8,7 @@ pub use promote::{demote_person_memory_to_profile, promote_profile_memory_to_per
 pub use recall::recall;
 
 use super::context::SessionContext;
+use crate::state::Authority;
 use inference::Tool;
 use protocol::MemoryId;
 use serde_json::{Value, json};
@@ -59,6 +60,20 @@ pub fn tools() -> Vec<Tool> {
                         "type": "integer",
                         "description": "Skip this many results. Use to paginate: first call with offset 0, then offset 3 for more.",
                         "default": 0
+                    },
+                    "max_sensitivity": {
+                        "type": "number",
+                        "description": "Maximum sensitivity to include, 0.0 to 1.0. Defaults to conservative recall."
+                    },
+                    "include_sensitive": {
+                        "type": "boolean",
+                        "description": "Include sensitive/secret memories. Use only when directly relevant and authority allows it.",
+                        "default": false
+                    },
+                    "include_superseded": {
+                        "type": "boolean",
+                        "description": "Include superseded or outdated memories for audit/history. Defaults to false so stale facts do not appear in normal recall.",
+                        "default": false
                     }
                 },
                 "required": ["query"]
@@ -84,6 +99,106 @@ pub fn tools() -> Vec<Tool> {
                         "description": "0.0 to 1.0, how important this is",
                         "default": 0.5
                     },
+                    "sensitivity": {
+                        "type": "number",
+                        "description": "0.0 to 1.0, how private or sensitive this memory is",
+                        "default": 0.0
+                    },
+                    "emotional_valence": {
+                        "type": "number",
+                        "description": "-1.0 to 1.0, emotional tone of the memory",
+                        "default": 0.0
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "0.0 to 1.0 confidence in this memory based on available evidence",
+                        "default": 1.0
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": ["fact", "preference", "style_pattern", "boundary", "commitment", "open_loop", "event", "procedure", "relationship_fact", "identity_claim", "hypothesis", "correction", "emotional_state"],
+                        "description": "Structured memory ontology. Use hypothesis for uncertain inference, correction for updated facts, and open_loop/commitment for follow-up obligations."
+                    },
+                    "truth_status": {
+                        "type": "string",
+                        "enum": ["observed", "stated", "inferred", "confirmed", "denied", "outdated"],
+                        "description": "How the content is known."
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Short structured tags such as preference, boundary, correction, commitment, style_pattern, identity_claim, or open_loop."
+                    },
+                    "sensitivity_category": {
+                        "type": "string",
+                        "description": "Optional category for sensitive material, e.g. health, finance, identity, credentials, relationship, location."
+                    },
+                    "evidence_message_ids": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Message ids that support this memory."
+                    },
+                    "evidence_quote": {
+                        "type": "string",
+                        "description": "Short quote or paraphrase from the supporting message."
+                    },
+                    "source_spans": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "message_id": { "type": "string" },
+                                "start_char": { "type": "integer" },
+                                "end_char": { "type": "integer" },
+                                "quote": { "type": "string" }
+                            },
+                            "required": ["message_id"]
+                        },
+                        "description": "Precise quote spans supporting this memory, persisted inside evidence.source_spans."
+                    },
+                    "evidence": {
+                        "type": "object",
+                        "description": "Compact structured evidence object such as source spans, quotes, or review rationale."
+                    },
+                    "expires_at": {
+                        "type": "integer",
+                        "description": "Unix timestamp when this memory should expire, for temporary facts."
+                    },
+                    "stability": {
+                        "type": "string",
+                        "enum": ["transient", "seasonal", "stable"],
+                        "description": "Expected durability of the memory."
+                    },
+                    "privacy_category": {
+                        "type": "string",
+                        "enum": ["public", "personal", "sensitive", "secret"],
+                        "description": "Privacy class for recall and prompt inclusion policy."
+                    },
+                    "visibility_scope": {
+                        "type": "string",
+                        "enum": ["profile", "person", "owner_only", "global"],
+                        "description": "Default boundary for using this memory."
+                    },
+                    "dedupe_key": {
+                        "type": "string",
+                        "description": "Stable key for upserting/reinforcing an existing equivalent memory instead of duplicating it."
+                    },
+                    "supersedes": {
+                        "type": "string",
+                        "description": "Memory ID this new memory corrects or replaces. The old memory will be linked back to the new memory."
+                    },
+                    "contradiction_group": {
+                        "type": "string",
+                        "description": "Stable group key for mutually contradictory memories."
+                    },
+                    "last_confirmed_at": {
+                        "type": "integer",
+                        "description": "Unix timestamp when this memory was last confirmed."
+                    },
+                    "next_review_at": {
+                        "type": "integer",
+                        "description": "Unix timestamp when this memory should be reviewed again."
+                    },
                     "subject_profile_ids": {
                         "type": "array",
                         "items": { "type": "string" },
@@ -94,8 +209,26 @@ pub fn tools() -> Vec<Tool> {
                         "items": { "type": "string" },
                         "description": "Identity IDs this memory is about when the fact is account-specific."
                     },
+                    "subject_actor": {
+                        "type": "boolean",
+                        "description": "Owner-only. Store this as an actor/self memory for Pamagotchi's own identity or core self facts."
+                    },
                 },
                 "required": ["content", "kind"]
+            }),
+        },
+        Tool {
+            name: "inspect_memory".into(),
+            description: "Owner-only audit view for one memory by id, including subjects, source, privacy, evidence, supersession, and review metadata.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "ID of the memory to inspect"
+                    }
+                },
+                "required": ["memory_id"]
             }),
         },
         Tool {
@@ -160,7 +293,65 @@ pub fn tools() -> Vec<Tool> {
                 "required": ["memory_id"]
             }),
         },
+        Tool {
+            name: "delete_memory".into(),
+            description: "Owner-only deletion for any memory by id, including sensitive, secret, external, or cross-profile memories.".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "ID of the memory to delete"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Brief audit reason for deleting this memory"
+                    }
+                },
+                "required": ["memory_id"]
+            }),
+        },
     ]
+}
+
+pub async fn inspect(args: &Value, ctx: &SessionContext) -> String {
+    if !matches!(ctx.authority, Authority::Owner) {
+        return json!({
+            "status": "error",
+            "message": "Owner authority is required to inspect memories by id."
+        })
+        .to_string();
+    }
+    let id = args["memory_id"].as_str().unwrap_or("");
+    if id.is_empty() {
+        return json!({"status": "error", "message": "Provide memory_id."}).to_string();
+    }
+    match ctx.store.get_memory(&MemoryId(id.to_string())).await {
+        Ok(Some(memory)) => {
+            let embedding_present = memory.embedding.is_some();
+            let mut value = serde_json::to_value(memory).unwrap_or(Value::Null);
+            if let Some(object) = value.as_object_mut() {
+                object.remove("embedding");
+                object.insert("embedding_present".into(), Value::Bool(embedding_present));
+            }
+            let mutations = match ctx
+                .store
+                .memory_mutations_for_memory(&MemoryId(id.to_string()), 25)
+                .await
+            {
+                Ok(mutations) => serde_json::to_value(mutations).unwrap_or(Value::Null),
+                Err(e) => json!({"error": format!("{e}")}),
+            };
+            json!({
+                "status": "ok",
+                "memory": value,
+                "mutations": mutations,
+            })
+            .to_string()
+        }
+        Ok(None) => json!({"status": "not_found", "memory_id": id}).to_string(),
+        Err(e) => json!({"status": "error", "message": format!("{e}")}).to_string(),
+    }
 }
 
 pub async fn forget(args: &Value, ctx: &SessionContext) -> String {
@@ -169,5 +360,85 @@ pub async fn forget(args: &Value, ctx: &SessionContext) -> String {
         Ok(true) => "Memory forgotten.".into(),
         Ok(false) => "Memory not found.".into(),
         Err(e) => format!("Error: {e}"),
+    }
+}
+
+pub async fn delete(args: &Value, ctx: &SessionContext) -> String {
+    if !matches!(ctx.authority, Authority::Owner) {
+        return json!({
+            "status": "error",
+            "message": "Owner authority is required to delete memories by id."
+        })
+        .to_string();
+    }
+    let id = args["memory_id"].as_str().unwrap_or("");
+    if id.is_empty() {
+        return json!({"status": "error", "message": "Provide memory_id."}).to_string();
+    }
+    let reason = args["reason"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match ctx
+        .store
+        .forget_with_reason(&MemoryId(id.to_string()), reason)
+        .await
+    {
+        Ok(true) => json!({"status": "deleted", "memory_id": id}).to_string(),
+        Ok(false) => json!({"status": "not_found", "memory_id": id}).to_string(),
+        Err(e) => json!({"status": "error", "message": format!("{e}")}).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tools;
+
+    #[test]
+    fn form_memory_exposes_existing_structured_fields() {
+        let tool = tools()
+            .into_iter()
+            .find(|tool| tool.name == "form_memory")
+            .expect("form_memory exists");
+        let properties = &tool.parameters["properties"];
+
+        assert!(properties.get("tags").is_some());
+        assert!(properties.get("sensitivity").is_some());
+        assert!(properties.get("emotional_valence").is_some());
+        assert!(properties.get("memory_type").is_some());
+        assert!(properties.get("truth_status").is_some());
+        assert!(properties.get("confidence").is_some());
+        assert!(properties.get("evidence_message_ids").is_some());
+        assert!(properties.get("source_spans").is_some());
+        assert!(properties.get("evidence").is_some());
+        assert!(properties.get("dedupe_key").is_some());
+        assert!(properties.get("subject_actor").is_some());
+        assert!(properties.get("supersedes").is_some());
+        assert!(properties.get("contradiction_group").is_some());
+        assert!(properties.get("last_confirmed_at").is_some());
+        assert!(properties.get("next_review_at").is_some());
+        assert!(properties.get("include_sensitive").is_none());
+    }
+
+    #[test]
+    fn recall_memory_schema_exposes_sensitive_opt_in() {
+        let tool = tools()
+            .into_iter()
+            .find(|tool| tool.name == "recall_memories")
+            .expect("recall_memories exists");
+        let properties = &tool.parameters["properties"];
+
+        assert!(properties.get("max_sensitivity").is_some());
+        assert!(properties.get("include_sensitive").is_some());
+        assert!(properties.get("include_superseded").is_some());
+    }
+
+    #[test]
+    fn memory_tools_expose_owner_inspection_and_deletion() {
+        let tools = tools();
+        let names = tools.into_iter().map(|tool| tool.name).collect::<Vec<_>>();
+
+        assert!(names.contains(&"inspect_memory".to_string()));
+        assert!(names.contains(&"delete_memory".to_string()));
     }
 }

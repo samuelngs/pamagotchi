@@ -20,8 +20,8 @@ pub use protocol::{
 pub use request::{ChatRequest, JsonSchemaSpec, ResponseFormat, SamplingConfig};
 pub use response::{ChatResponse, FinishReason, Usage};
 pub use router::{
-    Capability, InferenceEndpoint, InferenceRouter, InferenceRouterBuilder, Reasoning,
-    ResolvedInference, RouteContext,
+    Capability, EmbeddingResponse, InferenceEndpoint, InferenceRouter, InferenceRouterBuilder,
+    Reasoning, ResolvedInference, RouteContext,
 };
 pub use stream::{ChatStream, StreamEvent};
 pub use tool::{Tool, ToolChoice};

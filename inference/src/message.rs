@@ -101,8 +101,38 @@ pub struct ToolCall {
     pub arguments: serde_json::Value,
 }
 
+pub(crate) fn parse_tool_arguments(raw_arguments: impl Into<String>) -> serde_json::Value {
+    let raw_arguments = raw_arguments.into();
+    match serde_json::from_str(&raw_arguments) {
+        Ok(arguments) => arguments,
+        Err(error) => serde_json::json!({
+            "__invalid_tool_json": true,
+            "raw_arguments": raw_arguments,
+            "error": error.to_string(),
+        }),
+    }
+}
+
 #[derive(Clone)]
 pub struct ToolResult {
     pub call_id: String,
     pub content: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_tool_arguments_are_preserved_as_error_marker() {
+        let arguments = parse_tool_arguments("{\"content\":");
+
+        assert_eq!(arguments["__invalid_tool_json"], true);
+        assert_eq!(arguments["raw_arguments"], "{\"content\":");
+        assert!(
+            arguments["error"]
+                .as_str()
+                .is_some_and(|error| { error.contains("EOF") || error.contains("expected") })
+        );
+    }
 }

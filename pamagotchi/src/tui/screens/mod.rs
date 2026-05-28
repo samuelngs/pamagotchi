@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod debug;
 pub mod gateway_detail;
 pub mod gateways;
 pub mod settings;
@@ -21,6 +22,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         super::app::Screen::Settings => settings::render(frame, app),
         super::app::Screen::Gateways => gateways::render(frame, app),
         super::app::Screen::GatewayDetail => gateway_detail::render(frame, app),
+        super::app::Screen::Debug => debug::render(frame, app),
     }
 }
 
@@ -30,5 +32,6 @@ pub async fn handle_key(app: &mut App, key: KeyEvent) -> ScreenAction {
         super::app::Screen::Settings => settings::handle_key(app, key),
         super::app::Screen::Gateways => gateways::handle_key(app, key).await,
         super::app::Screen::GatewayDetail => gateway_detail::handle_key(app, key).await,
+        super::app::Screen::Debug => debug::handle_key(app, key).await,
     }
 }

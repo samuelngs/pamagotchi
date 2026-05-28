@@ -36,7 +36,7 @@ impl MediaKind {
         match s {
             "image" | "Image" => Some(Self::Image),
             "video" | "Video" => Some(Self::Video),
-            "audio" | "Audio" => Some(Self::Audio),
+            "audio" | "Audio" | "voice" | "Voice" => Some(Self::Audio),
             "sticker" | "Sticker" => Some(Self::Sticker),
             "file" | "File" => Some(Self::File),
             _ => None,
@@ -78,6 +78,8 @@ mod tests {
     fn media_kind_parse_accepts_wire_and_human_names() {
         assert_eq!(MediaKind::parse("image"), Some(MediaKind::Image));
         assert_eq!(MediaKind::parse("Image"), Some(MediaKind::Image));
+        assert_eq!(MediaKind::parse("voice"), Some(MediaKind::Audio));
+        assert_eq!(MediaKind::parse("Voice"), Some(MediaKind::Audio));
         assert_eq!(MediaKind::parse("file"), Some(MediaKind::File));
         assert_eq!(MediaKind::parse("File"), Some(MediaKind::File));
     }

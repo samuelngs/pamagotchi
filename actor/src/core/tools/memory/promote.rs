@@ -40,6 +40,7 @@ pub async fn promote_profile_memory_to_person(args: &Value, ctx: &SessionContext
         tags: None,
         subjects: Some(subjects),
         embedding: None,
+        ..Default::default()
     };
 
     match ctx.store.update_memory(&memory_id, &update).await {
@@ -114,6 +115,7 @@ pub async fn demote_person_memory_to_profile(args: &Value, ctx: &SessionContext)
         tags: None,
         subjects: Some(subjects),
         embedding: None,
+        ..Default::default()
     };
 
     match ctx.store.update_memory(&memory_id, &update).await {

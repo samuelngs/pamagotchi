@@ -39,6 +39,9 @@ pub struct Thought {
     pub timestamp: i64,
     pub kind: ThoughtKind,
     pub content: String,
+    pub importance: f32,
+    pub confidence: f32,
+    pub action_id: Option<String>,
     pub memories_accessed: Vec<MemoryId>,
     pub subjects: Vec<MemorySubject>,
 }

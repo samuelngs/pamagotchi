@@ -1,4 +1,5 @@
 use crate::{GatewayConnectionState, GatewayRuntimeEvent, GatewaySetupInstructions};
+use protocol::ConversationId;
 use std::sync::RwLock;
 use tokio::sync::mpsc;
 
@@ -36,6 +37,62 @@ impl GatewayRuntime {
             .send(GatewayRuntimeEvent::SetupInstructionsChanged {
                 gateway_id: gateway_id.to_string(),
                 setup,
+            })
+            .await;
+    }
+
+    pub async fn emit_typing(
+        &self,
+        gateway_id: &str,
+        conversation: ConversationId,
+        sender_external_id: String,
+        typing: bool,
+    ) {
+        let _ = self
+            .event_tx
+            .send(GatewayRuntimeEvent::TypingUpdate {
+                gateway_id: gateway_id.to_string(),
+                conversation,
+                sender_external_id,
+                typing,
+            })
+            .await;
+    }
+
+    pub async fn emit_message_edited(
+        &self,
+        gateway_id: &str,
+        conversation: ConversationId,
+        message_id: String,
+        content: String,
+        edited_at: i64,
+    ) {
+        let _ = self
+            .event_tx
+            .send(GatewayRuntimeEvent::MessageEdited {
+                gateway_id: gateway_id.to_string(),
+                conversation,
+                message_id,
+                content,
+                edited_at,
+            })
+            .await;
+    }
+
+    pub async fn emit_message_deleted(
+        &self,
+        gateway_id: &str,
+        conversation: ConversationId,
+        message_id: String,
+        deleted_at: i64,
+    ) {
+        let _ = self
+            .event_tx
+            .send(GatewayRuntimeEvent::MessageDeleted {
+                gateway_id: gateway_id.to_string(),
+                conversation,
+                message_id,
+                deleted_at,
             })
             .await;
     }

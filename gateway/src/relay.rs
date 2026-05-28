@@ -31,7 +31,9 @@ impl RelayAdapter {
                         let inbound = InboundMessage {
                             message_id: nanoid::nanoid!(),
                             gateway_id: "relay".into(),
-                            external_id: "local".into(),
+                            sender_external_id: "local".into(),
+                            sender_display_name: None,
+                            reply_external_id: "local".into(),
                             conversation: ConversationId("relay:local".into()),
                             group: None,
                             identity: None,

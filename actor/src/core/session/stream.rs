@@ -1,11 +1,13 @@
 use super::super::decision::MindVerdict;
 use super::super::tools::{self, SessionContext, SessionKind, SessionState, ToolOutcome};
+use super::messages::remember_injected_message;
 use async_trait::async_trait;
 use inference::{
     AppServerToolCall, AppServerToolResult, AppServerToolRuntime, Capability, ChatRequest,
     FinishReason, InferenceProtocol, Message, RouteContext, StreamEvent,
 };
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
 
@@ -14,11 +16,14 @@ pub(super) struct Collected {
     pub(super) reasoning: String,
     pub(super) partial_tools: Vec<PartialToolCall>,
     pub(super) finish: FinishReason,
+    pub(super) input_tokens: Option<u32>,
+    pub(super) output_tokens: Option<u32>,
     pub(super) app_server_decision: Option<MindVerdict>,
 }
 
 pub(super) struct OpenedStream {
     pub(super) stream: inference::ChatStream,
+    pub(super) model: String,
     app_server_tools: Option<mpsc::Receiver<AppServerToolRequest>>,
 }
 
@@ -26,12 +31,15 @@ pub(super) async fn collect_stream(
     opened: &mut OpenedStream,
     ctx: &mut SessionContext,
     state: &mut SessionState,
+    turn: usize,
 ) -> Collected {
     let mut c = Collected {
         text: String::new(),
         reasoning: String::new(),
         partial_tools: vec![],
         finish: FinishReason::Stop,
+        input_tokens: None,
+        output_tokens: None,
         app_server_decision: None,
     };
     loop {
@@ -40,7 +48,7 @@ pub(super) async fn collect_stream(
             request = recv_app_server_tool(opened.app_server_tools.as_mut()) => {
                 match request {
                     Some(request) => {
-                        if let Some(decision) = handle_app_server_tool(request, ctx, state).await {
+                        if let Some(decision) = handle_app_server_tool(request, ctx, state, turn).await {
                             c.app_server_decision = Some(decision);
                             c.finish = FinishReason::ToolCalls;
                             break;
@@ -92,11 +100,18 @@ pub(super) async fn collect_stream(
                 c.partial_tools[index].arguments.push_str(&arguments_delta);
             }
             StreamEvent::FinishReason(r) => c.finish = r,
-            StreamEvent::Usage(_) => {}
+            StreamEvent::Usage(usage) => {
+                c.input_tokens = Some(usage.input_tokens);
+                c.output_tokens = Some(usage.output_tokens);
+            }
         }
         while let Ok(msg) = ctx.inject_rx.try_recv() {
-            info!(action = %ctx.action_id, "received injected message mid-stream");
-            state.injected_messages.push(msg);
+            if remember_injected_message(state, msg) {
+                info!(action = %ctx.action_id, "received injected message mid-stream");
+            } else {
+                ctx.metrics.record_duplicate_message_suppression();
+                info!(action = %ctx.action_id, "suppressed duplicate injected message mid-stream");
+            }
         }
     }
     c
@@ -172,6 +187,7 @@ pub(super) async fn try_open_stream(
                 info!(action = %ctx.action_id, model = %ep.model, "LLM stream opened");
                 return Some(OpenedStream {
                     stream,
+                    model: ep.model.clone(),
                     app_server_tools,
                 });
             }
@@ -221,10 +237,13 @@ async fn handle_app_server_tool(
     request: AppServerToolRequest,
     ctx: &SessionContext,
     state: &mut SessionState,
+    turn: usize,
 ) -> Option<MindVerdict> {
     let call = request.call;
     let args_short = truncate(&call.arguments.to_string(), 200);
     info!(action = %ctx.action_id, tool = %call.name, args = %args_short, "executing app-server tool");
+    let latency_start = Instant::now();
+    let started_at = super::super::tools::util::now();
 
     let (result, decision) =
         if let Err(denied) = tools::check_permission(&call.name, &call.arguments, ctx).await {
@@ -241,6 +260,40 @@ async fn handle_app_server_tool(
                 ),
             }
         };
+    let success = result.success;
+    let result_content = result
+        .content
+        .iter()
+        .map(|content| match content {
+            inference::AppServerToolResultContent::Text(text) => {
+                serde_json::json!({"type": "text", "text": text})
+            }
+            inference::AppServerToolResultContent::ImageUrl(url) => {
+                serde_json::json!({"type": "image_url", "url": url})
+            }
+        })
+        .collect::<Vec<_>>();
+    let result_json = serde_json::json!({
+        "content": result_content,
+        "success": result.success,
+    });
+    let record = crate::store::ToolCallRecord {
+        action_id: ctx.action_id.0.clone(),
+        turn: turn as u32,
+        call_id: call.id.clone(),
+        name: call.name.clone(),
+        args: call.arguments.clone(),
+        result: result_json,
+        success,
+        started_at,
+        ended_at: super::super::tools::util::now(),
+    };
+    if let Err(e) = ctx.store.append_tool_call(&record).await {
+        warn!(action = %ctx.action_id, %e, "failed to persist app-server tool call");
+    }
+    ctx.metrics.record_tool_call(&call.name, success);
+    ctx.metrics
+        .record_app_server_tool_latency(latency_start.elapsed().as_millis() as u64);
 
     let _ = request.response_tx.send(result);
     decision

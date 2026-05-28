@@ -13,4 +13,4 @@ pub use profile::{
     PersonProfileLink, PersonProfileStatus, Profile, ProfileIdentityLink, ProfileIdentityStatus,
     ResolvedActorIdentity,
 };
-pub use relation::{Relation, SocialRelation};
+pub use relation::{Relation, RelationDirection, RelationSource, RelationStatus, SocialRelation};

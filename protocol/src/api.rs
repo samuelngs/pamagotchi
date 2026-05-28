@@ -140,6 +140,11 @@ pub enum ClientRequest {
         #[serde(default)]
         vars: Value,
     },
+    GetDebugSnapshot {
+        request_id: String,
+        #[serde(default)]
+        limit: Option<usize>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -186,6 +191,10 @@ pub enum ServerEvent {
     RequestError {
         request_id: Option<String>,
         message: String,
+    },
+    DebugSnapshot {
+        request_id: String,
+        snapshot: Value,
     },
 }
 
@@ -330,5 +339,33 @@ mod tests {
         assert_eq!(json["asset"]["id"], "media-1");
         assert_eq!(json["asset"]["kind"], "Image");
         assert_eq!(json["asset"]["mime"], "image/png");
+    }
+
+    #[test]
+    fn serializes_debug_snapshot_request_and_event() {
+        let request = ClientRequest::GetDebugSnapshot {
+            request_id: "req-debug".into(),
+            limit: Some(5),
+        };
+
+        let json = serde_json::to_value(request).unwrap();
+
+        assert_eq!(json["type"], "GetDebugSnapshot");
+        assert_eq!(json["request_id"], "req-debug");
+        assert_eq!(json["limit"], 5);
+
+        let event = ServerEvent::DebugSnapshot {
+            request_id: "req-debug".into(),
+            snapshot: serde_json::json!({
+                "persons": [],
+                "action_runs": []
+            }),
+        };
+
+        let json = serde_json::to_value(event).unwrap();
+
+        assert_eq!(json["type"], "DebugSnapshot");
+        assert_eq!(json["request_id"], "req-debug");
+        assert_eq!(json["snapshot"]["persons"], serde_json::json!([]));
     }
 }

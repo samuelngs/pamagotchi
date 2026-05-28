@@ -11,11 +11,13 @@ pub enum Screen {
     Settings,
     Gateways,
     GatewayDetail,
+    Debug,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSelection {
     Gateways,
+    Debug,
     Back,
 }
 
@@ -48,6 +50,9 @@ pub struct App {
     pub editing_gateway_var: bool,
     pub gateway_var_input: String,
     pub gateway_var_cursor: usize,
+    pub debug_snapshot: String,
+    pub debug_request_id: Option<String>,
+    pub debug_scroll: usize,
 }
 
 impl App {
@@ -76,6 +81,9 @@ impl App {
             editing_gateway_var: false,
             gateway_var_input: String::new(),
             gateway_var_cursor: 0,
+            debug_snapshot: "No debug snapshot loaded.".into(),
+            debug_request_id: None,
+            debug_scroll: 0,
         }
     }
 
@@ -148,6 +156,24 @@ impl App {
                     if let Some(gw) = self.gateways.iter_mut().find(|g| g.id == id) {
                         gw.setup_instructions = setup;
                     }
+                }
+                ServerEvent::DebugSnapshot {
+                    request_id,
+                    snapshot,
+                } => {
+                    if self.debug_request_id.as_deref() == Some(request_id.as_str()) {
+                        self.debug_snapshot = crate::debug_view::format_snapshot(&snapshot);
+                        self.debug_request_id = None;
+                        self.debug_scroll = 0;
+                    }
+                }
+                ServerEvent::RequestError {
+                    request_id: Some(request_id),
+                    message,
+                } if self.debug_request_id.as_deref() == Some(request_id.as_str()) => {
+                    self.debug_snapshot = format!("Debug snapshot failed: {message}");
+                    self.debug_request_id = None;
+                    self.debug_scroll = 0;
                 }
                 ServerEvent::MediaAssetCreated { .. }
                 | ServerEvent::RequestOk { .. }
@@ -335,6 +361,21 @@ impl App {
         }
     }
 
+    pub async fn request_debug_snapshot(&mut self) {
+        let request_id = request_id("debug");
+        self.debug_request_id = Some(request_id.clone());
+        self.debug_snapshot = "Loading debug snapshot...".into();
+        self.debug_scroll = 0;
+        if let Some(api) = &self.api {
+            let _ = api
+                .send(ClientRequest::GetDebugSnapshot {
+                    request_id,
+                    limit: Some(25),
+                })
+                .await;
+        }
+    }
+
     pub fn selected_gateway(&self) -> Option<&GatewayView> {
         let id = self.selected_gateway_id.as_ref()?;
         self.gateways.iter().find(|gateway| &gateway.id == id)
@@ -510,6 +551,14 @@ impl App {
 
     pub fn scroll_down(&mut self, lines: usize) {
         self.messages_scroll = self.messages_scroll.saturating_sub(lines);
+    }
+
+    pub fn debug_scroll_up(&mut self, lines: usize) {
+        self.debug_scroll = self.debug_scroll.saturating_add(lines);
+    }
+
+    pub fn debug_scroll_down(&mut self, lines: usize) {
+        self.debug_scroll = self.debug_scroll.saturating_sub(lines);
     }
 }
 

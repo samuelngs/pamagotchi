@@ -1,11 +1,14 @@
 use crate::id::{ConversationId, GroupId, IdentityId, PersonId, ProfileId};
 use crate::media::MediaAttachment;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InboundMessage {
     pub message_id: String,
     pub gateway_id: String,
-    pub external_id: String,
+    pub sender_external_id: String,
+    pub sender_display_name: Option<String>,
+    pub reply_external_id: String,
     pub conversation: ConversationId,
     pub group: Option<GroupId>,
     pub identity: Option<IdentityId>,
@@ -18,6 +21,22 @@ pub struct InboundMessage {
 }
 
 impl InboundMessage {
+    pub fn sender_key(&self) -> Option<(&str, &str)> {
+        if self.gateway_id.is_empty() || self.sender_external_id.is_empty() {
+            None
+        } else {
+            Some((&self.gateway_id, &self.sender_external_id))
+        }
+    }
+
+    pub fn reply_target(&self) -> Option<(&str, &str)> {
+        if self.gateway_id.is_empty() || self.reply_external_id.is_empty() {
+            None
+        } else {
+            Some((&self.gateway_id, &self.reply_external_id))
+        }
+    }
+
     pub fn display_content(&self) -> String {
         if self.attachments.is_empty() {
             return self.content.clone();
@@ -59,7 +78,9 @@ mod tests {
         InboundMessage {
             message_id: "msg-1".into(),
             gateway_id: "whatsapp".into(),
-            external_id: "chat-1".into(),
+            sender_external_id: "sender-1".into(),
+            sender_display_name: Some("Sender".into()),
+            reply_external_id: "chat-1".into(),
             conversation: ConversationId("whatsapp:chat-1".into()),
             group: None,
             identity: None,
@@ -120,5 +141,43 @@ mod tests {
             msg.display_content(),
             "[Image: kind=image asset_id=image-1 filename=photo.png mime=image/png] [File: kind=file asset_id=file-1 filename=doc.pdf mime=application/pdf size=100]"
         );
+    }
+
+    #[test]
+    fn display_content_includes_media_only_audio_and_sticker() {
+        let msg = inbound(
+            vec![
+                MediaAttachment {
+                    kind: MediaKind::Audio,
+                    asset_id: Some(MediaAssetId("voice-1".into())),
+                    url: None,
+                    mime: Some("audio/ogg".into()),
+                    filename: None,
+                    size: Some(25),
+                },
+                MediaAttachment {
+                    kind: MediaKind::Sticker,
+                    asset_id: Some(MediaAssetId("sticker-1".into())),
+                    url: None,
+                    mime: Some("image/webp".into()),
+                    filename: Some("sticker.webp".into()),
+                    size: None,
+                },
+            ],
+            "",
+        );
+
+        assert_eq!(
+            msg.display_content(),
+            "[Audio: kind=audio asset_id=voice-1 mime=audio/ogg size=25] [Sticker: kind=sticker asset_id=sticker-1 filename=sticker.webp mime=image/webp]"
+        );
+    }
+
+    #[test]
+    fn sender_key_and_reply_target_are_independent() {
+        let msg = inbound(Vec::new(), "hello");
+
+        assert_eq!(msg.sender_key(), Some(("whatsapp", "sender-1")));
+        assert_eq!(msg.reply_target(), Some(("whatsapp", "chat-1")));
     }
 }

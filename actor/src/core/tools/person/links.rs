@@ -1,5 +1,5 @@
 use super::super::context::SessionContext;
-use super::helpers::current_person;
+use super::helpers::{current_person, remove_detached_person_subject_from_profile_memories};
 use crate::identity::PersonProfileStatus;
 use protocol::{PersonId, ProfileId};
 use serde_json::{Value, json};
@@ -29,17 +29,27 @@ pub async fn detach_profile(args: &Value, ctx: &SessionContext) -> String {
         .filter(|s| !s.is_empty())
         .map(|reason| json!({ "reason": reason }));
 
+    let profile_id = ProfileId(profile.to_string());
     match ctx
         .store
-        .detach_profile_from_person(&ProfileId(profile.to_string()), &person, reason.as_ref())
+        .detach_profile_from_person(&profile_id, &person, reason.as_ref())
         .await
     {
-        Ok(()) => json!({
-            "status": "detached",
-            "profile": profile,
-            "person": person.0,
-        })
-        .to_string(),
+        Ok(()) => {
+            let cleanup =
+                remove_detached_person_subject_from_profile_memories(ctx, &profile_id, &person)
+                    .await;
+            let mut result = json!({
+                "status": "detached",
+                "profile": profile_id.0,
+                "person": person.0,
+            });
+            match cleanup {
+                Ok(count) => result["memories_demoted"] = json!(count),
+                Err(e) => result["memory_cleanup_error"] = json!(format!("{e}")),
+            }
+            result.to_string()
+        }
         Err(e) => json!({
             "status": "error",
             "message": format!("{e}"),
@@ -81,12 +91,24 @@ pub async fn reject_profile_person_link(args: &Value, ctx: &SessionContext) -> S
         )
         .await
     {
-        Ok(link) => json!({
-            "status": "rejected",
-            "profile": link.profile_id.0,
-            "person": link.person_id.0,
-        })
-        .to_string(),
+        Ok(link) => {
+            let cleanup = remove_detached_person_subject_from_profile_memories(
+                ctx,
+                &link.profile_id,
+                &link.person_id,
+            )
+            .await;
+            let mut result = json!({
+                "status": "rejected",
+                "profile": link.profile_id.0,
+                "person": link.person_id.0,
+            });
+            match cleanup {
+                Ok(count) => result["memories_demoted"] = json!(count),
+                Err(e) => result["memory_cleanup_error"] = json!(format!("{e}")),
+            }
+            result.to_string()
+        }
         Err(e) => json!({
             "status": "error",
             "message": format!("{e}"),

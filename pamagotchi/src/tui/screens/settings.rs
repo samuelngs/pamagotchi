@@ -28,6 +28,17 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Rect::new(layout[0].x + 1, layout[0].y + 3, gateways_w, 1),
     );
 
+    let debug_item = Selectable {
+        label: "debug snapshot",
+        shortkey: None,
+        focused: app.settings_selection == SettingsSelection::Debug,
+    };
+    let debug_w = debug_item.width();
+    frame.render_widget(
+        debug_item,
+        Rect::new(layout[0].x + 1, layout[0].y + 5, debug_w, 1),
+    );
+
     let back_btn = Button {
         label: "back",
         shortkey: Some(ShortKey::Esc),
@@ -41,9 +52,14 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> ScreenAction {
     match key.code {
         KeyCode::Esc => ScreenAction::Back,
         KeyCode::Up | KeyCode::Down => {
-            app.settings_selection = match app.settings_selection {
-                SettingsSelection::Gateways => SettingsSelection::Back,
-                SettingsSelection::Back => SettingsSelection::Gateways,
+            app.settings_selection = match (app.settings_selection, key.code) {
+                (SettingsSelection::Gateways, KeyCode::Up) => SettingsSelection::Back,
+                (SettingsSelection::Gateways, KeyCode::Down) => SettingsSelection::Debug,
+                (SettingsSelection::Debug, KeyCode::Up) => SettingsSelection::Gateways,
+                (SettingsSelection::Debug, KeyCode::Down) => SettingsSelection::Back,
+                (SettingsSelection::Back, KeyCode::Up) => SettingsSelection::Debug,
+                (SettingsSelection::Back, KeyCode::Down) => SettingsSelection::Gateways,
+                (selection, _) => selection,
             };
             ScreenAction::None
         }
@@ -51,6 +67,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> ScreenAction {
             SettingsSelection::Gateways => {
                 ScreenAction::Navigate(crate::tui::app::Screen::Gateways)
             }
+            SettingsSelection::Debug => ScreenAction::Navigate(crate::tui::app::Screen::Debug),
             SettingsSelection::Back => ScreenAction::Back,
         },
         _ => ScreenAction::None,

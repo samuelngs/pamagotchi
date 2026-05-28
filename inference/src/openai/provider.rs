@@ -2,7 +2,7 @@ use super::stream::{parse_finish_reason, stream_sse};
 use super::wire::*;
 use crate::{
     AssistantMessage, ChatRequest, ChatResponse, ChatStream, Message, OpenAiCompatibleBridge,
-    ToolCall, ToolChoice, Usage,
+    ToolCall, ToolChoice, Usage, message::parse_tool_arguments,
 };
 use anyhow::{Context, bail};
 use async_trait::async_trait;
@@ -177,12 +177,7 @@ impl OpenAiCompatibleBridge for OpenAiProvider {
             .tool_calls
             .unwrap_or_default()
             .into_iter()
-            .map(|tc| ToolCall {
-                id: tc.id,
-                name: tc.function.name,
-                arguments: serde_json::from_str(&tc.function.arguments)
-                    .unwrap_or(serde_json::Value::Object(Default::default())),
-            })
+            .map(wire_response_tool_call)
             .collect();
 
         let usage = resp
@@ -283,5 +278,39 @@ impl OpenAiCompatibleBridge for OpenAiProvider {
         });
 
         Ok(ChatStream::new(rx))
+    }
+}
+
+fn wire_response_tool_call(tc: WireResponseToolCall) -> ToolCall {
+    ToolCall {
+        id: tc.id,
+        name: tc.function.name,
+        arguments: parse_tool_arguments(tc.function.arguments),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_streaming_tool_call_preserves_malformed_arguments() {
+        let call = wire_response_tool_call(WireResponseToolCall {
+            id: "call-1".into(),
+            function: WireResponseFunction {
+                name: "send_message".into(),
+                arguments: "{\"content\":".into(),
+            },
+        });
+
+        assert_eq!(call.id, "call-1");
+        assert_eq!(call.name, "send_message");
+        assert_eq!(call.arguments["__invalid_tool_json"], true);
+        assert_eq!(call.arguments["raw_arguments"], "{\"content\":");
+        assert!(
+            call.arguments["error"]
+                .as_str()
+                .is_some_and(|error| { error.contains("EOF") || error.contains("expected") })
+        );
     }
 }

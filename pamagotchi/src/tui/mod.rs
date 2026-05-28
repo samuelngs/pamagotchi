@@ -60,6 +60,8 @@ async fn run_loop(
                             app.request_gateway_list().await;
                         } else if screen == Screen::GatewayDetail {
                             app.focus.set(focus::FocusId::GatewayDetailBack);
+                        } else if screen == Screen::Debug {
+                            app.request_debug_snapshot().await;
                         }
                     }
                     ScreenAction::Back => match app.screen {
@@ -68,6 +70,10 @@ async fn run_loop(
                             app.focus.set(focus::FocusId::GatewayList);
                         }
                         Screen::Gateways => {
+                            app.screen = Screen::Settings;
+                            app.focus.set(focus::FocusId::Settings);
+                        }
+                        Screen::Debug => {
                             app.screen = Screen::Settings;
                             app.focus.set(focus::FocusId::Settings);
                         }

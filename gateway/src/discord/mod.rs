@@ -16,16 +16,17 @@ use message::{DiscordHandler, parse_channel_id};
 use protocol::{InboundMessage, MediaAttachment};
 use serde_json::Value;
 use serenity::all::{Client, GatewayIntents, Http};
+use serenity::builder::{CreateAttachment, CreateMessage};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub struct DiscordAdapter {
     id: String,
     http: Option<Arc<Http>>,
     runtime: Arc<GatewayRuntime>,
-    _media_store: Arc<MediaStore>,
+    media_store: Arc<MediaStore>,
 }
 
 impl DiscordAdapter {
@@ -45,7 +46,7 @@ impl DiscordAdapter {
             id,
             http: None,
             runtime,
-            _media_store: media_store,
+            media_store,
         }
     }
 
@@ -65,7 +66,9 @@ impl DiscordAdapter {
 
         let intents = GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::DIRECT_MESSAGES
-            | GatewayIntents::MESSAGE_CONTENT;
+            | GatewayIntents::MESSAGE_CONTENT
+            | GatewayIntents::GUILD_MESSAGE_TYPING
+            | GatewayIntents::DIRECT_MESSAGE_TYPING;
         let handler = DiscordHandler {
             gateway_id: id.clone(),
             config: config.clone(),
@@ -100,7 +103,7 @@ impl DiscordAdapter {
             id,
             http: Some(http),
             runtime,
-            _media_store: media_store,
+            media_store,
         })
     }
 }
@@ -140,7 +143,13 @@ impl GatewayAdapter for DiscordAdapter {
                     GatewayContentKind::Audio,
                     GatewayContentKind::File,
                 ],
-                send: vec![GatewayContentKind::Text],
+                send: vec![
+                    GatewayContentKind::Text,
+                    GatewayContentKind::Image,
+                    GatewayContentKind::Video,
+                    GatewayContentKind::Audio,
+                    GatewayContentKind::File,
+                ],
             },
             composing: true,
             read_receipts: false,
@@ -165,16 +174,21 @@ impl GatewayAdapter for DiscordAdapter {
         content: &str,
         attachments: &[MediaAttachment],
     ) -> anyhow::Result<()> {
-        if !attachments.is_empty() {
-            warn!("discord media sending not yet implemented, sending text only");
-        }
-
         let http = self
             .http
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Discord gateway is not configured"))?;
         let channel_id = parse_channel_id(external_id)?;
-        channel_id.say(http, content).await?;
+        if attachments.is_empty() {
+            channel_id.say(http, content).await?;
+        } else {
+            let files = discord_attachments(http, &self.media_store, attachments).await?;
+            let mut builder = CreateMessage::new();
+            if !content.trim().is_empty() {
+                builder = builder.content(content);
+            }
+            channel_id.send_files(http, files, builder).await?;
+        }
         Ok(())
     }
 
@@ -191,4 +205,65 @@ impl GatewayAdapter for DiscordAdapter {
     async fn stop_composing(&self, _external_id: &str) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+async fn discord_attachments(
+    http: &Arc<Http>,
+    media_store: &MediaStore,
+    attachments: &[MediaAttachment],
+) -> anyhow::Result<Vec<CreateAttachment>> {
+    let mut files = Vec::with_capacity(attachments.len());
+    for attachment in attachments {
+        files.push(discord_attachment(http, media_store, attachment).await?);
+    }
+    Ok(files)
+}
+
+async fn discord_attachment(
+    http: &Arc<Http>,
+    media_store: &MediaStore,
+    attachment: &MediaAttachment,
+) -> anyhow::Result<CreateAttachment> {
+    if let Some(asset_id) = attachment.asset_id.as_ref() {
+        let asset = media_store
+            .get(asset_id)?
+            .ok_or_else(|| anyhow::anyhow!("media asset not found: {}", asset_id.0))?;
+        let bytes = media_store
+            .read_bytes(asset_id)?
+            .ok_or_else(|| anyhow::anyhow!("media asset not found: {}", asset_id.0))?;
+        let filename = attachment
+            .filename
+            .as_deref()
+            .or(asset.filename.as_deref())
+            .map(str::to_string)
+            .unwrap_or_else(|| default_attachment_filename(attachment));
+        return Ok(CreateAttachment::bytes(bytes, filename));
+    }
+
+    if let Some(url) = attachment.url.as_deref() {
+        return Ok(CreateAttachment::url(http, url).await?);
+    }
+
+    anyhow::bail!("Discord media send requires media_asset_id or media_url")
+}
+
+fn default_attachment_filename(attachment: &MediaAttachment) -> String {
+    let extension = match attachment.mime.as_deref() {
+        Some("image/jpeg") => "jpg",
+        Some("image/png") => "png",
+        Some("image/gif") => "gif",
+        Some("image/webp") => "webp",
+        Some("video/mp4") => "mp4",
+        Some("audio/mpeg") => "mp3",
+        Some("audio/ogg") => "ogg",
+        Some("application/pdf") => "pdf",
+        _ => match attachment.kind {
+            protocol::MediaKind::Image => "png",
+            protocol::MediaKind::Video => "mp4",
+            protocol::MediaKind::Audio => "ogg",
+            protocol::MediaKind::Sticker => "webp",
+            protocol::MediaKind::File => "bin",
+        },
+    };
+    format!("attachment.{extension}")
 }

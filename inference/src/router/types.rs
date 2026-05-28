@@ -66,6 +66,12 @@ pub struct ResolvedInference {
     pub capabilities: Vec<Capability>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmbeddingResponse {
+    pub model: String,
+    pub embeddings: Vec<Vec<f32>>,
+}
+
 pub struct InferenceEndpoint {
     pub protocol: InferenceProtocol,
     pub model: String,

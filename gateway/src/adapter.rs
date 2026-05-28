@@ -1,7 +1,10 @@
 use crate::content::GatewayCapabilities;
 use async_trait::async_trait;
 use media::MediaStore;
-use protocol::{GatewayConnectionState, GatewaySetupInstructions, InboundMessage, MediaAttachment};
+use protocol::{
+    ConversationId, GatewayConnectionState, GatewaySetupInstructions, InboundMessage,
+    MediaAttachment,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -16,6 +19,25 @@ pub enum GatewayRuntimeEvent {
     SetupInstructionsChanged {
         gateway_id: String,
         setup: Option<GatewaySetupInstructions>,
+    },
+    TypingUpdate {
+        gateway_id: String,
+        conversation: ConversationId,
+        sender_external_id: String,
+        typing: bool,
+    },
+    MessageEdited {
+        gateway_id: String,
+        conversation: ConversationId,
+        message_id: String,
+        content: String,
+        edited_at: i64,
+    },
+    MessageDeleted {
+        gateway_id: String,
+        conversation: ConversationId,
+        message_id: String,
+        deleted_at: i64,
     },
 }
 

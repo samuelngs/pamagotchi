@@ -16,7 +16,7 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "style_directive": {
                         "type": "string",
-                        "description": "Brief description of how this person communicates (tone, length, formality, language habits) so your response mirrors their style. Analyze their actual messages."
+                        "description": "Brief guidance on this person's tone, length, formality, pace, and language habits so responses can adapt without copying every quirk. Analyze their actual messages."
                     }
                 },
                 "required": ["reason"]
@@ -47,12 +47,39 @@ pub fn tools() -> Vec<Tool> {
                     "reason": {
                         "type": "string",
                         "description": "Why you decided to defer"
+                    },
+                    "delay_secs": {
+                        "type": "integer",
+                        "description": "How long to wait before reconsidering, from 5 to 300 seconds. Defaults to 30.",
+                        "default": 30
                     }
                 },
                 "required": ["reason"]
             }),
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn style_directive_schema_uses_adaptation_not_mirroring() {
+        let tools = tools();
+        let respond = tools
+            .iter()
+            .find(|tool| tool.name == "respond")
+            .expect("respond tool exists");
+        let description = respond.parameters["properties"]["style_directive"]["description"]
+            .as_str()
+            .expect("style_directive description exists");
+
+        assert!(description.contains("adapt"));
+        assert!(description.contains("without copying every quirk"));
+        assert!(!description.contains("mirror"));
+        assert!(!description.contains("mirrors"));
+    }
 }
 
 pub fn execute(name: &str, args: &Value) -> Option<MindVerdict> {
@@ -68,8 +95,9 @@ pub fn execute(name: &str, args: &Value) -> Option<MindVerdict> {
             Some(MindVerdict::Drop)
         }
         "defer" => {
-            tracing::info!(reason = %reason, "mind decided: defer");
-            Some(MindVerdict::Defer)
+            let delay_secs = args["delay_secs"].as_u64().unwrap_or(30).clamp(5, 300);
+            tracing::info!(reason = %reason, delay_secs, "mind decided: defer");
+            Some(MindVerdict::Defer { delay_secs })
         }
         _ => None,
     }

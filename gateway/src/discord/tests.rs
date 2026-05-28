@@ -1,9 +1,10 @@
 use super::*;
 use crate::GatewayAdapter;
-use media::MediaStore;
-use protocol::MediaKind;
+use media::{MediaStore, NewMediaAsset};
+use protocol::{MediaAssetId, MediaAttachment, MediaKind};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[test]
 fn parses_config_from_direct_token() {
@@ -89,6 +90,52 @@ async fn connect_without_bot_token_returns_setup_required_adapter() {
     ));
 }
 
+#[tokio::test]
+async fn stored_media_asset_builds_discord_attachment() {
+    let store = MediaStore::open(temp_media_root()).unwrap();
+    let asset = store
+        .put_bytes(
+            b"png bytes",
+            NewMediaAsset::new(MediaKind::Image)
+                .with_mime("image/png")
+                .with_filename("proof.png"),
+        )
+        .unwrap();
+    let attachment = MediaAttachment {
+        kind: MediaKind::Image,
+        asset_id: Some(asset.id.clone()),
+        url: None,
+        mime: Some("image/png".into()),
+        filename: None,
+        size: Some(asset.size),
+    };
+    let http = Arc::new(Http::new("test-token"));
+
+    let discord_attachment = discord_attachment(&http, &store, &attachment)
+        .await
+        .unwrap();
+
+    assert_eq!(discord_attachment.filename, "proof.png");
+    assert_eq!(discord_attachment.data, b"png bytes");
+}
+
+#[test]
+fn discord_capabilities_advertise_outbound_media() {
+    let adapter = DiscordAdapter {
+        id: "discord-test".into(),
+        http: None,
+        runtime: Arc::new(GatewayRuntime::new(mpsc::channel(1).0)),
+        media_store: Arc::new(MediaStore::open(temp_media_root()).unwrap()),
+    };
+
+    let send = adapter.capabilities().content.send;
+    assert!(send.contains(&GatewayContentKind::Text));
+    assert!(send.contains(&GatewayContentKind::Image));
+    assert!(send.contains(&GatewayContentKind::Video));
+    assert!(send.contains(&GatewayContentKind::Audio));
+    assert!(send.contains(&GatewayContentKind::File));
+}
+
 #[test]
 fn maps_mime_to_media_kind() {
     assert!(matches!(
@@ -126,6 +173,49 @@ fn maps_discord_attachment_fields_without_dropping_metadata() {
     assert_eq!(attachment.mime.as_deref(), Some("image/png"));
     assert_eq!(attachment.filename.as_deref(), Some("image.png"));
     assert_eq!(attachment.size, Some(42));
+}
+
+#[test]
+fn default_discord_attachment_filename_uses_mime_or_kind() {
+    let image = MediaAttachment {
+        kind: MediaKind::Image,
+        asset_id: None,
+        url: None,
+        mime: Some("image/webp".into()),
+        filename: None,
+        size: None,
+    };
+    let file = MediaAttachment {
+        kind: MediaKind::File,
+        asset_id: None,
+        url: None,
+        mime: None,
+        filename: None,
+        size: None,
+    };
+
+    assert_eq!(default_attachment_filename(&image), "attachment.webp");
+    assert_eq!(default_attachment_filename(&file), "attachment.bin");
+}
+
+#[tokio::test]
+async fn discord_attachment_requires_asset_or_url() {
+    let store = MediaStore::open(temp_media_root()).unwrap();
+    let attachment = MediaAttachment {
+        kind: MediaKind::File,
+        asset_id: Some(MediaAssetId("missing-media".into())),
+        url: None,
+        mime: None,
+        filename: None,
+        size: None,
+    };
+    let http = Arc::new(Http::new("test-token"));
+
+    let err = discord_attachment(&http, &store, &attachment)
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("media asset not found"));
 }
 
 fn temp_media_root() -> std::path::PathBuf {

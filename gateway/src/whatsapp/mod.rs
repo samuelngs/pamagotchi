@@ -10,7 +10,7 @@ use crate::{
     GatewayContentKind, GatewayRuntime, GatewayRuntimeEvent, GatewaySetupInstructions,
 };
 use async_trait::async_trait;
-use events::handle_event;
+use events::{handle_chatstate_event, handle_event};
 use media::MediaStore;
 use outbound::{build_outbound_media_message, text_message, whatsapp_media_type};
 use protocol::{InboundMessage, MediaAttachment, MediaKind};
@@ -68,6 +68,17 @@ impl WhatsAppAdapter {
             .await?;
 
         let client = bot.client();
+        let runtime_for_chatstate = runtime.clone();
+        let gateway_id_for_chatstate = id.clone();
+        client
+            .register_chatstate_handler(Arc::new(move |event| {
+                let runtime = runtime_for_chatstate.clone();
+                let gateway_id = gateway_id_for_chatstate.clone();
+                tokio::spawn(async move {
+                    handle_chatstate_event(&gateway_id, event, &runtime).await;
+                });
+            }))
+            .await;
 
         let runtime_for_run = runtime.clone();
         let gateway_id_for_run = id.clone();

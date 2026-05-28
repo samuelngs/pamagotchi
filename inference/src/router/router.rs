@@ -1,7 +1,8 @@
 use super::types::{
-    Capability, Reasoning, ResolvedInference, ResolvedRoute, RouteContext,
+    Capability, EmbeddingResponse, Reasoning, ResolvedInference, ResolvedRoute, RouteContext,
     has_required_capabilities, resolved_from_routes,
 };
+use tracing::warn;
 
 pub struct InferenceRouter {
     pub(super) chat: Vec<(Reasoning, Vec<ResolvedRoute>)>,
@@ -87,11 +88,39 @@ impl InferenceRouter {
     }
 
     pub async fn embed(&self, input: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-        let route = self
-            .embedding
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("no embedding endpoint configured"))?;
-        route.protocol.embed(&route.model, input).await
+        Ok(self.embed_with_metadata(input).await?.embeddings)
+    }
+
+    pub async fn embed_with_metadata(&self, input: &[&str]) -> anyhow::Result<EmbeddingResponse> {
+        if self.embedding.is_empty() {
+            anyhow::bail!("no embedding endpoint configured");
+        }
+
+        let mut last_error = None;
+        for route in &self.embedding {
+            match route.protocol.embed(&route.model, input).await {
+                Ok(embeddings) => {
+                    return Ok(EmbeddingResponse {
+                        model: route.model.clone(),
+                        embeddings,
+                    });
+                }
+                Err(error) => {
+                    warn!(
+                        %error,
+                        model = %route.model,
+                        "embedding endpoint failed"
+                    );
+                    last_error = Some(error);
+                }
+            }
+        }
+
+        let message = last_error.map_or_else(
+            || "unknown embedding failure".to_string(),
+            |error| error.to_string(),
+        );
+        anyhow::bail!("all embedding endpoints failed: {message}")
     }
 
     fn find_chat(&self, level: Reasoning) -> Option<&ResolvedRoute> {

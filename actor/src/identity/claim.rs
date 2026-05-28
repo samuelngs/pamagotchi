@@ -7,6 +7,8 @@ pub struct IdentityClaim {
     pub claimant: PersonId,
     pub claimed_person: PersonId,
     pub evidence: ClaimEvidence,
+    pub reason: Option<String>,
+    pub evidence_json: serde_json::Value,
     pub confidence: f32,
     pub status: ClaimStatus,
     pub created_at: i64,

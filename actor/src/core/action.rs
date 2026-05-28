@@ -1,8 +1,10 @@
 use crate::state::{Authority, Delta};
-use protocol::{ConversationId, InboundMessage};
+use crate::store::Thought;
+use protocol::{ConversationId, InboundMessage, MemoryId};
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinHandle;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,6 +25,7 @@ impl fmt::Display for ActionId {
 #[derive(Clone, Debug)]
 pub enum ActionKind {
     Respond,
+    Review,
     Research,
     Consolidate,
     Outreach,
@@ -33,6 +36,7 @@ impl ActionKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Respond => "respond",
+            Self::Review => "review",
             Self::Research => "research",
             Self::Consolidate => "consolidate",
             Self::Outreach => "outreach",
@@ -45,6 +49,7 @@ impl ActionKind {
             Self::Respond => 80,
             Self::Research => 60,
             Self::Outreach => 50,
+            Self::Review => 30,
             Self::Consolidate => 20,
             Self::Ruminate => 10,
         }
@@ -64,6 +69,7 @@ pub struct Action {
     pub authority: Authority,
     pub style_directive: Option<String>,
     pub cancelled_note: Option<String>,
+    pub source_intent: Option<String>,
     pub source_messages: Vec<InboundMessage>,
     pub phase: Phase,
 }
@@ -85,6 +91,7 @@ pub enum Phase {
 pub struct RunningState {
     pub responded: bool,
     pub last_tool: String,
+    cancellation: CancellationToken,
 }
 
 impl RunningState {
@@ -92,15 +99,90 @@ impl RunningState {
         Self {
             responded: false,
             last_tool: String::new(),
+            cancellation: CancellationToken::new(),
+        }
+    }
+
+    pub fn request_cancel(&self) {
+        self.cancellation.cancel();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
+    }
+
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation.clone()
+    }
+}
+
+#[derive(Clone)]
+pub struct CancellationToken {
+    inner: Arc<CancellationInner>,
+}
+
+struct CancellationInner {
+    cancelled: AtomicBool,
+    notify: Notify,
+}
+
+impl CancellationToken {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(CancellationInner {
+                cancelled: AtomicBool::new(false),
+                notify: Notify::new(),
+            }),
+        }
+    }
+
+    fn cancel(&self) {
+        if !self.inner.cancelled.swap(true, Ordering::SeqCst) {
+            self.inner.notify.notify_one();
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.inner.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub async fn cancelled(&self) {
+        while !self.is_cancelled() {
+            self.inner.notify.notified().await;
         }
     }
 }
 
 pub struct Outcome {
     pub responded: bool,
+    pub attempted_send: bool,
+    pub cancelled: bool,
     pub delta: Option<Delta>,
     pub pending_messages: Vec<InboundMessage>,
+    pub review_messages: Vec<InboundMessage>,
+    pub thoughts: Vec<Thought>,
+    pub memories_formed: Vec<MemoryId>,
+    pub recalled_memory_ids: Vec<MemoryId>,
     pub had_injections: bool,
+    pub attempts: u32,
+}
+
+impl Default for Outcome {
+    fn default() -> Self {
+        Self {
+            responded: false,
+            attempted_send: false,
+            cancelled: false,
+            delta: None,
+            pending_messages: vec![],
+            review_messages: vec![],
+            thoughts: vec![],
+            memories_formed: vec![],
+            recalled_memory_ids: vec![],
+            had_injections: false,
+            attempts: 0,
+        }
+    }
 }
 
 pub struct LaunchContext {
@@ -130,6 +212,28 @@ impl Action {
             authority,
             style_directive,
             cancelled_note: None,
+            source_intent: None,
+            source_messages: messages,
+            phase: Phase::Queued { blocked_by: vec![] },
+        }
+    }
+
+    pub fn review(
+        source_action: ActionId,
+        messages: Vec<InboundMessage>,
+        conversation: Option<ConversationId>,
+        authority: Authority,
+    ) -> Self {
+        Self {
+            id: ActionId::new(),
+            kind: ActionKind::Review,
+            task: format!("Review completed action {source_action}"),
+            conversation,
+            priority: ActionKind::Review.default_priority(),
+            authority,
+            style_directive: None,
+            cancelled_note: Some(format!("Post-turn review for action {source_action}")),
+            source_intent: None,
             source_messages: messages,
             phase: Phase::Queued { blocked_by: vec![] },
         }
@@ -145,6 +249,7 @@ impl Action {
             authority: Authority::Default,
             style_directive: None,
             cancelled_note: None,
+            source_intent: None,
             source_messages: vec![],
             phase: Phase::Queued { blocked_by: vec![] },
         }
@@ -160,6 +265,7 @@ impl Action {
             authority: Authority::Default,
             style_directive: None,
             cancelled_note: None,
+            source_intent: None,
             source_messages: vec![],
             phase: Phase::Queued { blocked_by: vec![] },
         }
@@ -170,6 +276,15 @@ impl Action {
         conversation: Option<ConversationId>,
         authority: Authority,
     ) -> Self {
+        Self::outreach_with_source_intent(task, conversation, authority, None)
+    }
+
+    pub fn outreach_with_source_intent(
+        task: String,
+        conversation: Option<ConversationId>,
+        authority: Authority,
+        source_intent: Option<String>,
+    ) -> Self {
         Self {
             id: ActionId::new(),
             kind: ActionKind::Outreach,
@@ -179,6 +294,7 @@ impl Action {
             authority,
             style_directive: None,
             cancelled_note: None,
+            source_intent,
             source_messages: vec![],
             phase: Phase::Queued { blocked_by: vec![] },
         }

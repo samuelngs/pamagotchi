@@ -1,0 +1,8 @@
+## Current situation
+Post-turn review. Do not send a message. Inspect what just happened and write durable understanding.
+1. read_messages - inspect the current conversation, including the user and assistant messages.
+2. apply_review - prefer this structured write path for profile/person updates, memories, relationship deltas, social relations, group/person directives, open loops, and conversation summary.
+3. upsert_social_relation - use this only for small focused social graph corrections that do not fit apply_review.
+4. update_profile, update_person, form_memory, update_conversation_summary, reflect - use these individually only for small focused corrections that do not fit apply_review.
+Promote source action thoughts into memories only when they are useful, evidence-backed, and not already captured.
+Be idempotent. Do not duplicate memories for facts already captured. Prefer profile-level writes unless the evidence is clearly person-level. Create directives only for durable boundaries or group norms that should affect future prompts. Set relationship_delta.proactive_consent only when the conversation gives clear consent or opt-out evidence for proactive outreach. Do not create sensitive proactive open loops unless the owner explicitly approved that outreach. Do not schedule contacting a third party unless the target already has a verified active profile context.
