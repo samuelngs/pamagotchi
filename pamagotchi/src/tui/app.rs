@@ -183,16 +183,19 @@ impl App {
     }
 
     pub fn insert_char(&mut self, c: char) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
     }
 
     pub fn insert_newline(&mut self) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         self.input.insert(self.cursor, '\n');
         self.cursor += 1;
     }
 
     pub fn delete_char(&mut self) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         if self.cursor > 0 {
             let prev = self.input[..self.cursor]
                 .char_indices()
@@ -205,6 +208,7 @@ impl App {
     }
 
     pub fn delete_word(&mut self) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         if self.cursor == 0 {
             return;
         }
@@ -225,6 +229,7 @@ impl App {
     }
 
     pub fn move_cursor_left(&mut self) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         if self.cursor > 0 {
             self.cursor = self.input[..self.cursor]
                 .char_indices()
@@ -235,6 +240,7 @@ impl App {
     }
 
     pub fn move_cursor_right(&mut self) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         if self.cursor < self.input.len() {
             self.cursor = self.input[self.cursor..]
                 .char_indices()
@@ -245,35 +251,38 @@ impl App {
     }
 
     pub fn move_cursor_up(&mut self) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         let before = &self.input[..self.cursor];
         let current_line_start = before.rfind('\n').map_or(0, |pos| pos + 1);
         if current_line_start == 0 {
             return;
         }
-        let col = self.cursor - current_line_start;
+        let col = self.input[current_line_start..self.cursor].chars().count();
         let prev_line_start = self.input[..current_line_start - 1]
             .rfind('\n')
             .map_or(0, |pos| pos + 1);
-        let prev_line_len = current_line_start - 1 - prev_line_start;
-        self.cursor = prev_line_start + col.min(prev_line_len);
+        let prev_line_end = current_line_start - 1;
+        self.cursor = byte_offset_for_char_column(&self.input, prev_line_start, prev_line_end, col);
     }
 
     pub fn move_cursor_down(&mut self) {
+        self.cursor = clamp_to_char_boundary(&self.input, self.cursor);
         let before = &self.input[..self.cursor];
         let current_line_start = before.rfind('\n').map_or(0, |pos| pos + 1);
-        let col = self.cursor - current_line_start;
+        let col = self.input[current_line_start..self.cursor].chars().count();
         if let Some(offset) = self.input[self.cursor..].find('\n') {
             let next_line_start = self.cursor + offset + 1;
             let next_line_end = self.input[next_line_start..]
                 .find('\n')
                 .map_or(self.input.len(), |pos| next_line_start + pos);
-            let next_line_len = next_line_end - next_line_start;
-            self.cursor = next_line_start + col.min(next_line_len);
+            self.cursor =
+                byte_offset_for_char_column(&self.input, next_line_start, next_line_end, col);
         }
     }
 
     pub fn cursor_at_last_line(&self) -> bool {
-        !self.input[self.cursor..].contains('\n')
+        let cursor = clamp_to_char_boundary(&self.input, self.cursor);
+        !self.input[cursor..].contains('\n')
     }
 
     pub fn ensure_cursor_visible(&mut self) {
@@ -428,11 +437,15 @@ impl App {
     }
 
     pub fn insert_gateway_var_char(&mut self, c: char) {
+        self.gateway_var_cursor =
+            clamp_to_char_boundary(&self.gateway_var_input, self.gateway_var_cursor);
         self.gateway_var_input.insert(self.gateway_var_cursor, c);
         self.gateway_var_cursor += c.len_utf8();
     }
 
     pub fn delete_gateway_var_char(&mut self) {
+        self.gateway_var_cursor =
+            clamp_to_char_boundary(&self.gateway_var_input, self.gateway_var_cursor);
         if self.gateway_var_cursor > 0 {
             let prev = self.gateway_var_input[..self.gateway_var_cursor]
                 .char_indices()
@@ -445,6 +458,8 @@ impl App {
     }
 
     pub fn move_gateway_var_cursor_left(&mut self) {
+        self.gateway_var_cursor =
+            clamp_to_char_boundary(&self.gateway_var_input, self.gateway_var_cursor);
         if self.gateway_var_cursor > 0 {
             self.gateway_var_cursor = self.gateway_var_input[..self.gateway_var_cursor]
                 .char_indices()
@@ -455,6 +470,8 @@ impl App {
     }
 
     pub fn move_gateway_var_cursor_right(&mut self) {
+        self.gateway_var_cursor =
+            clamp_to_char_boundary(&self.gateway_var_input, self.gateway_var_cursor);
         if self.gateway_var_cursor < self.gateway_var_input.len() {
             self.gateway_var_cursor = self.gateway_var_input[self.gateway_var_cursor..]
                 .char_indices()
@@ -631,6 +648,7 @@ pub fn visual_line_count(text: &str, width: usize) -> usize {
 }
 
 pub fn visual_cursor_y(text: &str, byte_offset: usize, width: usize) -> usize {
+    let byte_offset = clamp_to_char_boundary(text, byte_offset);
     let before = &text[..byte_offset];
     if width == 0 {
         return before.matches('\n').count();
@@ -648,8 +666,80 @@ pub fn visual_cursor_y(text: &str, byte_offset: usize, width: usize) -> usize {
 }
 
 pub fn visual_cursor_x(text: &str, byte_offset: usize, width: usize) -> usize {
+    let byte_offset = clamp_to_char_boundary(text, byte_offset);
     let before = &text[..byte_offset];
     let last_line = before.rsplit('\n').next().unwrap_or(before);
     let col = last_line.chars().count();
     if width == 0 { col } else { col % width }
+}
+
+fn clamp_to_char_boundary(text: &str, byte_offset: usize) -> usize {
+    let mut offset = byte_offset.min(text.len());
+    while offset > 0 && !text.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    offset
+}
+
+fn byte_offset_for_char_column(
+    text: &str,
+    line_start: usize,
+    line_end: usize,
+    column: usize,
+) -> usize {
+    text[line_start..line_end]
+        .char_indices()
+        .nth(column)
+        .map(|(offset, _)| line_start + offset)
+        .unwrap_or(line_end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vertical_cursor_movement_preserves_utf8_boundaries() {
+        let mut app = App::new(0);
+        app.input = "ééé\nabcd".into();
+        app.cursor = "ééé\na".len();
+
+        app.move_cursor_up();
+
+        assert!(app.input.is_char_boundary(app.cursor));
+        assert_eq!(app.cursor, "é".len());
+
+        let mut app = App::new(0);
+        app.input = "abcd\nééé".into();
+        app.cursor = "a".len();
+
+        app.move_cursor_down();
+
+        assert!(app.input.is_char_boundary(app.cursor));
+        assert_eq!(app.cursor, "abcd\né".len());
+    }
+
+    #[test]
+    fn visual_cursor_helpers_tolerate_non_boundary_offsets() {
+        let text = "é🙂\nمرحبا";
+
+        assert!(!text.is_char_boundary(1));
+        assert_eq!(visual_cursor_x(text, 1, 80), 0);
+        assert_eq!(visual_cursor_y(text, 1, 80), 0);
+    }
+
+    #[test]
+    fn gateway_var_editing_clamps_invalid_cursor_before_insert() {
+        let mut app = App::new(0);
+        app.gateway_var_input = "éx".into();
+        app.gateway_var_cursor = 1;
+
+        app.insert_gateway_var_char('🙂');
+
+        assert_eq!(app.gateway_var_input, "🙂éx");
+        assert!(
+            app.gateway_var_input
+                .is_char_boundary(app.gateway_var_cursor)
+        );
+    }
 }
