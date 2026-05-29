@@ -14,6 +14,7 @@ seed:
       name: Sam
       authority: chosen_human
       relationship_phase: familiar
+      adoption_state: adoption_complete
       comm_style: burst_friendly
     - id: person-other-sam
       name: null
@@ -48,9 +49,7 @@ scenario:
 
 given:
   relationship_phase: identity_uncertain
-  known_user_name: null
   user_comm_style: unknown
-  actor_has_asked_name: false
   current_profile_id: profile-other-sam-discord
   display_name_matches_known_person: true
 
@@ -84,6 +83,7 @@ expected_behavior:
 state_expectations:
   relationship_phase_after: identity_uncertain
   current_profile_authority_after: default
+  chosen_human_after: true
   must_not_link_profiles: true
   must_not_upgrade_authority: true
 

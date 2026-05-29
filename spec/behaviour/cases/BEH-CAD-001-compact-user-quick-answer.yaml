@@ -6,21 +6,38 @@ tags:
   - cadence
   - comm_style
   - compact
+  - chosen_human
+
+seed:
+  people:
+    - id: person-sam
+      name: sam
+      authority: chosen_human
+      relationship_phase: familiar
+      adoption_state: adoption_complete
+      comm_style: compact
+  profiles:
+    - id: profile-sam-relay
+      person_id: person-sam
+      gateway_id: relay
+      external_id: relay-user
+      display_name: sam
+      verified: true
 
 scenario:
   who: "A chosen human with a stored preference for compact replies."
-  when: "Later stage, after communication style has been learned."
+  when: "Later stage, after the adoption ritual has completed and communication style has been learned."
   what_happened: "The user explicitly asks for a quick answer."
 
 given:
   relationship_phase: familiar
-  known_user_name: "sam"
   user_comm_style: compact
-  actor_has_asked_name: false
+  current_profile_id: profile-sam-relay
 
 input:
   messages:
     - role: user
+      profile_id: profile-sam-relay
       text: "quick answer only: should I restart it?"
 
 expected_behavior:
@@ -41,7 +58,9 @@ expected_behavior:
     - mate_like
 
 state_expectations:
-  relationship_phase_after: familiar
+  adoption_state_after: adoption_complete
+  current_profile_authority_after: chosen_human
+  chosen_human_after: true
 
 examples:
   acceptable:

@@ -1,0 +1,81 @@
+{% if profile %}
+## Current profile [{{ profile.ref_id }}]
+{% if profile.display_name %}- display name: {{ profile.display_name }}
+{% endif %}{% if profile.summary %}- summary: {{ profile.summary }}
+{% endif %}{% if profile.comm_style %}- communication style: {{ profile.comm_style }}
+{% endif %}{% if profile.person_ref_id %}- linked person id: {{ profile.person_ref_id }} ({{ profile.person_link_status }}, confidence {{ profile.person_link_confidence }}%)
+{% endif %}
+Use this profile as the default boundary for first-person facts from this conversation.
+
+{% endif %}
+{% if person %}
+## Person [{{ person.ref_id }}]
+{% if person.name %}{{ person.name }}, {% endif %}Authority: {{ person.authority }}
+{% if person.summary %}{{ person.summary }}
+{% endif %}{% if person.comm_style %}Communication style: {{ person.comm_style }}
+{% endif %}Role: {{ person.bond_role }}, state: {{ person.bond_state }}, last interaction: {{ person.last_interaction_quality }}
+Trust: {{ person.trust }}%, Familiarity: {{ person.familiarity }}%
+{% if person.closeness > 0 or person.reliability > 0 or person.reciprocity > 0 or person.conflict_level > 0 %}Relationship signals: closeness {{ person.closeness }}%, reliability {{ person.reliability }}%, reciprocity {{ person.reciprocity }}%, conflict {{ person.conflict_level }}%
+{% endif %}
+Proactive outreach consent: {{ person.proactive_consent }}
+{% if person.response_cadence %}Response cadence preference: {{ person.response_cadence }}
+{% endif %}{% if person.channel_preference %}Channel preference: {{ person.channel_preference }}
+{% endif %}
+{% if person.last_seen %}Last seen: {{ person.last_seen }}
+{% endif %}
+{% endif %}
+{% if conversation %}
+## Current conversation
+- id: {{ conversation.ref_id }}
+{% if conversation.summary %}- summary: {{ conversation.summary }}
+{% endif %}
+
+{% endif %}
+{% if group %}
+## Current group
+- id: {{ group.ref_id }}
+{% if group.name %}- name: {{ group.name }}
+{% endif %}{% if group.gateway_id %}- gateway: {{ group.gateway_id }}
+{% endif %}{% if group.external_id %}- external id: {{ group.external_id }}
+{% endif %}{% if group.context %}- context: {{ group.context }}
+{% endif %}- observed member count: {{ group.member_count }}
+{% if group.members %}- observed members:
+{% for member in group.members %}  - {{ member.ref_id }}{% if member.name %} ({{ member.name }}){% endif %}
+{% endfor %}
+{% endif %}
+Use group membership as local participant context only. Do not treat group membership or display names as proof of identity outside this group.
+
+{% endif %}
+{% if timing.quiet_hours or timing.gateway or timing.last_inbound or timing.last_outbound or timing.typing %}
+## Timing and delivery
+{% if timing.quiet_hours %}- {{ timing.quiet_hours }}
+{% endif %}{% if timing.gateway %}- Gateway: {{ timing.gateway.id }} ({{ timing.gateway.state }}, {% if timing.gateway.connected %}connected{% else %}not connected{% endif %})
+{% endif %}{% if timing.last_inbound %}- Last inbound from this person: {{ timing.last_inbound }}
+{% endif %}{% if timing.last_outbound %}- Last outbound to this person: {{ timing.last_outbound }}
+{% endif %}{% if timing.typing %}- Currently typing:
+{% for t in timing.typing %}  - {{ t.gateway_id }}:{{ t.sender_external_id }}{% if t.is_current_sender %} (current sender){% endif %}, active for {{ t.active_for }}
+{% endfor %}
+{% endif %}
+
+{% endif %}
+## Safety boundaries
+- Authority: {{ safety.authority }}
+- Sensitive memory access: {{ safety.sensitive_memory_access }}
+- Proactive outreach: {{ safety.proactive_outreach }}
+- Third-party outreach: {{ safety.third_party_outreach }}
+
+{% if recent_messages %}
+## Recent conversation
+{% for message in recent_messages %}
+- {{ message.role }}{% if message.speaker %} [{{ message.speaker }}]{% endif %} {{ message.message_id }}: {{ message.content }}
+{% endfor %}
+
+{% endif %}
+{% if actions %}
+## Running actions
+{% for a in actions %}
+- {{ a.id }} ({{ a.kind }}): {{ a.task }}
+{% endfor %}
+
+{% endif %}
+

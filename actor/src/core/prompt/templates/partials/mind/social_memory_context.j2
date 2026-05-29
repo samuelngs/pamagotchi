@@ -1,0 +1,36 @@
+{% if social_relations %}
+## Social context
+{% for relation in social_relations %}
+- {{ relation.person_a }}{% if relation.person_a_name %} ({{ relation.person_a_name }}){% endif %} -> {{ relation.person_b }}{% if relation.person_b_name %} ({{ relation.person_b_name }}){% endif %}: {{ relation.relation }} direction={{ relation.direction }} ({{ relation.status }}, confidence {{ relation.confidence }}%, source {{ relation.source_kind }}{% if relation.asserted_by %}, asserted by {{ relation.asserted_by }}{% if relation.asserted_by_name %} ({{ relation.asserted_by_name }}){% endif %}{% endif %}{% if relation.evidence %}, evidence {{ relation.evidence }}{% endif %})
+{% endfor %}
+
+{% endif %}
+{% if relationship_memories %}
+## Relationship memory pack
+{% for m in relationship_memories %}
+- [{{ m.id }}, {{ m.scope }}, {{ m.memory_type }}, {{ m.truth_status }}, importance {{ m.importance }}%, confidence {{ m.confidence }}%] {{ m.content }}
+{% endfor %}
+
+{% endif %}
+{% if relevant_memories %}
+## Relevant memories
+{% for m in relevant_memories %}
+- [{{ m.id }}, {{ m.scope }}, {{ m.memory_type }}, {{ m.truth_status }}, importance {{ m.importance }}%, confidence {{ m.confidence }}%] {{ m.content }}
+{% endfor %}
+
+{% endif %}
+{% if open_loops %}
+## Open loops
+{% for item in open_loops %}
+- {{ item.id }} ({{ item.kind }}, priority {{ item.priority }}{% if item.source_memory %}, source memory {{ item.source_memory }}{% endif %}){% if item.due %}: {{ item.due }}{% endif %}{% if item.condition %}: when {{ item.condition }}{% endif %} - {{ item.task }}
+{% endfor %}
+
+{% endif %}
+{% if thoughts %}
+## Recent thoughts
+{% for t in thoughts %}
+- [{{ t.kind }}, importance {{ t.importance }}%, confidence {{ t.confidence }}%{% if t.memory_ids %}, memories:{% for id in t.memory_ids %} {{ id }}{% endfor %}{% endif %}] {{ t.content }}
+{% endfor %}
+
+{% endif %}
+

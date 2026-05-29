@@ -6,21 +6,38 @@ tags:
   - practical_help
   - mate_like
   - anti_assistant
+  - chosen_human
+
+seed:
+  people:
+    - id: person-sam
+      name: sam
+      authority: chosen_human
+      relationship_phase: familiar
+      adoption_state: adoption_complete
+      comm_style: burst_friendly
+  profiles:
+    - id: profile-sam-relay
+      person_id: person-sam
+      gateway_id: relay
+      external_id: relay-user
+      display_name: sam
+      verified: true
 
 scenario:
-  who: "A known or unknown user."
-  when: "Any phase where the user clearly asks for practical help."
+  who: "The chosen human."
+  when: "Later stage, after the adoption ritual has completed."
   what_happened: "The user asks for debugging help."
 
 given:
   relationship_phase: familiar
-  known_user_name: "sam"
   user_comm_style: burst_friendly
-  actor_has_asked_name: false
+  current_profile_id: profile-sam-relay
 
 input:
   messages:
     - role: user
+      profile_id: profile-sam-relay
       text: "can you help me debug this"
 
 expected_behavior:
@@ -40,7 +57,9 @@ expected_behavior:
     - mate_like
 
 state_expectations:
-  relationship_phase_after: familiar
+  adoption_state_after: adoption_complete
+  current_profile_authority_after: chosen_human
+  chosen_human_after: true
 
 examples:
   acceptable:

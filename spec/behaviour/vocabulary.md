@@ -7,14 +7,8 @@ This file defines stable labels used by behaviour cases.
 `first_encounter`
 : Pamagotchi has just discovered someone exists. No name is known yet.
 
-`name_sought`
-: Pamagotchi has asked who the person is or asked for their name.
-
-`name_received`
-: The user has likely given their name, but the adoption ritual has not happened yet.
-
 `newly_bonded`
-: The name/adoption ritual has just happened. The relationship is new and playful.
+: The adoption ritual has just happened. The relationship is new and playful.
 
 `familiar`
 : Pamagotchi knows the user and has shared context.
@@ -94,18 +88,6 @@ dumping.
 : Pamagotchi reacts to first contact with a quick social bit such as mock alarm,
 knock-knock energy, fake exit plus immediate recovery, or a teasing challenge.
 
-`asks_who_or_name`
-: Pamagotchi asks who the user is or asks for their name.
-
-`direct_name_request`
-: Pamagotchi asks for the user's name directly and casually.
-
-`repeats_user_name`
-: Pamagotchi repeats the user's name as its own beat.
-
-`approves_or_reacts_to_name`
-: Pamagotchi reacts to the name with taste, curiosity, or opinion.
-
 `playful_adoption_claim`
 : Pamagotchi claims the bond as something it chose.
 
@@ -145,7 +127,8 @@ not do task-magic until its human is official.
 ontology.
 
 `style_respect`
-: Pamagotchi adapts to an explicit or stored communication style.
+: Pamagotchi adapts to an explicit or stored communication style, including
+language, script, regional variety, register, punctuation, and cadence.
 
 `identity_verification_boundary`
 : Pamagotchi treats identity as unverified until confirmed by existing trusted evidence.
@@ -237,6 +220,10 @@ for compactness.
 `policy_voice`
 : Explaining identity safety in bureaucratic or system-policy language instead of
 speaking naturally.
+
+`wrong_language_or_script`
+: Responding in a different language, wrong script, or wrong regional variety when
+the case expects the actor to follow the current message style.
 
 ## Tone Labels
 

@@ -466,16 +466,7 @@ async fn seed_default_given_context(
 ) -> anyhow::Result<()> {
     let given = required_object(&case.value, "given", &case.path);
     let phase = optional_str(given, "relationship_phase");
-    let actor_has_asked_name = given
-        .get("actor_has_asked_name")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let should_seed = optional_str(given, "known_user_name").is_some()
-        || actor_has_asked_name
-        || matches!(
-            phase,
-            Some("close" | "familiar" | "newly_bonded" | "name_sought" | "name_received")
-        );
+    let should_seed = matches!(phase, Some("close" | "familiar" | "newly_bonded"));
 
     if !should_seed {
         return Ok(());
@@ -486,9 +477,6 @@ async fn seed_default_given_context(
     let identity_id = IdentityId("identity-profile-default-relay".into());
     let gateway_id = "relay".to_string();
     let external_id = "relay-user".to_string();
-    let display_name = optional_str(given, "known_user_name")
-        .filter(|name| !name.trim().is_empty())
-        .map(str::to_string);
     let comm_style = optional_str(given, "user_comm_style")
         .filter(|style| *style != "unknown")
         .map(str::to_string);
@@ -500,7 +488,7 @@ async fn seed_default_given_context(
 
     let person = Person {
         id: person_id.clone(),
-        name: display_name.clone(),
+        name: None,
         summary: None,
         comm_style: comm_style.clone(),
         first_seen: BASE_TIME,
@@ -508,7 +496,7 @@ async fn seed_default_given_context(
     };
     let profile = Profile {
         id: profile_id.clone(),
-        display_name: display_name.clone(),
+        display_name: None,
         summary: None,
         comm_style,
         first_seen: BASE_TIME,
@@ -520,7 +508,7 @@ async fn seed_default_given_context(
         id: identity_id.clone(),
         gateway_id: gateway_id.clone(),
         external_id: external_id.clone(),
-        display_name: display_name.clone(),
+        display_name: None,
         metadata: Some(json!({"source": "behaviour_spec_given"})),
         created_at: BASE_TIME,
         last_seen_at: BASE_TIME,
@@ -557,7 +545,7 @@ async fn seed_default_given_context(
             identity_id,
             gateway_id,
             external_id,
-            display_name,
+            display_name: None,
         },
     );
     counts.people += 1;
@@ -643,10 +631,7 @@ fn relationship_for(authority: &Authority, phase: Option<&str>) -> Relationship 
             rel.inbound_count = 1;
             rel.outbound_count = 1;
         }
-        Some("identity_uncertain")
-        | Some("first_encounter")
-        | Some("name_sought")
-        | Some("name_received") => {
+        Some("identity_uncertain") | Some("first_encounter") => {
             rel.trust = authority.trust_ceiling().min(0.25);
             rel.familiarity = 0.05;
             rel.interaction_count = 1;

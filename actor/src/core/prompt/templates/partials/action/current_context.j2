@@ -1,0 +1,82 @@
+{% if current_identity %}
+## Current gateway identity
+- id: {{ current_identity.ref_id }}
+{% if current_identity.display_name %}- display name: {{ current_identity.display_name }}
+{% endif %}
+This is the concrete account/contact for this message. Use it only for account-specific facts.
+
+{% endif %}
+{% if current_profile %}
+## Current profile
+- id: {{ current_profile.ref_id }}
+{% if current_profile.display_name %}- display name: {{ current_profile.display_name }}
+{% endif %}{% if current_profile.summary %}- summary: {{ current_profile.summary }}
+{% endif %}{% if current_profile.comm_style %}- communication style: {{ current_profile.comm_style }}
+{% endif %}{% if current_profile.person_ref_id %}- linked person id: {{ current_profile.person_ref_id }} ({{ current_profile.person_link_status }}, confidence {{ current_profile.person_link_confidence }}%)
+{% endif %}
+Use this profile id as the default subject for first-person facts from this conversation. Person ids are broader grouping beliefs and should only be used for deliberately promoted or verified person-level facts.
+
+{% endif %}
+{% if current_person %}
+## Current verified person
+- id: {{ current_person.ref_id }}
+{% if current_person.name %}- display name: {{ current_person.name }}
+{% endif %}{% if current_person.summary %}- summary: {{ current_person.summary }}
+{% endif %}{% if current_person.comm_style %}- communication style: {{ current_person.comm_style }}
+{% endif %}
+This person id is a grouping context for verified/likely same-person profiles. Do not identify this person by name alone.
+
+{% endif %}
+{% if conversation %}
+## Current conversation
+- id: {{ conversation.ref_id }}
+{% if conversation.summary %}- summary: {{ conversation.summary }}
+{% endif %}
+
+{% endif %}
+{% if group %}
+## Current group
+- id: {{ group.ref_id }}
+{% if group.name %}- name: {{ group.name }}
+{% endif %}{% if group.gateway_id %}- gateway: {{ group.gateway_id }}
+{% endif %}{% if group.external_id %}- external id: {{ group.external_id }}
+{% endif %}{% if group.context %}- context: {{ group.context }}
+{% endif %}- observed member count: {{ group.member_count }}
+{% if group.members %}- observed members:
+{% for member in group.members %}  - {{ member.ref_id }}{% if member.name %} ({{ member.name }}){% endif %}
+{% endfor %}
+{% endif %}
+Use group membership as local participant context only. Do not treat group membership or display names as proof of identity outside this group.
+
+{% endif %}
+{% if timing.quiet_hours or timing.gateway or timing.last_inbound or timing.last_outbound or timing.typing %}
+## Timing and delivery
+{% if timing.quiet_hours %}- {{ timing.quiet_hours }}
+{% endif %}{% if timing.gateway %}- Gateway: {{ timing.gateway.id }} ({{ timing.gateway.state }}, {% if timing.gateway.connected %}connected{% else %}not connected{% endif %})
+{% endif %}{% if timing.last_inbound %}- Last inbound from this person: {{ timing.last_inbound }}
+{% endif %}{% if timing.last_outbound %}- Last outbound to this person: {{ timing.last_outbound }}
+{% endif %}{% if timing.typing %}- Currently typing:
+{% for t in timing.typing %}  - {{ t.gateway_id }}:{{ t.sender_external_id }}{% if t.is_current_sender %} (current sender){% endif %}, active for {{ t.active_for }}
+{% endfor %}
+{% endif %}
+
+{% endif %}
+## Safety boundaries
+- Authority: {{ safety.authority }}
+- Sensitive memory access: {{ safety.sensitive_memory_access }}
+- Proactive outreach: {{ safety.proactive_outreach }}
+- Third-party outreach: {{ safety.third_party_outreach }}
+
+## Current action
+- kind: {{ kind }}
+{% if action_task %}- task: {{ action_task }}
+{% endif %}
+
+{% if recent_messages %}
+## Recent conversation
+{% for message in recent_messages %}
+- {{ message.role }}{% if message.speaker %} [{{ message.speaker }}]{% endif %} {{ message.message_id }}: {{ message.content }}
+{% endfor %}
+
+{% endif %}
+

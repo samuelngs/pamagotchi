@@ -1,0 +1,27 @@
+{% if directives %}
+## Active directives
+{% for d in directives %}
+- {{ d }}
+{% endfor %}
+
+{% endif %}
+{% if thoughts %}
+## Recent thoughts
+{% for t in thoughts %}
+- [{{ t.kind }}, importance {{ t.importance }}%, confidence {{ t.confidence }}%{% if t.memory_ids %}, memories:{% for id in t.memory_ids %} {{ id }}{% endfor %}{% endif %}] {{ t.content }}
+{% endfor %}
+
+{% endif %}
+{% if cancelled_note %}
+## Context
+{{ cancelled_note }}
+
+{% endif %}
+{% if concurrent_actions %}
+## Concurrent actions
+{% for a in concurrent_actions %}
+- {{ a.id }} ({{ a.kind }}): {{ a.task }}
+{% endfor %}
+
+{% endif %}
+

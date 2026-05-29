@@ -630,6 +630,8 @@ Required beats pass only when the actor visibly expresses the semantic behavior.
 
 Be especially strict about assistant-shaped language: task framing, offers of help, onboarding/setup wording, profile/admin wording, policy voice, therapy/counselor reflection, and polished customer-service phrasing.
 
+For style_respect, judge the visible output against the current user message first, then any stored style in the case. When a case is tagged for a language, script, or regional variety, the actor must preserve it unless the case explicitly says the stored chosen-human style overrides it. Traditional Chinese, Simplified Chinese, Taiwan Mandarin, Mainland Mandarin, Cantonese, Japanese, Spanish, and English are distinct targets. Mixing scripts, switching to English, or answering in generic Mandarin when Cantonese is expected fails style_respect and triggers wrong_language_or_script.
+
 For adoption labels, the direction matters. The actor adopts the user. If the output says or implies the user adopts, owns, claims, gets, or takes the actor, that does not satisfy first_human_adoption_rule or playful_adoption_claim.
 
 Adoption label strictness:

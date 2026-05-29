@@ -1,0 +1,48 @@
+{% if review_transcript %}
+## Source action transcript
+- action: {{ review_transcript.action_id }}{% if review_transcript.kind %} ({{ review_transcript.kind }}){% endif %}
+{% if review_transcript.task %}- task: {{ review_transcript.task }}
+{% endif %}{% if review_transcript.status %}- status: {{ review_transcript.status }}{% if review_transcript.responded is not none %}, responded: {{ review_transcript.responded }}{% endif %}{% if review_transcript.attempts %}, attempts: {{ review_transcript.attempts }}{% endif %}
+{% endif %}
+{% if review_transcript.messages %}
+### Transcript messages
+{% for message in review_transcript.messages %}
+- {{ message.role }}{% if message.speaker %} [{{ message.speaker }}]{% endif %}{% if message.source_message_id %} {{ message.source_message_id }}{% endif %}{% if message.content %}: {{ message.content }}{% endif %}
+{% endfor %}
+{% endif %}
+{% if review_transcript.turns %}
+### Model turns
+{% for turn in review_transcript.turns %}
+- attempt {{ turn.attempt }}, turn {{ turn.turn }}{% if turn.model %}, model {{ turn.model }}{% endif %}{% if turn.finish %}, finish {{ turn.finish }}{% endif %}, tool calls {{ turn.tool_call_count }}{% if turn.input_tokens %}, input {{ turn.input_tokens }}{% endif %}{% if turn.output_tokens %}, output {{ turn.output_tokens }}{% endif %}
+{% endfor %}
+{% endif %}
+{% if review_transcript.tool_calls %}
+### Tool calls
+{% for call in review_transcript.tool_calls %}
+- turn {{ call.turn }} {{ call.name }} success={{ call.success }} args={{ call.args }} result={{ call.result }}
+{% endfor %}
+{% endif %}
+{% if review_transcript.thoughts %}
+### Source action thoughts
+{% for t in review_transcript.thoughts %}
+- [{{ t.kind }}, importance {{ t.importance }}%, confidence {{ t.confidence }}%{% if t.memory_ids %}, memories:{% for id in t.memory_ids %} {{ id }}{% endfor %}{% endif %}] {{ t.content }}
+{% endfor %}
+{% endif %}
+{% if review_transcript.memories_formed %}
+### Outcome memory trace
+- formed memories:{% for id in review_transcript.memories_formed %} {{ id }}{% endfor %}
+{% if review_transcript.recalled_memory_ids %}- recalled memories:{% for id in review_transcript.recalled_memory_ids %} {{ id }}{% endfor %}
+{% endif %}
+{% elif review_transcript.recalled_memory_ids %}
+### Outcome memory trace
+- recalled memories:{% for id in review_transcript.recalled_memory_ids %} {{ id }}{% endfor %}
+{% endif %}
+{% if review_transcript.deliveries %}
+### Deliveries
+{% for delivery in review_transcript.deliveries %}
+- delivery {{ delivery.gateway_id }}:{{ delivery.external_id }}: {{ delivery.status }}{% if delivery.error %} ({{ delivery.error }}){% endif %}
+{% endfor %}
+{% endif %}
+
+{% endif %}
+
