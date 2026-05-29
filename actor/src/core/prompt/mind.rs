@@ -18,16 +18,16 @@ pub(super) async fn build_mind(
     let identity = recall_identity_name(store).await;
     let now = format_now();
     let now_ts = chrono::Utc::now();
-    let authority =
+    let relationship_standing =
         if let Some(person) = messages.first().and_then(|message| message.person.as_ref()) {
             let actor = state.read_state();
             actor
                 .bonds
                 .get(person)
-                .map(|rel| rel.authority.clone())
-                .unwrap_or(Authority::Default)
+                .map(|rel| rel.relationship_standing.clone())
+                .unwrap_or(RelationshipStanding::Default)
         } else {
-            Authority::Default
+            RelationshipStanding::Default
         };
     let person = resolve_person_for_mind(state, store, messages).await;
     let first_message = messages.first();
@@ -59,7 +59,7 @@ pub(super) async fn build_mind(
         now_ts,
     )
     .await;
-    let safety = social_read::build_safety_ctx(&authority, &SessionKind::Mind);
+    let safety = social_read::build_safety_ctx(&relationship_standing, &SessionKind::Mind);
     let recent_messages =
         social_read::fetch_recent_messages(store, conversation_id, messages).await;
     let social_relations = social_read::fetch_social_relations(

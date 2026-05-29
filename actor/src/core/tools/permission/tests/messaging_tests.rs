@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn default_user_cannot_send_explicit_outbound_to_other_target() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     let denied = check(
         "send_message",
@@ -20,7 +20,7 @@ async fn default_user_cannot_send_explicit_outbound_to_other_target() {
 }
 #[tokio::test]
 async fn explicit_current_reply_target_is_allowed() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     check(
         "send_message",
@@ -42,7 +42,7 @@ async fn background_actions_cannot_send_visible_messages() {
         ActionKind::Consolidate,
         ActionKind::Ruminate,
     ] {
-        let ctx = test_context(Authority::ChosenHuman, kind);
+        let ctx = test_context(RelationshipStanding::ChosenHuman, kind);
         let denied = check(
             "send_message",
             &serde_json::json!({
@@ -59,7 +59,7 @@ async fn background_actions_cannot_send_visible_messages() {
 }
 #[tokio::test]
 async fn trusted_context_can_send_explicit_outbound() {
-    let trusted = test_context(Authority::Trusted, ActionKind::Respond);
+    let trusted = test_context(RelationshipStanding::Trusted, ActionKind::Respond);
     check(
         "send_message",
         &serde_json::json!({
@@ -74,7 +74,7 @@ async fn trusted_context_can_send_explicit_outbound() {
 }
 #[tokio::test]
 async fn outreach_context_can_only_send_explicit_scheduled_target() {
-    let outreach = test_context(Authority::Default, ActionKind::Outreach);
+    let outreach = test_context(RelationshipStanding::Default, ActionKind::Outreach);
     check(
         "send_message",
         &serde_json::json!({
@@ -102,7 +102,7 @@ async fn outreach_context_can_only_send_explicit_scheduled_target() {
 }
 #[tokio::test]
 async fn outreach_without_current_messages_uses_stored_conversation_target() {
-    let mut outreach = test_context(Authority::Default, ActionKind::Outreach);
+    let mut outreach = test_context(RelationshipStanding::Default, ActionKind::Outreach);
     let conversation = ConversationId("relay:outreach".into());
     outreach.messages.clear();
     outreach.conversation = Some(conversation.clone());

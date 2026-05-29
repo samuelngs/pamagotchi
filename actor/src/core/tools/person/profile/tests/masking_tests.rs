@@ -95,7 +95,7 @@ async fn get_person_identity_lookup_masks_external_ids_without_delivery_need() {
             metadata: serde_json::Value::Null,
         }],
         conversation: Some(ConversationId("relay:local".into())),
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

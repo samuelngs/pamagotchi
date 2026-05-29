@@ -1,6 +1,6 @@
 use crate::core::handle::StateHandle;
 use crate::identity::{Identity, Person, PersonProfileStatus, Profile, ResolvedActorIdentity};
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use crate::store::{DisplayNameObservation, Store};
 use protocol::{IdentityId, InboundMessage, PersonId, ProfileId};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub(super) async fn resolve_relay_person(
             state,
             store,
             msg,
-            Authority::ChosenHuman,
+            RelationshipStanding::ChosenHuman,
             Some(chosen_human_id.clone()),
         )
         .await
@@ -32,8 +32,14 @@ pub(super) async fn resolve_relay_person(
             }
         }
     } else {
-        let resolved =
-            resolve_or_create_identity_context(state, store, msg, Authority::Default, None).await;
+        let resolved = resolve_or_create_identity_context(
+            state,
+            store,
+            msg,
+            RelationshipStanding::Default,
+            None,
+        )
+        .await;
         if let Some(ctx) = resolved {
             let person_id = ctx.person.map(|person| person.id);
             if let Some(ref id) = person_id {
@@ -51,12 +57,13 @@ pub(super) async fn resolve_gateway_person(
     store: &Arc<dyn Store>,
     msg: &mut InboundMessage,
 ) {
-    let authority = if find_chosen_human(state).is_none() {
-        Authority::Default
+    let relationship_standing = if find_chosen_human(state).is_none() {
+        RelationshipStanding::Default
     } else {
-        Authority::Default
+        RelationshipStanding::Default
     };
-    if let Some(ctx) = resolve_or_create_identity_context(state, store, msg, authority, None).await
+    if let Some(ctx) =
+        resolve_or_create_identity_context(state, store, msg, relationship_standing, None).await
     {
         msg.identity = Some(ctx.identity.id);
         msg.profile = Some(ctx.profile.id);
@@ -68,7 +75,7 @@ async fn resolve_or_create_identity_context(
     state: &StateHandle,
     store: &Arc<dyn Store>,
     msg: &InboundMessage,
-    authority: Authority,
+    relationship_standing: RelationshipStanding,
     attach_to: Option<PersonId>,
 ) -> Option<ResolvedActorIdentity> {
     let Some((gateway_id, sender_external_id)) = msg.sender_key() else {
@@ -166,9 +173,9 @@ async fn resolve_or_create_identity_context(
             return None;
         }
     };
-    if created_person || authority == Authority::ChosenHuman {
+    if created_person || relationship_standing == RelationshipStanding::ChosenHuman {
         state
-            .set_relationship_config(&person_id, Some(authority))
+            .set_relationship_config(&person_id, Some(relationship_standing))
             .await;
     }
     record_display_name_observation(store, msg, &identity.id, Some(&profile.id)).await;
@@ -262,6 +269,6 @@ fn find_chosen_human(state: &StateHandle) -> Option<PersonId> {
     actor
         .bonds
         .iter()
-        .find(|(_, rel)| rel.authority == Authority::ChosenHuman)
+        .find(|(_, rel)| rel.relationship_standing == RelationshipStanding::ChosenHuman)
         .map(|(id, _)| id.clone())
 }

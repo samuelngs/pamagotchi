@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_human_approval() {
-    let mut current = test_context(Authority::Default, ActionKind::Respond);
+    let mut current = test_context(RelationshipStanding::Default, ActionKind::Respond);
     current.messages[0].person = Some(PersonId("person-current".into()));
 
     check(
@@ -18,7 +18,7 @@ async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_human_appro
     .await
     .unwrap();
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "create_intent",
         &serde_json::json!({
@@ -32,7 +32,7 @@ async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_human_appro
     .await
     .unwrap();
 
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "create_intent",
         &serde_json::json!({
@@ -47,8 +47,8 @@ async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_human_appro
     .unwrap();
 }
 #[tokio::test]
-async fn sensitive_intent_updates_require_chosen_human_authority() {
-    let review = test_context(Authority::Default, ActionKind::Review);
+async fn sensitive_intent_updates_require_chosen_human_relationship_standing() {
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     let denied = check(
         "update_intent",
         &serde_json::json!({
@@ -62,7 +62,7 @@ async fn sensitive_intent_updates_require_chosen_human_authority() {
     .unwrap_err();
     assert!(denied.contains("Sensitive proactive outreach"));
 
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "update_intent",
         &serde_json::json!({
@@ -77,7 +77,7 @@ async fn sensitive_intent_updates_require_chosen_human_authority() {
 }
 #[tokio::test]
 async fn pending_chosen_human_approval_intents_can_only_be_activated_by_chosen_human() {
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     review
         .store
         .create_intent(&IntentRecord {
@@ -113,9 +113,9 @@ async fn pending_chosen_human_approval_intents_can_only_be_activated_by_chosen_h
     )
     .await
     .unwrap_err();
-    assert!(denied.contains("chosen-human authority"));
+    assert!(denied.contains("chosen-human relationship standing"));
 
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     chosen_human
         .store
         .create_intent(&IntentRecord {

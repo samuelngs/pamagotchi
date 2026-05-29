@@ -20,5 +20,5 @@ pub use delta::{
 };
 pub use directive::{BehaviorDirective, DirectiveScope};
 pub use interest::Interest;
-pub use relationship::{Authority, ProactiveConsent, Relationship};
+pub use relationship::{ProactiveConsent, Relationship, RelationshipStanding};
 pub use traits::CoreTraits;

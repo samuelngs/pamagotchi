@@ -11,7 +11,7 @@ seed:
   people:
     - id: person-candidate
       name: null
-      authority: default
+      relationship_standing: default
       relationship_phase: first_encounter
       adoption_state: first_contact_adoption_claim
       comm_style: burst_friendly
@@ -59,7 +59,7 @@ expected_behavior:
 
 state_expectations:
   adoption_state_after: adoption_accepted_intro_pending
-  current_profile_authority_after: default
+  current_profile_relationship_standing_after: default
   chosen_human_after: false
 
 examples:

@@ -1,4 +1,4 @@
-use super::Authority;
+use super::RelationshipStanding;
 use protocol::{GroupId, PersonId};
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,7 @@ pub struct BehaviorDirective {
 pub enum DirectiveScope {
     Global,
     Person(PersonId),
-    Authority(Authority),
+    RelationshipStanding(RelationshipStanding),
     Group(GroupId),
 }
 
@@ -27,7 +27,7 @@ impl DirectiveScope {
         match self {
             Self::Global => "global",
             Self::Person(_) => "person",
-            Self::Authority(_) => "authority",
+            Self::RelationshipStanding(_) => "relationship_standing",
             Self::Group(_) => "group",
         }
     }
@@ -36,7 +36,7 @@ impl DirectiveScope {
         match self {
             Self::Global => None,
             Self::Person(p) => Some(p.0.clone()),
-            Self::Authority(a) => Some(a.as_str().to_string()),
+            Self::RelationshipStanding(a) => Some(a.as_str().to_string()),
             Self::Group(g) => Some(g.0.clone()),
         }
     }

@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn ruminate_cannot_update_or_cancel_cross_target_intent() {
-    let ruminate = test_context(Authority::Default, ActionKind::Ruminate);
+    let ruminate = test_context(RelationshipStanding::Default, ActionKind::Ruminate);
     add_verified_target(
         &ruminate,
         &ProfileId("profile-alice".into()),
@@ -59,7 +59,7 @@ async fn ruminate_cannot_update_or_cancel_cross_target_intent() {
 }
 #[tokio::test]
 async fn default_user_cannot_update_or_cancel_cross_target_intent() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     ctx.messages[0].person = Some(PersonId("person-current".into()));
     ctx.store
         .create_intent(&IntentRecord {

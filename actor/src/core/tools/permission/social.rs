@@ -3,7 +3,7 @@ use crate::core::tools::SessionContext;
 use crate::identity::{
     PersonProfileLink, PersonProfileStatus, RelationSource, RelationStatus, SocialRelation,
 };
-use crate::state::{Authority, Relationship};
+use crate::state::{Relationship, RelationshipStanding};
 use protocol::{ConversationId, PersonId, ProfileId};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -51,7 +51,7 @@ pub(crate) async fn social_relation_targets_current_or_verified(
     args: &Value,
     ctx: &SessionContext,
 ) -> Result<bool, String> {
-    if matches!(ctx.authority, Authority::ChosenHuman) {
+    if matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
         return Ok(true);
     }
 
@@ -87,12 +87,12 @@ pub(crate) async fn social_relation_targets_current_or_verified(
 }
 
 pub(crate) async fn relationship_trust_ceiling(ctx: &SessionContext, person: &PersonId) -> f32 {
-    let (authority, current_trust, chosen_people) = {
+    let (relationship_standing, current_trust, chosen_people) = {
         let actor = ctx.state.read_state();
         let relationship = actor.bonds.get(person);
-        let authority = relationship
-            .map(|relationship| relationship.authority.clone())
-            .unwrap_or(Authority::Default);
+        let relationship_standing = relationship
+            .map(|relationship| relationship.relationship_standing.clone())
+            .unwrap_or(RelationshipStanding::Default);
         let current_trust = relationship
             .map(|relationship| relationship.trust)
             .unwrap_or_else(|| Relationship::default().trust);
@@ -100,26 +100,29 @@ pub(crate) async fn relationship_trust_ceiling(ctx: &SessionContext, person: &Pe
             .bonds
             .iter()
             .filter_map(|(chosen_human, relationship)| {
-                matches!(relationship.authority, Authority::ChosenHuman)
-                    .then(|| chosen_human.clone())
+                matches!(
+                    relationship.relationship_standing,
+                    RelationshipStanding::ChosenHuman
+                )
+                .then(|| chosen_human.clone())
             })
             .collect::<Vec<_>>();
-        (authority, current_trust, chosen_people)
+        (relationship_standing, current_trust, chosen_people)
     };
 
-    if !matches!(authority, Authority::Default) {
-        return authority.trust_ceiling();
+    if !matches!(relationship_standing, RelationshipStanding::Default) {
+        return relationship_standing.trust_ceiling();
     }
     if chosen_people
         .iter()
         .any(|chosen_human| chosen_human == person)
     {
-        return Authority::ChosenHuman.trust_ceiling();
+        return RelationshipStanding::ChosenHuman.trust_ceiling();
     }
     if has_chosen_human_social_path(ctx, person, &chosen_people).await {
-        Authority::Default.trust_ceiling()
+        RelationshipStanding::Default.trust_ceiling()
     } else {
-        current_trust.clamp(0.0, Authority::Default.trust_ceiling())
+        current_trust.clamp(0.0, RelationshipStanding::Default.trust_ceiling())
     }
 }
 
@@ -190,8 +193,10 @@ fn social_relation_mentions_chosen_human(
 ) -> bool {
     let actor = ctx.state.read_state();
     actor.bonds.iter().any(|(person, relationship)| {
-        matches!(relationship.authority, Authority::ChosenHuman)
-            && (person == person_a || person == person_b)
+        matches!(
+            relationship.relationship_standing,
+            RelationshipStanding::ChosenHuman
+        ) && (person == person_a || person == person_b)
     })
 }
 

@@ -53,7 +53,7 @@ async fn form_memory_uses_presented_injected_message_evidence() {
         kind: SessionKind::Action(ActionKind::Review),
         messages: vec![source_message],
         conversation: None,
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

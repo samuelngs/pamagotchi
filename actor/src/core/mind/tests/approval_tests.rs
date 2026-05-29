@@ -10,7 +10,7 @@ async fn restricted_intent_does_not_spawn_outreach() {
         .actor
         .write()
         .unwrap()
-        .set_relationship_config(&person, Some(Authority::Restricted));
+        .set_relationship_config(&person, Some(RelationshipStanding::Restricted));
 
     let decision = mind
         .build_decision(
@@ -41,7 +41,7 @@ async fn blocked_intent_without_chosen_human_approval_drops() {
         .actor
         .write()
         .unwrap()
-        .set_relationship_config(&person, Some(Authority::Blocked));
+        .set_relationship_config(&person, Some(RelationshipStanding::Blocked));
 
     let decision = mind
         .build_decision(
@@ -72,7 +72,7 @@ async fn chosen_human_approved_restricted_intent_can_spawn_outreach() {
         .actor
         .write()
         .unwrap()
-        .set_relationship_config(&person, Some(Authority::Restricted));
+        .set_relationship_config(&person, Some(RelationshipStanding::Restricted));
     let mut msg = inbound(
         "relay",
         "local",
@@ -106,7 +106,10 @@ async fn chosen_human_approved_restricted_intent_can_spawn_outreach() {
     match decision {
         MindDecision::Spawn(action) => {
             assert!(matches!(action.kind, ActionKind::Outreach));
-            assert_eq!(action.authority, Authority::Restricted);
+            assert_eq!(
+                action.relationship_standing,
+                RelationshipStanding::Restricted
+            );
         }
         _ => panic!("expected chosen-human-approved restricted outreach to spawn"),
     }
@@ -121,7 +124,7 @@ async fn chosen_human_approved_blocked_intent_can_spawn_outreach() {
         .actor
         .write()
         .unwrap()
-        .set_relationship_config(&person, Some(Authority::Blocked));
+        .set_relationship_config(&person, Some(RelationshipStanding::Blocked));
     let mut msg = inbound(
         "relay",
         "local",
@@ -155,7 +158,7 @@ async fn chosen_human_approved_blocked_intent_can_spawn_outreach() {
     match decision {
         MindDecision::Spawn(action) => {
             assert!(matches!(action.kind, ActionKind::Outreach));
-            assert_eq!(action.authority, Authority::Blocked);
+            assert_eq!(action.relationship_standing, RelationshipStanding::Blocked);
         }
         _ => panic!("expected chosen-human-approved blocked outreach to spawn"),
     }

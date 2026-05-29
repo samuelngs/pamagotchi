@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn default_user_cannot_opt_into_sensitive_memory_recall() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     let denied = check(
         "recall_memories",
@@ -30,7 +30,7 @@ async fn default_user_cannot_opt_into_sensitive_memory_recall() {
 }
 #[tokio::test]
 async fn chosen_human_or_review_can_opt_into_sensitive_memory_recall() {
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "recall_memories",
         &serde_json::json!({
@@ -42,7 +42,7 @@ async fn chosen_human_or_review_can_opt_into_sensitive_memory_recall() {
     .await
     .unwrap();
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "recall_memories",
         &serde_json::json!({
@@ -56,7 +56,7 @@ async fn chosen_human_or_review_can_opt_into_sensitive_memory_recall() {
 }
 #[tokio::test]
 async fn default_user_memory_recall_is_current_target_only() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     ctx.messages[0].identity = Some(IdentityId("identity-current".into()));
     ctx.messages[0].profile = Some(ProfileId("profile-current".into()));
     ctx.messages[0].person = Some(PersonId("person-current".into()));
@@ -149,7 +149,7 @@ async fn default_user_memory_recall_is_current_target_only() {
 }
 #[tokio::test]
 async fn chosen_human_or_review_can_recall_outside_current_target() {
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "recall_memories",
         &serde_json::json!({
@@ -161,7 +161,7 @@ async fn chosen_human_or_review_can_recall_outside_current_target() {
     .await
     .unwrap();
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "recall_memories",
         &serde_json::json!({
@@ -175,7 +175,7 @@ async fn chosen_human_or_review_can_recall_outside_current_target() {
 }
 #[tokio::test]
 async fn ruminate_can_recall_without_current_target_but_not_sensitive() {
-    let ctx = test_context(Authority::Default, ActionKind::Ruminate);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Ruminate);
 
     check(
         "recall_memories",

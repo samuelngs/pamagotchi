@@ -170,12 +170,12 @@ pub(crate) fn tools() -> Vec<Tool> {
                         "properties": {
                             "scope": {
                                 "type": "string",
-                                "enum": ["group", "person", "authority", "global"],
+                                "enum": ["group", "person", "relationship_standing", "global"],
                                 "description": "Where the norm applies. Non-chosen-human review may write only the current person or current group."
                             },
                             "group_id": { "type": "string" },
                             "person_id": { "type": "string" },
-                            "authority": { "type": "string", "enum": ["chosen_human", "trusted", "default", "restricted", "blocked"] },
+                            "relationship_standing": { "type": "string", "enum": ["chosen_human", "trusted", "default", "restricted", "blocked"] },
                             "directive": {
                                 "type": "string",
                                 "description": "Durable behavior norm or boundary to apply in future prompts."

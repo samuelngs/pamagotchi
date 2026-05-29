@@ -114,7 +114,7 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_human_approval_intent
         .actor
         .write()
         .unwrap()
-        .set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
+        .set_relationship_config(&chosen_human, Some(RelationshipStanding::ChosenHuman));
 
     let review_args = json!({
         "open_loops": [{
@@ -179,7 +179,7 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_human_approval_intent
 
     let (mut chosen_human_ctx, mut chosen_human_state) =
         test_context(store.clone(), &profile, &chosen_human, &conversation);
-    chosen_human_ctx.authority = Authority::ChosenHuman;
+    chosen_human_ctx.relationship_standing = RelationshipStanding::ChosenHuman;
     let update_result = match crate::core::tools::execute(
         "update_intent",
         &json!({
@@ -209,7 +209,7 @@ async fn chosen_human_review_can_create_third_party_open_loop() {
     let person = PersonId("person-chosen_human".into());
     let conversation = ConversationId("relay:chosen_human".into());
     let (mut ctx, mut state) = test_context(store.clone(), &profile, &person, &conversation);
-    ctx.authority = Authority::ChosenHuman;
+    ctx.relationship_standing = RelationshipStanding::ChosenHuman;
 
     let now = util::now();
     let review_args = json!({

@@ -86,7 +86,7 @@ async fn form_memory_defaults_evidence_to_current_action_messages() {
         kind: SessionKind::Action(ActionKind::Review),
         messages,
         conversation: Some(conversation.clone()),
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

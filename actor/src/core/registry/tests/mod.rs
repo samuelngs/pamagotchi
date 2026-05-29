@@ -105,7 +105,7 @@ fn failed_delivery_outcome_does_not_requeue_source_message() {
     let id = registry.schedule(Action::respond(
         vec![source],
         ConversationId("relay:local".into()),
-        crate::state::Authority::Default,
+        crate::state::RelationshipStanding::Default,
         None,
     ));
 

@@ -16,7 +16,7 @@ fn successful_visible_action_builds_one_post_turn_review() {
     let action = Action::respond(
         vec![msg.clone()],
         msg.conversation.clone(),
-        Authority::Default,
+        RelationshipStanding::Default,
         None,
     );
     let injected = inbound(
@@ -63,7 +63,7 @@ fn successful_outreach_action_builds_post_turn_review() {
     let action = Action::outreach(
         "Check in about the deployment".into(),
         Some(ConversationId("relay:local".into())),
-        Authority::Default,
+        RelationshipStanding::Default,
     );
     let id = mind.registry.schedule(action);
     mind.registry.complete(
@@ -85,7 +85,7 @@ fn successful_outreach_action_builds_post_turn_review() {
         review.conversation,
         Some(ConversationId("relay:local".into()))
     );
-    assert_eq!(review.authority, Authority::Default);
+    assert_eq!(review.relationship_standing, RelationshipStanding::Default);
     assert!(review.source_messages.is_empty());
 }
 #[test]
@@ -104,7 +104,7 @@ fn failed_visible_action_does_not_build_post_turn_review() {
     let action = Action::respond(
         vec![msg],
         ConversationId("relay:local".into()),
-        Authority::Default,
+        RelationshipStanding::Default,
         None,
     );
     let id = mind.registry.schedule(action);

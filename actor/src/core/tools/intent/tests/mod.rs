@@ -2,7 +2,7 @@ use super::{create, tools, update};
 use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::context::{SessionContext, SessionKind};
-use crate::state::{ActorState, Authority, GrowthConfig};
+use crate::state::{ActorState, GrowthConfig, RelationshipStanding};
 use crate::store::{SqliteStore, Store};
 use gateway::GatewayRouter;
 use inference::{
@@ -40,7 +40,7 @@ impl OpenAiCompatibleBridge for NoopBridge {
 
 fn test_context(
     store: Arc<SqliteStore>,
-    authority: Authority,
+    relationship_standing: RelationshipStanding,
     current_person: Option<PersonId>,
     chosen_human: Option<PersonId>,
 ) -> SessionContext {
@@ -48,7 +48,7 @@ fn test_context(
     let (delta_tx, _delta_rx) = mpsc::channel(1);
     let mut actor = ActorState::new(Default::default());
     if let Some(chosen_human) = chosen_human {
-        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
+        actor.set_relationship_config(&chosen_human, Some(RelationshipStanding::ChosenHuman));
     }
     let shared = Arc::new(SharedState {
         actor: RwLock::new(actor),
@@ -85,7 +85,7 @@ fn test_context(
             metadata: serde_json::Value::Null,
         }],
         conversation: Some(ConversationId("relay:local".into())),
-        authority,
+        relationship_standing,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],
@@ -129,7 +129,7 @@ async fn create_sensitive_current_intent_routes_to_chosen_human_approval() {
     let current = PersonId("person-current".into());
     let ctx = test_context(
         store.clone(),
-        Authority::Default,
+        RelationshipStanding::Default,
         Some(current.clone()),
         Some(chosen_human.clone()),
     );
@@ -173,7 +173,7 @@ async fn non_chosen_human_cannot_activate_pending_chosen_human_approval_intent()
     let current = PersonId("person-current".into());
     let ctx = test_context(
         store.clone(),
-        Authority::Default,
+        RelationshipStanding::Default,
         Some(current.clone()),
         Some(chosen_human.clone()),
     );
@@ -204,7 +204,7 @@ async fn non_chosen_human_cannot_activate_pending_chosen_human_approval_intent()
         denied["message"]
             .as_str()
             .unwrap()
-            .contains("requires chosen-human authority")
+            .contains("requires chosen-human relationship standing")
     );
     let pending = store.get_intent(pending_id).await.unwrap().unwrap();
     assert_eq!(pending.status, "pending_approval");
@@ -212,7 +212,7 @@ async fn non_chosen_human_cannot_activate_pending_chosen_human_approval_intent()
 
     let chosen_human_ctx = test_context(
         store.clone(),
-        Authority::ChosenHuman,
+        RelationshipStanding::ChosenHuman,
         Some(current.clone()),
         Some(chosen_human),
     );

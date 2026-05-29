@@ -86,10 +86,10 @@ pub(super) async fn apply_directives(
 async fn directive_scope(item: &Value, ctx: &SessionContext) -> Option<DirectiveScope> {
     match item["scope"].as_str()? {
         "global" => Some(DirectiveScope::Global),
-        "authority" => item["authority"]
+        "relationship_standing" => item["relationship_standing"]
             .as_str()
-            .and_then(Authority::parse)
-            .map(DirectiveScope::Authority),
+            .and_then(RelationshipStanding::parse)
+            .map(DirectiveScope::RelationshipStanding),
         "person" => item["person_id"]
             .as_str()
             .filter(|id| !id.trim().is_empty())
@@ -107,19 +107,19 @@ async fn directive_scope(item: &Value, ctx: &SessionContext) -> Option<Directive
 }
 
 async fn directive_scope_allowed(scope: &DirectiveScope, ctx: &SessionContext) -> bool {
-    if matches!(ctx.authority, Authority::ChosenHuman) {
+    if matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
         return true;
     }
 
     match scope {
         DirectiveScope::Person(person) => current_review_person(ctx).as_ref() == Some(person),
         DirectiveScope::Group(group) => current_review_group(ctx).await.as_ref() == Some(group),
-        DirectiveScope::Global | DirectiveScope::Authority(_) => false,
+        DirectiveScope::Global | DirectiveScope::RelationshipStanding(_) => false,
     }
 }
 
 fn directive_set_by(item: &Value, ctx: &SessionContext) -> Option<PersonId> {
-    if matches!(ctx.authority, Authority::ChosenHuman) {
+    if matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
         return item["set_by_person_id"]
             .as_str()
             .filter(|id| !id.trim().is_empty())

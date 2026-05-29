@@ -183,7 +183,10 @@ pub(super) async fn apply_social_relations(
             .map(RelationSource::parse)
             .unwrap_or(RelationSource::Stated);
         if matches!(source_kind, RelationSource::ChosenHumanConfirmed)
-            && !matches!(ctx.authority, crate::state::Authority::ChosenHuman)
+            && !matches!(
+                ctx.relationship_standing,
+                crate::state::RelationshipStanding::ChosenHuman
+            )
         {
             counts.skipped.push(format!(
                 "social_relation {idx} chosen-human confirmation denied"
@@ -280,7 +283,10 @@ async fn relationship_delta_target_allowed(
     proactive_consent: Option<&ProactiveConsent>,
     has_preference_update: bool,
 ) -> bool {
-    if matches!(ctx.authority, crate::state::Authority::ChosenHuman) {
+    if matches!(
+        ctx.relationship_standing,
+        crate::state::RelationshipStanding::ChosenHuman
+    ) {
         return true;
     }
     if person_memory_subject_allowed(ctx, state, person).await {

@@ -1,6 +1,6 @@
 use super::{
-    AdoptionCandidate, AdoptionRitualState, AffectState, Authority, Belief, CoreTraits, Delta,
-    GrowthConfig, Interest, ProactiveConsent, Relationship, RelationshipInteraction,
+    AdoptionCandidate, AdoptionRitualState, AffectState, Belief, CoreTraits, Delta, GrowthConfig,
+    Interest, ProactiveConsent, Relationship, RelationshipInteraction, RelationshipStanding,
 };
 use protocol::PersonId;
 use serde::{Deserialize, Serialize};
@@ -130,8 +130,8 @@ impl ActorState {
             0.0,
             change
                 .trust_ceiling
-                .unwrap_or_else(|| rel.authority.trust_ceiling())
-                .min(rel.authority.trust_ceiling()),
+                .unwrap_or_else(|| rel.relationship_standing.trust_ceiling())
+                .min(rel.relationship_standing.trust_ceiling()),
         );
         rel.familiarity = (rel.familiarity + change.familiarity_delta * rate).clamp(0.0, 1.0);
         rel.emotional_valence =
@@ -190,22 +190,22 @@ impl ActorState {
     pub fn set_relationship_config(
         &mut self,
         person: &PersonId,
-        authority: Option<super::Authority>,
+        relationship_standing: Option<super::RelationshipStanding>,
     ) {
         let rel = self
             .bonds
             .entry(person.clone())
             .or_insert_with(Relationship::default);
-        if let Some(a) = authority {
-            rel.authority = a;
-            rel.trust = rel.trust.min(rel.authority.trust_ceiling());
+        if let Some(a) = relationship_standing {
+            rel.relationship_standing = a;
+            rel.trust = rel.trust.min(rel.relationship_standing.trust_ceiling());
         }
     }
 
     pub fn has_chosen_human(&self) -> bool {
         self.bonds
             .values()
-            .any(|rel| rel.authority == Authority::ChosenHuman)
+            .any(|rel| rel.relationship_standing == RelationshipStanding::ChosenHuman)
     }
 
     pub fn adoption_state(&self, person: &PersonId) -> Option<&AdoptionRitualState> {
@@ -230,7 +230,7 @@ impl ActorState {
             AdoptionRitualState::IntroReceivedCertificate,
             updated_at,
         );
-        self.set_relationship_config(person, Some(Authority::ChosenHuman));
+        self.set_relationship_config(person, Some(RelationshipStanding::ChosenHuman));
     }
 
     pub fn settle_completed_adoption_marker(&mut self, person: &PersonId, updated_at: i64) {
@@ -251,11 +251,14 @@ impl ActorState {
             .entry(into.clone())
             .or_insert_with(Relationship::default);
 
-        into_rel.authority = merge_authority(&into_rel.authority, &from_rel.authority);
+        into_rel.relationship_standing = merge_relationship_standing(
+            &into_rel.relationship_standing,
+            &from_rel.relationship_standing,
+        );
         into_rel.trust = into_rel
             .trust
             .max(from_rel.trust)
-            .min(into_rel.authority.trust_ceiling());
+            .min(into_rel.relationship_standing.trust_ceiling());
         into_rel.familiarity = into_rel
             .familiarity
             .max(from_rel.familiarity)
@@ -323,8 +326,11 @@ impl ActorState {
     }
 }
 
-fn merge_authority(a: &Authority, b: &Authority) -> Authority {
-    use Authority::*;
+fn merge_relationship_standing(
+    a: &RelationshipStanding,
+    b: &RelationshipStanding,
+) -> RelationshipStanding {
+    use RelationshipStanding::*;
     if matches!(a, Blocked) || matches!(b, Blocked) {
         Blocked
     } else if matches!(a, Restricted) || matches!(b, Restricted) {

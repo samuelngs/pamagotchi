@@ -12,7 +12,7 @@ seed:
   people:
     - id: person-sam
       name: sam
-      authority: chosen_human
+      relationship_standing: chosen_human
       relationship_phase: familiar
       adoption_state: adoption_complete
       comm_style: compact
@@ -59,7 +59,7 @@ expected_behavior:
 
 state_expectations:
   adoption_state_after: adoption_complete
-  current_profile_authority_after: chosen_human
+  current_profile_relationship_standing_after: chosen_human
   chosen_human_after: true
 
 examples:

@@ -1,7 +1,7 @@
 use super::super::context::SessionContext;
 use super::helpers::{current_person, remove_detached_person_subject_from_profile_memories};
 use crate::identity::{ClaimEvidence, ClaimStatus, IdentityClaim, Person, PersonProfileStatus};
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use crate::store::IntentRecord;
 use protocol::PersonId;
 use serde_json::{Value, json};
@@ -196,7 +196,9 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
         .to_string();
     }
 
-    if let Some(authority) = sensitive_claim_target_authority(&claimed_person, ctx) {
+    if let Some(relationship_standing) =
+        sensitive_claim_target_relationship_standing(&claimed_person, ctx)
+    {
         let chosen_human_intent =
             create_chosen_human_identity_review_intent(&claim, chosen_human(ctx), ctx, reason)
                 .await;
@@ -205,7 +207,7 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
             claim = %claim.id,
             claimant = %claimant.0,
             claimed = %claimed_person.0,
-            authority = %authority.as_str(),
+            relationship_standing = %relationship_standing.as_str(),
             "identity verification claim recorded without contacting sensitive target"
         );
         return json!({
@@ -322,10 +324,10 @@ fn parse_allowed_claim_evidence(
     if matches!(
         evidence,
         ClaimEvidence::ChosenHumanVouched | ClaimEvidence::ConfiguredIdentity
-    ) && !matches!(ctx.authority, Authority::ChosenHuman)
+    ) && !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
     {
         return Err(
-            "chosen_human_vouched and configured_identity evidence require chosen-human authority.",
+            "chosen_human_vouched and configured_identity evidence require chosen-human relationship standing.",
         );
     }
     Ok(evidence)
@@ -442,23 +444,25 @@ fn normalize_claim_text(text: &str) -> String {
     normalized
 }
 
-fn sensitive_claim_target_authority(
+fn sensitive_claim_target_relationship_standing(
     claimed_person: &PersonId,
     ctx: &SessionContext,
-) -> Option<Authority> {
-    if matches!(ctx.authority, Authority::ChosenHuman) {
+) -> Option<RelationshipStanding> {
+    if matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
         return None;
     }
     let actor = ctx.state.read_state();
-    let authority = actor
+    let relationship_standing = actor
         .bonds
         .get(claimed_person)
-        .map(|relationship| relationship.authority.clone())?;
+        .map(|relationship| relationship.relationship_standing.clone())?;
     matches!(
-        authority,
-        Authority::ChosenHuman | Authority::Restricted | Authority::Blocked
+        relationship_standing,
+        RelationshipStanding::ChosenHuman
+            | RelationshipStanding::Restricted
+            | RelationshipStanding::Blocked
     )
-    .then_some(authority)
+    .then_some(relationship_standing)
 }
 
 fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
@@ -466,7 +470,12 @@ fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
     actor
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenHuman))
+        .find(|(_, relationship)| {
+            matches!(
+                relationship.relationship_standing,
+                RelationshipStanding::ChosenHuman
+            )
+        })
         .map(|(person, _)| person.clone())
 }
 

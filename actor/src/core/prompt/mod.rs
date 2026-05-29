@@ -20,7 +20,7 @@ use super::handle::StateHandle;
 use super::review;
 use super::social_read;
 use super::tools::{SessionContext, SessionKind};
-use crate::state::{ActorState, Authority};
+use crate::state::{ActorState, RelationshipStanding};
 use crate::store::{ConversationSummary, MemorySubjectType, MemoryType, Store};
 use context::*;
 use minijinja::Environment;
@@ -34,7 +34,7 @@ pub async fn build_system_prompt(
     messages: &[InboundMessage],
     conversation: Option<&ConversationId>,
     session_ctx: &SessionContext,
-    authority: &Authority,
+    relationship_standing: &RelationshipStanding,
 ) -> anyhow::Result<String> {
     let env = make_env();
     match kind {
@@ -58,7 +58,7 @@ pub async fn build_system_prompt(
                 messages,
                 conversation,
                 session_ctx,
-                authority,
+                relationship_standing,
             )
             .await
         }

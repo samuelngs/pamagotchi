@@ -216,7 +216,7 @@ async fn merge_person_context_moves_person_scoped_store_records() {
         .unwrap();
     assert_eq!(group.members, vec![into.clone()]);
     let directives = store
-        .get_directives_for_context(&into, &Authority::Default, None)
+        .get_directives_for_context(&into, &RelationshipStanding::Default, None)
         .await
         .unwrap();
     assert!(

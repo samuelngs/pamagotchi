@@ -437,7 +437,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
     let (_inject_tx, inject_rx) = mpsc::channel(1);
     let (delta_tx, _delta_rx) = mpsc::channel(1);
     let mut actor = ActorState::new(CoreTraits::default());
-    actor.set_relationship_config(&person_id, Some(Authority::Default));
+    actor.set_relationship_config(&person_id, Some(RelationshipStanding::Default));
     if let Some(rel) = actor.bonds.get_mut(&person_id) {
         rel.response_cadence = Some("reply within one business day".into());
         rel.channel_preference = Some("Discord for deployment coordination".into());
@@ -466,7 +466,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
         kind: SessionKind::Action(ActionKind::Respond),
         messages: vec![inbound],
         conversation: Some(conversation.clone()),
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],
@@ -498,7 +498,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
         &ctx.messages,
         Some(&conversation),
         &ctx,
-        &Authority::Default,
+        &RelationshipStanding::Default,
     )
     .await
     .unwrap();
@@ -521,7 +521,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
     assert!(prompt.contains("Currently typing:"));
     assert!(prompt.contains("discord:author-a (current sender), active for"));
     assert!(prompt.contains("## Safety boundaries"));
-    assert!(prompt.contains("Authority: default"));
+    assert!(prompt.contains("Relationship standing: default"));
     assert!(prompt.contains("Sensitive memory access: conservative recall only"));
     assert!(
         prompt.contains(
@@ -595,7 +595,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
         &ctx.messages,
         Some(&conversation),
         &ctx,
-        &Authority::Default,
+        &RelationshipStanding::Default,
     )
     .await
     .unwrap();
@@ -659,7 +659,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
         &ctx.messages,
         Some(&conversation),
         &ctx,
-        &Authority::Default,
+        &RelationshipStanding::Default,
     )
     .await
     .unwrap();

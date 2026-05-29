@@ -1,7 +1,7 @@
 use super::*;
 use crate::state::{
-    Authority, GrowthConfig, ProactiveConsent, RelationshipChange, RelationshipInteraction,
-    RelationshipSignalUpdate,
+    GrowthConfig, ProactiveConsent, RelationshipChange, RelationshipInteraction,
+    RelationshipSignalUpdate, RelationshipStanding,
 };
 
 mod relationship_delta_tests;

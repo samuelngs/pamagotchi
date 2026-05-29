@@ -111,7 +111,7 @@ fn merge_person_context_reconciles_relationship_state() {
     let from = PersonId("person-claimant".into());
     let into = PersonId("person-verified".into());
     let mut state = ActorState::new(CoreTraits::default());
-    state.set_relationship_config(&into, Some(Authority::Trusted));
+    state.set_relationship_config(&into, Some(RelationshipStanding::Trusted));
     state.apply_delta(
         &Delta {
             relationship_changes: vec![RelationshipChange {
@@ -166,8 +166,11 @@ fn merge_person_context_reconciles_relationship_state() {
     state.merge_person_context(&from, &into);
 
     assert!(!state.bonds.contains_key(&from));
-    assert_eq!(state.bonds[&into].authority, Authority::Trusted);
-    assert!(state.bonds[&into].trust <= Authority::Trusted.trust_ceiling());
+    assert_eq!(
+        state.bonds[&into].relationship_standing,
+        RelationshipStanding::Trusted
+    );
+    assert!(state.bonds[&into].trust <= RelationshipStanding::Trusted.trust_ceiling());
     assert_eq!(state.bonds[&into].familiarity, 0.5);
     assert_eq!(state.bonds[&into].interaction_count, 2);
     assert_eq!(state.bonds[&into].inbound_count, 1);

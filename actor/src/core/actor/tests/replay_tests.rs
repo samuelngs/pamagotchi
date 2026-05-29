@@ -66,7 +66,7 @@ async fn actor_replays_relationship_config_and_person_merge_journal_records() {
             "relationship_config",
             &serde_json::json!({
                 "person_id": "person-claimant",
-                "authority": "trusted",
+                "relationship_standing": "trusted",
             }),
             1001,
         )
@@ -77,7 +77,7 @@ async fn actor_replays_relationship_config_and_person_merge_journal_records() {
             "relationship_config",
             &serde_json::json!({
                 "person_id": "person-chosen_human",
-                "authority": "chosen_human",
+                "relationship_standing": "chosen_human",
             }),
             1002,
         )
@@ -108,8 +108,8 @@ async fn actor_replays_relationship_config_and_person_merge_journal_records() {
                 .contains_key(&PersonId("person-claimant".into()))
         );
         assert_eq!(
-            state.bonds[&PersonId("person-chosen_human".into())].authority,
-            crate::state::Authority::ChosenHuman
+            state.bonds[&PersonId("person-chosen_human".into())].relationship_standing,
+            crate::state::RelationshipStanding::ChosenHuman
         );
     }
 

@@ -23,17 +23,20 @@ fn default_relationship_trust_is_capped() {
         &GrowthConfig::default(),
     );
 
-    assert_eq!(state.bonds[&person].authority, Authority::Default);
+    assert_eq!(
+        state.bonds[&person].relationship_standing,
+        RelationshipStanding::Default
+    );
     assert_eq!(
         state.bonds[&person].trust,
-        Authority::Default.trust_ceiling()
+        RelationshipStanding::Default.trust_ceiling()
     );
 }
 #[test]
-fn lowering_authority_lowers_existing_trust_ceiling() {
+fn lowering_relationship_standing_lowers_existing_trust_ceiling() {
     let person = PersonId("person-restricted".into());
     let mut state = ActorState::new(CoreTraits::default());
-    state.set_relationship_config(&person, Some(Authority::ChosenHuman));
+    state.set_relationship_config(&person, Some(RelationshipStanding::ChosenHuman));
     state.apply_delta(
         &Delta {
             relationship_changes: vec![RelationshipChange {
@@ -52,11 +55,11 @@ fn lowering_authority_lowers_existing_trust_ceiling() {
         &GrowthConfig::default(),
     );
 
-    state.set_relationship_config(&person, Some(Authority::Restricted));
+    state.set_relationship_config(&person, Some(RelationshipStanding::Restricted));
 
     assert_eq!(
         state.bonds[&person].trust,
-        Authority::Restricted.trust_ceiling()
+        RelationshipStanding::Restricted.trust_ceiling()
     );
 }
 #[test]

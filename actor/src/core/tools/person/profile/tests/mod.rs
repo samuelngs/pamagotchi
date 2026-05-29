@@ -3,7 +3,7 @@ use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::{SessionContext, SessionKind};
 use crate::identity::{Identity, Person, PersonProfileStatus, Profile, ProfileIdentityStatus};
-use crate::state::{ActorState, Authority, GrowthConfig};
+use crate::state::{ActorState, GrowthConfig, RelationshipStanding};
 use crate::store::{SqliteStore, Store};
 use async_trait::async_trait;
 use gateway::GatewayRouter;

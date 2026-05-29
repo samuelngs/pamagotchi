@@ -19,18 +19,18 @@ async fn relationship_config_updates_shared_state_and_journal() {
     let person = PersonId("person-chosen_human".into());
 
     handle
-        .set_relationship_config(&person, Some(Authority::ChosenHuman))
+        .set_relationship_config(&person, Some(RelationshipStanding::ChosenHuman))
         .await;
 
     assert_eq!(
-        shared.actor.read().unwrap().bonds[&person].authority,
-        Authority::ChosenHuman
+        shared.actor.read().unwrap().bonds[&person].relationship_standing,
+        RelationshipStanding::ChosenHuman
     );
     let records = store.state_journal_after(None, 10).await.unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].kind, "relationship_config");
     assert_eq!(records[0].payload["person_id"], "person-chosen_human");
-    assert_eq!(records[0].payload["authority"], "chosen_human");
+    assert_eq!(records[0].payload["relationship_standing"], "chosen_human");
 
     drop(handle);
     state_join.await.unwrap();
@@ -53,7 +53,7 @@ async fn person_context_merge_updates_shared_state_and_journal() {
     let into = PersonId("person-verified".into());
     {
         let mut actor = shared.actor.write().unwrap();
-        actor.set_relationship_config(&from, Some(Authority::Trusted));
+        actor.set_relationship_config(&from, Some(RelationshipStanding::Trusted));
     }
 
     handle.merge_person_context(&from, &into).await;
@@ -157,7 +157,7 @@ async fn state_task_allows_trust_for_chosen_human_connected_social_path() {
     });
     {
         let mut actor = shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
+        actor.set_relationship_config(&chosen_human, Some(RelationshipStanding::ChosenHuman));
     }
 
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());

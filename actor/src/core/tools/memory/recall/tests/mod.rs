@@ -2,7 +2,7 @@ use super::{recall, remember_recalled_memory};
 use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::{SessionContext, SessionKind, SessionState};
-use crate::state::{ActorState, Authority, Delta, GrowthConfig};
+use crate::state::{ActorState, Delta, GrowthConfig, RelationshipStanding};
 use crate::store::{Memory, MemoryKind, MemorySource, MemorySubject, SqliteStore, Store};
 use async_trait::async_trait;
 use gateway::GatewayRouter;
@@ -119,7 +119,7 @@ fn context(
             kind: SessionKind::Action(ActionKind::Respond),
             messages: vec![message],
             conversation: Some(conversation.clone()),
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             style_directive: None,
             cancelled_note: None,
             concurrent_summaries: vec![],

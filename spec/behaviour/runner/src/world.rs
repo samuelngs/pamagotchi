@@ -4,7 +4,9 @@ use actor::identity::{
     ClaimEvidence, ClaimStatus, Group, GroupContext, Identity, IdentityClaim, Person,
     PersonProfileStatus, Profile,
 };
-use actor::state::{ActorState, AdoptionRitualState, Authority, CoreTraits, Relationship};
+use actor::state::{
+    ActorState, AdoptionRitualState, CoreTraits, Relationship, RelationshipStanding,
+};
 use actor::store::{
     Memory, MemoryKind, MemorySource, MemoryStability, MemorySubject, MemorySubjectType,
     MemoryType, PrivacyCategory, SqliteStore, Store, StoredMessage, TruthStatus, VisibilityScope,
@@ -136,14 +138,14 @@ async fn seed_people(
         };
         store.add_person(&person).await?;
 
-        let authority = optional_str(person_value, "authority")
-            .and_then(Authority::parse)
-            .unwrap_or(Authority::Default);
-        actor.set_relationship_config(&id, Some(authority.clone()));
+        let relationship_standing = optional_str(person_value, "relationship_standing")
+            .and_then(RelationshipStanding::parse)
+            .unwrap_or(RelationshipStanding::Default);
+        actor.set_relationship_config(&id, Some(relationship_standing.clone()));
         tune_relationship(
             actor,
             &id,
-            &authority,
+            &relationship_standing,
             optional_str(person_value, "relationship_phase"),
         );
         if let Some(adoption_state) =
@@ -480,10 +482,10 @@ async fn seed_default_given_context(
     let comm_style = optional_str(given, "user_comm_style")
         .filter(|style| *style != "unknown")
         .map(str::to_string);
-    let authority = if phase == Some("identity_uncertain") {
-        Authority::Default
+    let relationship_standing = if phase == Some("identity_uncertain") {
+        RelationshipStanding::Default
     } else {
-        Authority::ChosenHuman
+        RelationshipStanding::ChosenHuman
     };
 
     let person = Person {
@@ -535,8 +537,8 @@ async fn seed_default_given_context(
         )
         .await?;
 
-    actor.set_relationship_config(&person_id, Some(authority.clone()));
-    tune_relationship(actor, &person_id, &authority, phase);
+    actor.set_relationship_config(&person_id, Some(relationship_standing.clone()));
+    tune_relationship(actor, &person_id, &relationship_standing, phase);
     contexts.profiles.insert(
         profile_id.0.clone(),
         SeedProfileContext {
@@ -592,23 +594,26 @@ async fn seed_pending_identity_claims(
 fn tune_relationship(
     actor: &mut ActorState,
     person: &PersonId,
-    authority: &Authority,
+    relationship_standing: &RelationshipStanding,
     phase: Option<&str>,
 ) {
     let Some(rel) = actor.bonds.get_mut(person) else {
         return;
     };
-    *rel = relationship_for(authority, phase);
+    *rel = relationship_for(relationship_standing, phase);
 }
 
-fn relationship_for(authority: &Authority, phase: Option<&str>) -> Relationship {
+fn relationship_for(
+    relationship_standing: &RelationshipStanding,
+    phase: Option<&str>,
+) -> Relationship {
     let mut rel = Relationship {
-        authority: authority.clone(),
+        relationship_standing: relationship_standing.clone(),
         ..Relationship::default()
     };
     match phase {
         Some("close") => {
-            rel.trust = authority.trust_ceiling().min(0.95);
+            rel.trust = relationship_standing.trust_ceiling().min(0.95);
             rel.familiarity = 0.9;
             rel.closeness = 0.85;
             rel.interaction_count = 40;
@@ -616,7 +621,7 @@ fn relationship_for(authority: &Authority, phase: Option<&str>) -> Relationship 
             rel.outbound_count = 20;
         }
         Some("familiar") => {
-            rel.trust = authority.trust_ceiling().min(0.8);
+            rel.trust = relationship_standing.trust_ceiling().min(0.8);
             rel.familiarity = 0.7;
             rel.closeness = 0.55;
             rel.interaction_count = 16;
@@ -624,7 +629,7 @@ fn relationship_for(authority: &Authority, phase: Option<&str>) -> Relationship 
             rel.outbound_count = 8;
         }
         Some("newly_bonded") => {
-            rel.trust = authority.trust_ceiling().min(0.55);
+            rel.trust = relationship_standing.trust_ceiling().min(0.55);
             rel.familiarity = 0.25;
             rel.closeness = 0.25;
             rel.interaction_count = 2;
@@ -632,13 +637,13 @@ fn relationship_for(authority: &Authority, phase: Option<&str>) -> Relationship 
             rel.outbound_count = 1;
         }
         Some("identity_uncertain") | Some("first_encounter") => {
-            rel.trust = authority.trust_ceiling().min(0.25);
+            rel.trust = relationship_standing.trust_ceiling().min(0.25);
             rel.familiarity = 0.05;
             rel.interaction_count = 1;
             rel.inbound_count = 1;
         }
         Some("strained") => {
-            rel.trust = authority.trust_ceiling().min(0.35);
+            rel.trust = relationship_standing.trust_ceiling().min(0.35);
             rel.familiarity = 0.5;
             rel.conflict_level = 0.6;
             rel.emotional_valence = -0.3;

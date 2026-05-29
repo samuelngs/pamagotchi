@@ -1,5 +1,5 @@
 use super::context::SessionContext;
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use crate::store::{IntentRecord, IntentUpdateRecord};
 use inference::Tool;
 use protocol::{ConversationId, MemoryId, PersonId, ProfileId};
@@ -182,7 +182,8 @@ pub async fn create(args: &Value, ctx: &SessionContext) -> String {
     }
 
     let now = super::util::now();
-    let chosen_human_approved = matches!(ctx.authority, Authority::ChosenHuman);
+    let chosen_human_approved =
+        matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman);
     let status = if super::permission::intent_requires_chosen_human_approval(args)
         && !chosen_human_approved
     {
@@ -314,7 +315,12 @@ fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
         .read_state()
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenHuman))
+        .find(|(_, relationship)| {
+            matches!(
+                relationship.relationship_standing,
+                RelationshipStanding::ChosenHuman
+            )
+        })
         .map(|(person, _)| person.clone())
 }
 
@@ -356,13 +362,13 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
             .to_string();
     }
 
-    let is_chosen_human = matches!(ctx.authority, Authority::ChosenHuman);
+    let is_chosen_human = matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman);
     if !is_chosen_human && args["status"].as_str() == Some("active") {
         match ctx.store.get_intent(id).await {
             Ok(Some(intent)) if intent.status == "pending_approval" => {
                 return json!({
                     "status": "error",
-                    "message": "Activating an chosen-human-approval intent requires chosen-human authority.",
+                    "message": "Activating an chosen-human-approval intent requires chosen-human relationship standing.",
                 })
                 .to_string();
             }

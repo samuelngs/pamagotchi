@@ -107,7 +107,7 @@ pub fn tools() -> Vec<Tool> {
                     "evidence": {
                         "type": "string",
                         "enum": ["self_declaration", "chosen_human_vouched", "mutual_claim", "shared_knowledge", "configured_identity"],
-                        "description": "Type of evidence supporting this verification request. Defaults to self_declaration. chosen_human_vouched and configured_identity require chosen-human authority; self_declaration records the claim without contacting anyone."
+                        "description": "Type of evidence supporting this verification request. Defaults to self_declaration. chosen_human_vouched and configured_identity require chosen-human relationship standing; self_declaration records the claim without contacting anyone."
                     }
                 },
                 "required": ["claimed_person", "reason"]
@@ -213,7 +213,7 @@ pub fn tools() -> Vec<Tool> {
                     "source_kind": {
                         "type": "string",
                         "enum": ["inferred", "stated", "chosen_human_confirmed", "import", "system"],
-                        "description": "How the relation was sourced. chosen_human_confirmed requires chosen-human authority.",
+                        "description": "How the relation was sourced. chosen_human_confirmed requires chosen-human relationship standing.",
                         "default": "stated"
                     },
                     "asserted_by_person_id": {

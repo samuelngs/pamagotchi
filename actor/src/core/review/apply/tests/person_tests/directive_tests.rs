@@ -29,7 +29,7 @@ async fn apply_review_can_create_current_group_directive() {
     assert_eq!(parsed["directives"], 1);
     assert!(parsed["skipped"].as_array().unwrap().is_empty());
     let directives = store
-        .get_directives_for_context(&person, &Authority::Default, Some(&group))
+        .get_directives_for_context(&person, &RelationshipStanding::Default, Some(&group))
         .await
         .unwrap();
     assert_eq!(directives.len(), 1);

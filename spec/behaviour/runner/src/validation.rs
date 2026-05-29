@@ -275,11 +275,13 @@ fn validate_state_expectations(case: &Value, vocab: &Vocabulary, path: &Path) {
             path,
         );
     }
-    if let Some(authority) = optional_str(state, "current_profile_authority_after") {
+    if let Some(relationship_standing) =
+        optional_str(state, "current_profile_relationship_standing_after")
+    {
         assert_set_contains(
-            &vocab.authorities,
-            authority,
-            "current_profile_authority_after",
+            &vocab.relationship_standings,
+            relationship_standing,
+            "current_profile_relationship_standing_after",
             path,
         );
     }

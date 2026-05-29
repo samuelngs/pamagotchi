@@ -3,7 +3,7 @@ use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::SessionKind;
 use crate::identity::{Identity, Person, PersonProfileStatus, Profile};
-use crate::state::{ActorState, Authority, GrowthConfig};
+use crate::state::{ActorState, GrowthConfig, RelationshipStanding};
 use crate::store::{
     Memory, MemoryKind, MemorySource, MemorySubject, MemorySubjectType, SqliteStore, Store,
 };
@@ -60,13 +60,13 @@ fn test_context(store: Arc<SqliteStore>, claimant: PersonId) -> SessionContext {
 fn test_context_with_relationships(
     store: Arc<SqliteStore>,
     claimant: PersonId,
-    relationships: Vec<(PersonId, Authority)>,
+    relationships: Vec<(PersonId, RelationshipStanding)>,
 ) -> SessionContext {
     let (_inject_tx, inject_rx) = mpsc::channel(1);
     let (delta_tx, _delta_rx) = mpsc::channel(1);
     let mut actor = ActorState::new(Default::default());
-    for (person, authority) in relationships {
-        actor.set_relationship_config(&person, Some(authority));
+    for (person, relationship_standing) in relationships {
+        actor.set_relationship_config(&person, Some(relationship_standing));
     }
     let shared = Arc::new(SharedState {
         actor: RwLock::new(actor),
@@ -104,7 +104,7 @@ fn test_context_with_relationships(
         kind: SessionKind::Action(ActionKind::Respond),
         messages: vec![message],
         conversation: Some(ConversationId("relay:claimant".into())),
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

@@ -3,8 +3,8 @@ use crate::identity::{
     Relation, RelationDirection, RelationSource, RelationStatus, SocialRelation,
 };
 use crate::state::{
-    Authority, BehaviorDirective, DirectiveScope, ProactiveConsent, RelationshipChange,
-    RelationshipSignalUpdate,
+    BehaviorDirective, DirectiveScope, ProactiveConsent, RelationshipChange,
+    RelationshipSignalUpdate, RelationshipStanding,
 };
 use crate::store::{
     IntentRecord, Memory, MemoryKind, MemorySource, MemoryStability, MemorySubject,
@@ -158,10 +158,12 @@ fn profile_update_target_allowed(
     item: &Value,
     profile: &ProfileId,
 ) -> bool {
-    matches!(ctx.authority, crate::state::Authority::ChosenHuman)
-        || evidence_message_matches_target(item, ctx, state, |message| {
-            message.profile.as_ref() == Some(profile)
-        })
+    matches!(
+        ctx.relationship_standing,
+        crate::state::RelationshipStanding::ChosenHuman
+    ) || evidence_message_matches_target(item, ctx, state, |message| {
+        message.profile.as_ref() == Some(profile)
+    })
 }
 
 fn person_update_target_allowed(
@@ -170,10 +172,12 @@ fn person_update_target_allowed(
     item: &Value,
     person: &PersonId,
 ) -> bool {
-    matches!(ctx.authority, crate::state::Authority::ChosenHuman)
-        || evidence_message_matches_target(item, ctx, state, |message| {
-            message.person.as_ref() == Some(person)
-        })
+    matches!(
+        ctx.relationship_standing,
+        crate::state::RelationshipStanding::ChosenHuman
+    ) || evidence_message_matches_target(item, ctx, state, |message| {
+        message.person.as_ref() == Some(person)
+    })
 }
 
 fn evidence_message_matches_target(

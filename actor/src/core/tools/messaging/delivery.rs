@@ -61,6 +61,11 @@ fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
     actor
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenHuman))
+        .find(|(_, relationship)| {
+            matches!(
+                relationship.relationship_standing,
+                RelationshipStanding::ChosenHuman
+            )
+        })
         .map(|(person, _)| person.clone())
 }

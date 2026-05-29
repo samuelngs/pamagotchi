@@ -4,7 +4,7 @@ use crate::core::handle::{SharedState, StateHandle};
 use crate::core::review::tools;
 use crate::core::tools::{SessionKind, empty_delta};
 use crate::identity::{Person, PersonProfileStatus, Profile};
-use crate::state::{ActorState, Authority, GrowthConfig};
+use crate::state::{ActorState, GrowthConfig, RelationshipStanding};
 use crate::store::{ActionRunRecord, MessageRole, RecallQuery, SqliteStore, Store, StoredMessage};
 use async_trait::async_trait;
 use gateway::GatewayRouter;
@@ -167,7 +167,7 @@ fn test_context(
             kind: SessionKind::Action(ActionKind::Review),
             messages: vec![message],
             conversation: Some(conversation.clone()),
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             style_directive: None,
             cancelled_note: Some("Post-turn review for action source-action".into()),
             concurrent_summaries: vec![],

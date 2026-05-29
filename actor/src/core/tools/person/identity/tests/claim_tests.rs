@@ -63,7 +63,7 @@ async fn non_chosen_human_cannot_escalate_identity_claim_evidence_to_chosen_huma
         value["message"]
             .as_str()
             .unwrap()
-            .contains("require chosen-human authority")
+            .contains("require chosen-human relationship standing")
     );
     let claims = store
         .get_recent_claims(Some(&claimant), Some(&claimed), 0)
@@ -83,7 +83,7 @@ async fn default_identity_verification_for_chosen_human_records_claim_without_co
     let ctx = test_context_with_relationships(
         store.clone(),
         claimant.clone(),
-        vec![(chosen_human.clone(), Authority::ChosenHuman)],
+        vec![(chosen_human.clone(), RelationshipStanding::ChosenHuman)],
     );
 
     let result = request_identity_verification(

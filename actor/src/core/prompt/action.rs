@@ -16,7 +16,7 @@ pub(super) async fn build_action(
     messages: &[InboundMessage],
     conversation: Option<&ConversationId>,
     session_ctx: &SessionContext,
-    authority: &Authority,
+    relationship_standing: &RelationshipStanding,
 ) -> anyhow::Result<String> {
     let actor = state.read_state().clone();
     let now_ts = chrono::Utc::now();
@@ -190,7 +190,7 @@ pub(super) async fn build_action(
                 ref_id: pid.0.clone(),
                 name: info.name.clone(),
                 summary: info.summary.clone(),
-                bond_role: bond_role(&rel.authority).into(),
+                bond_role: bond_role(&rel.relationship_standing).into(),
                 bond_state: bond_state(rel).into(),
                 first_contact: rel.inbound_count <= 1 && info.name.is_none(),
                 last_interaction_quality: interaction_quality(rel).into(),
@@ -281,7 +281,8 @@ pub(super) async fn build_action(
         now_ts,
     )
     .await;
-    let safety = social_read::build_safety_ctx(authority, &SessionKind::Action(kind.clone()));
+    let safety =
+        social_read::build_safety_ctx(relationship_standing, &SessionKind::Action(kind.clone()));
     let social_relations = social_read::fetch_social_relations(store, person_id).await;
     let relationship_memories =
         social_read::fetch_relationship_memories(store, profile_id, person_id).await;
@@ -341,7 +342,7 @@ pub(super) async fn build_action(
         cancelled_note,
         concurrent_actions,
         style: comm_style,
-        authority: authority.as_str().to_string(),
+        relationship_standing: relationship_standing.as_str().to_string(),
         kind: kind.as_str().to_string(),
     };
 

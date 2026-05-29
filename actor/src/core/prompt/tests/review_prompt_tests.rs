@@ -130,7 +130,7 @@ async fn review_prompt_includes_source_action_transcript() {
         kind: SessionKind::Action(ActionKind::Review),
         messages: vec![],
         conversation: Some(conversation.clone()),
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: Some(format!("Post-turn review for action {source_action}")),
         concurrent_summaries: vec![],
@@ -158,7 +158,7 @@ async fn review_prompt_includes_source_action_transcript() {
         &ctx.messages,
         Some(&conversation),
         &ctx,
-        &Authority::Default,
+        &RelationshipStanding::Default,
     )
     .await
     .unwrap();

@@ -32,7 +32,7 @@ async fn form_memory_persists_without_embedding_when_embedding_endpoint_fails() 
             metadata: serde_json::Value::Null,
         }],
         conversation: Some(conversation),
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

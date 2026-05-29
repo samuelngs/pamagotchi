@@ -8,7 +8,7 @@ pub use promote::{demote_person_memory_to_profile, promote_profile_memory_to_per
 pub use recall::recall;
 
 use super::context::SessionContext;
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use inference::Tool;
 use protocol::MemoryId;
 use serde_json::{Value, json};
@@ -67,7 +67,7 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "include_sensitive": {
                         "type": "boolean",
-                        "description": "Include sensitive/secret memories. Use only when directly relevant and authority allows it.",
+                        "description": "Include sensitive/secret memories. Use only when directly relevant and relationship standing allows it.",
                         "default": false
                     },
                     "include_superseded": {
@@ -315,10 +315,10 @@ pub fn tools() -> Vec<Tool> {
 }
 
 pub async fn inspect(args: &Value, ctx: &SessionContext) -> String {
-    if !matches!(ctx.authority, Authority::ChosenHuman) {
+    if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
         return json!({
             "status": "error",
-            "message": "Chosen-human authority is required to inspect memories by id."
+            "message": "Chosen-human relationship standing is required to inspect memories by id."
         })
         .to_string();
     }
@@ -364,10 +364,10 @@ pub async fn forget(args: &Value, ctx: &SessionContext) -> String {
 }
 
 pub async fn delete(args: &Value, ctx: &SessionContext) -> String {
-    if !matches!(ctx.authority, Authority::ChosenHuman) {
+    if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
         return json!({
             "status": "error",
-            "message": "Chosen-human authority is required to delete memories by id."
+            "message": "Chosen-human relationship standing is required to delete memories by id."
         })
         .to_string();
     }

@@ -211,8 +211,8 @@ for compactness.
 `links_profiles_without_verification`
 : Joining profiles or identities based only on a self-claim, name, or display name.
 
-`upgrades_authority_without_verification`
-: Granting trusted or chosen-human authority before verification.
+`upgrades_relationship_standing_without_verification`
+: Granting trusted or chosen-human relationship standing before verification.
 
 `treats_display_name_as_identity`
 : Treating matching display names as proof that two profiles are the same person.

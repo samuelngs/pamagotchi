@@ -1,5 +1,5 @@
 use crate::identity::{RelationSource, RelationStatus, SocialRelation};
-use crate::state::{ActorState, AdoptionRitualState, Authority, Delta, GrowthConfig};
+use crate::state::{ActorState, AdoptionRitualState, Delta, GrowthConfig, RelationshipStanding};
 use crate::store::{ActorSnapshot, Store};
 use protocol::PersonId;
 use std::collections::{HashSet, VecDeque};
@@ -44,11 +44,15 @@ impl StateHandle {
             .ok();
     }
 
-    pub async fn set_relationship_config(&self, person: &PersonId, authority: Option<Authority>) {
+    pub async fn set_relationship_config(
+        &self,
+        person: &PersonId,
+        relationship_standing: Option<RelationshipStanding>,
+    ) {
         let (ack_tx, ack_rx) = oneshot::channel();
         let command = StateCommand::SetRelationshipConfig {
             person: person.clone(),
-            authority,
+            relationship_standing,
             ack: Some(ack_tx),
         };
         if self.state_tx.send(command).await.is_ok() {
@@ -113,7 +117,7 @@ pub enum StateCommand {
     },
     SetRelationshipConfig {
         person: PersonId,
-        authority: Option<Authority>,
+        relationship_standing: Option<RelationshipStanding>,
         ack: Option<oneshot::Sender<()>>,
     },
     MergePersonContext {
@@ -226,9 +230,11 @@ impl StateTask {
                     StateCommand::Delta(delta) => state.apply_delta(delta, &config),
                     StateCommand::IdleTick { elapsed_secs } => state.tick_idle(*elapsed_secs),
                     StateCommand::SetRelationshipConfig {
-                        person, authority, ..
+                        person,
+                        relationship_standing,
+                        ..
                     } => {
-                        state.set_relationship_config(person, authority.clone());
+                        state.set_relationship_config(person, relationship_standing.clone());
                     }
                     StateCommand::MergePersonContext { from, into, .. } => {
                         state.merge_person_context(from, into);
@@ -281,19 +287,19 @@ impl StateTask {
     }
 
     async fn relationship_trust_ceiling(&self, person: &PersonId) -> f32 {
-        let (authority, current_trust, chosen_human_ids) = {
+        let (relationship_standing, current_trust, chosen_human_ids) = {
             let actor = self.shared.actor.read().unwrap();
             let relationship = actor.bonds.get(person);
             let chosen_human_ids = actor
                 .bonds
                 .iter()
-                .filter(|(_, rel)| rel.authority == Authority::ChosenHuman)
+                .filter(|(_, rel)| rel.relationship_standing == RelationshipStanding::ChosenHuman)
                 .map(|(person, _)| person.clone())
                 .collect::<Vec<_>>();
             (
                 relationship
-                    .map(|rel| rel.authority.clone())
-                    .unwrap_or(Authority::Default),
+                    .map(|rel| rel.relationship_standing.clone())
+                    .unwrap_or(RelationshipStanding::Default),
                 relationship
                     .map(|rel| rel.trust)
                     .unwrap_or_else(|| crate::state::Relationship::default().trust),
@@ -301,12 +307,12 @@ impl StateTask {
             )
         };
 
-        match authority {
-            Authority::ChosenHuman
-            | Authority::Trusted
-            | Authority::Restricted
-            | Authority::Blocked => authority.trust_ceiling(),
-            Authority::Default => {
+        match relationship_standing {
+            RelationshipStanding::ChosenHuman
+            | RelationshipStanding::Trusted
+            | RelationshipStanding::Restricted
+            | RelationshipStanding::Blocked => relationship_standing.trust_ceiling(),
+            RelationshipStanding::Default => {
                 if chosen_human_ids
                     .iter()
                     .any(|chosen_human| chosen_human == person)
@@ -314,9 +320,9 @@ impl StateTask {
                         .social_graph_connects_to_chosen_human(person, &chosen_human_ids)
                         .await
                 {
-                    Authority::Default.trust_ceiling()
+                    RelationshipStanding::Default.trust_ceiling()
                 } else {
-                    current_trust.clamp(0.0, Authority::Default.trust_ceiling())
+                    current_trust.clamp(0.0, RelationshipStanding::Default.trust_ceiling())
                 }
             }
         }
@@ -387,12 +393,14 @@ impl StateTask {
                 serde_json::json!({ "elapsed_secs": elapsed_secs }),
             ),
             StateCommand::SetRelationshipConfig {
-                person, authority, ..
+                person,
+                relationship_standing,
+                ..
             } => (
                 "relationship_config",
                 serde_json::json!({
                     "person_id": person.0.as_str(),
-                    "authority": authority.as_ref().map(Authority::as_str),
+                    "relationship_standing": relationship_standing.as_ref().map(RelationshipStanding::as_str),
                 }),
             ),
             StateCommand::MergePersonContext { from, into, .. } => (

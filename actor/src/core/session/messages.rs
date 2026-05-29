@@ -16,7 +16,7 @@ pub(super) async fn build_prompt(ctx: &SessionContext) -> anyhow::Result<String>
         &ctx.messages,
         ctx.conversation.as_ref(),
         ctx,
-        &ctx.authority,
+        &ctx.relationship_standing,
     )
     .await
 }

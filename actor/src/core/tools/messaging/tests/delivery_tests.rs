@@ -97,7 +97,7 @@ async fn failed_delivery_schedules_deduped_chosen_human_review_intent() {
         .actor
         .write()
         .unwrap()
-        .set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
+        .set_relationship_config(&chosen_human, Some(RelationshipStanding::ChosenHuman));
     let mut state = SessionState {
         responded: false,
         attempted_send: false,

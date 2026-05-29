@@ -69,7 +69,7 @@ async fn successful_response_retires_simple_next_message_triggered_intent() {
     let action = Action::respond(
         vec![msg.clone()],
         msg.conversation.clone(),
-        Authority::Default,
+        RelationshipStanding::Default,
         None,
     );
     let id = mind.registry.schedule(action);
@@ -171,7 +171,7 @@ async fn successful_response_retires_matched_content_triggered_intent() {
     let action = Action::respond(
         vec![msg.clone()],
         msg.conversation.clone(),
-        Authority::Default,
+        RelationshipStanding::Default,
         None,
     );
     let id = mind.registry.schedule(action);
@@ -237,7 +237,7 @@ async fn successful_outreach_completes_fired_source_intent() {
     let action = Action::outreach_with_source_intent(
         "Check in about the deployment".into(),
         Some(conversation),
-        Authority::Default,
+        RelationshipStanding::Default,
         Some("intent-outreach".into()),
     );
     let id = mind.registry.schedule(action);
@@ -290,7 +290,7 @@ async fn successful_recurring_outreach_keeps_active_source_intent() {
     let action = Action::outreach_with_source_intent(
         "Weekly check-in".into(),
         Some(conversation),
-        Authority::Default,
+        RelationshipStanding::Default,
         Some("intent-recurring-outreach".into()),
     );
     let id = mind.registry.schedule(action);

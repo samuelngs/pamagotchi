@@ -4,7 +4,7 @@ use super::lifecycle::ActorLifecycleEvent;
 use super::metrics::{ActorMetrics, ActorMetricsSnapshot};
 use super::mind::Mind;
 use super::scheduler::spawn_scheduler;
-use crate::state::{ActorState, AdoptionRitualState, Authority, Delta, GrowthConfig};
+use crate::state::{ActorState, AdoptionRitualState, Delta, GrowthConfig, RelationshipStanding};
 use crate::store::Store;
 use gateway::GatewayRouter;
 use inference::InferenceRouter;
@@ -237,12 +237,15 @@ async fn replay_state_journal(
                         last_id = Some(record.id);
                         continue;
                     };
-                    let authority = record
+                    let relationship_standing = record
                         .payload
-                        .get("authority")
+                        .get("relationship_standing")
                         .and_then(serde_json::Value::as_str)
-                        .and_then(Authority::parse);
-                    state.set_relationship_config(&PersonId(person_id.to_string()), authority);
+                        .and_then(RelationshipStanding::parse);
+                    state.set_relationship_config(
+                        &PersonId(person_id.to_string()),
+                        relationship_standing,
+                    );
                 }
                 "person_context_merge" => {
                     let Some(from) = record

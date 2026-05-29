@@ -2,7 +2,7 @@ use super::super::action::{Action, ActionKind};
 use super::super::decision::MindDecision;
 use super::super::event::WakeEvent;
 use super::{MAX_DEFER_COUNT, Mind, message_skips_injection_target};
-use crate::state::{Authority, ProactiveConsent};
+use crate::state::{ProactiveConsent, RelationshipStanding};
 use crate::store::{ConversationSummary, MessageRole};
 use protocol::{ConversationId, PersonId};
 use tracing::warn;
@@ -17,7 +17,7 @@ impl Mind {
         event: &WakeEvent,
         style_directive: Option<String>,
     ) -> MindDecision {
-        let authority = self.resolve_authority(event);
+        let relationship_standing = self.resolve_relationship_standing(event);
 
         match event {
             WakeEvent::Message(msg) => {
@@ -39,7 +39,7 @@ impl Mind {
                             let action = Action::respond(
                                 vec![msg.clone()],
                                 msg.conversation.clone(),
-                                authority,
+                                relationship_standing,
                                 style_directive,
                             );
                             return MindDecision::CancelAndSpawn(vec![lowest.id.clone()], action);
@@ -52,7 +52,7 @@ impl Mind {
                 let action = Action::respond(
                     vec![msg.clone()],
                     msg.conversation.clone(),
-                    authority,
+                    relationship_standing,
                     style_directive,
                 );
                 MindDecision::Spawn(action)
@@ -92,14 +92,16 @@ impl Mind {
                         return MindDecision::Drop;
                     }
                 };
-                let authority = self.authority_for_person(&target_person);
-                if matches!(authority, Authority::Restricted | Authority::Blocked)
-                    && !intent.chosen_human_approved
+                let relationship_standing = self.relationship_standing_for_person(&target_person);
+                if matches!(
+                    relationship_standing,
+                    RelationshipStanding::Restricted | RelationshipStanding::Blocked
+                ) && !intent.chosen_human_approved
                 {
                     warn!(
                         intent_id = %intent.id,
-                        authority = %authority.as_str(),
-                        "dropping proactive outreach for restricted authority"
+                        relationship_standing = %relationship_standing.as_str(),
+                        "dropping proactive outreach for restricted relationship standing"
                     );
                     return MindDecision::Drop;
                 }
@@ -224,7 +226,7 @@ impl Mind {
                 MindDecision::Spawn(Action::outreach_with_source_intent(
                     intent.task.clone(),
                     Some(conversation),
-                    authority,
+                    relationship_standing,
                     Some(intent.id.clone()),
                 ))
             }
@@ -232,13 +234,13 @@ impl Mind {
         }
     }
 
-    fn authority_for_person(&self, person: &PersonId) -> Authority {
+    fn relationship_standing_for_person(&self, person: &PersonId) -> RelationshipStanding {
         let actor = self.state.read_state();
         actor
             .bonds
             .get(person)
-            .map(|rel| rel.authority.clone())
-            .unwrap_or(Authority::Default)
+            .map(|rel| rel.relationship_standing.clone())
+            .unwrap_or(RelationshipStanding::Default)
     }
 
     fn proactive_outreach_has_consent(&self, person: &PersonId) -> bool {
@@ -249,8 +251,10 @@ impl Mind {
         if rel.proactive_consent == ProactiveConsent::Denied {
             return false;
         }
-        matches!(rel.authority, Authority::ChosenHuman | Authority::Trusted)
-            || rel.proactive_consent == ProactiveConsent::Allowed
+        matches!(
+            rel.relationship_standing,
+            RelationshipStanding::ChosenHuman | RelationshipStanding::Trusted
+        ) || rel.proactive_consent == ProactiveConsent::Allowed
     }
 
     fn proactive_outreach_consent_denied(&self, person: &PersonId) -> bool {

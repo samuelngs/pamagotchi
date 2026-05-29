@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn default_user_cannot_update_social_graph() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     let denied = check(
         "upsert_social_relation",
@@ -20,7 +20,7 @@ async fn default_user_cannot_update_social_graph() {
 }
 #[tokio::test]
 async fn review_can_update_social_graph_but_not_chosen_human_confirm() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Review);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Review);
     let current_profile = ProfileId("profile-a".into());
     let current_person = PersonId("person-a".into());
     add_verified_target(&ctx, &current_profile, &current_person).await;

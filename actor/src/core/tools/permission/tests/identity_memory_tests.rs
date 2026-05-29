@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn default_user_cannot_write_structured_identity_memory() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     let denied = check(
         "form_memory",
@@ -43,7 +43,7 @@ async fn default_user_cannot_write_structured_identity_memory() {
 }
 #[tokio::test]
 async fn chosen_human_can_write_structured_identity_memory() {
-    let ctx = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
 
     check(
         "form_memory",

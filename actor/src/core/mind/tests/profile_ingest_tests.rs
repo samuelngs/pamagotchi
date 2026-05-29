@@ -22,7 +22,10 @@ async fn first_relay_contact_starts_as_default_adoption_candidate() {
         .expect("relay contact resolves to a person");
     {
         let actor = mind.state.read_state();
-        assert_eq!(actor.bonds[&person].authority, Authority::Default);
+        assert_eq!(
+            actor.bonds[&person].relationship_standing,
+            RelationshipStanding::Default
+        );
     }
     let records = store.state_journal_after(None, 10).await.unwrap();
     let relationship_record = records
@@ -34,7 +37,7 @@ async fn first_relay_contact_starts_as_default_adoption_candidate() {
         Some(person.0.as_str())
     );
     assert_eq!(
-        relationship_record.payload["authority"].as_str(),
+        relationship_record.payload["relationship_standing"].as_str(),
         Some("default")
     );
 

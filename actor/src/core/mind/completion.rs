@@ -220,7 +220,7 @@ impl Mind {
             action_id.clone(),
             action.source_messages.clone(),
             action.conversation.clone(),
-            action.authority.clone(),
+            action.relationship_standing.clone(),
         ))
     }
 

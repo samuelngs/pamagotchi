@@ -38,7 +38,10 @@ pub(super) async fn apply_open_loops(
             continue;
         }
         if permission::intent_requires_chosen_human_approval(item)
-            && !matches!(ctx.authority, crate::state::Authority::ChosenHuman)
+            && !matches!(
+                ctx.relationship_standing,
+                crate::state::RelationshipStanding::ChosenHuman
+            )
         {
             match create_chosen_human_proactive_approval_intent(
                 item,
@@ -58,7 +61,10 @@ pub(super) async fn apply_open_loops(
             }
             continue;
         }
-        if !matches!(ctx.authority, crate::state::Authority::ChosenHuman) {
+        if !matches!(
+            ctx.relationship_standing,
+            crate::state::RelationshipStanding::ChosenHuman
+        ) {
             match permission::intent_targets_current_or_verified_with_keys(
                 item,
                 ctx,
@@ -146,7 +152,10 @@ pub(super) async fn apply_open_loops(
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_human_approved: matches!(ctx.authority, crate::state::Authority::ChosenHuman),
+            chosen_human_approved: matches!(
+                ctx.relationship_standing,
+                crate::state::RelationshipStanding::ChosenHuman
+            ),
         };
         match ctx.store.create_intent(&intent).await {
             Ok(()) => counts.open_loops += 1,
@@ -311,7 +320,10 @@ fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
         .bonds
         .iter()
         .find(|(_, relationship)| {
-            matches!(relationship.authority, crate::state::Authority::ChosenHuman)
+            matches!(
+                relationship.relationship_standing,
+                crate::state::RelationshipStanding::ChosenHuman
+            )
         })
         .map(|(person, _)| person.clone())
 }

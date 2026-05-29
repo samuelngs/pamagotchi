@@ -809,7 +809,9 @@ fn memory_profile_identity_subjects_allowed(
     item: &Value,
     subjects: &[MemorySubject],
 ) -> bool {
-    if matches!(ctx.authority, Authority::ChosenHuman) || !item_has_key(item, "subjects") {
+    if matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
+        || !item_has_key(item, "subjects")
+    {
         return true;
     }
 

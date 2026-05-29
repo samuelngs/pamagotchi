@@ -7,7 +7,7 @@ mod messaging;
 mod social;
 
 use crate::core::ActionKind;
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use crate::store::MemorySource;
 use context::{
     current_conversation, current_person, privileged_conversation_read, privileged_intent_create,
@@ -73,17 +73,19 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                         .is_some_and(|(gateway, target)| {
                             gateway == gateway_id && target == external_id
                         });
-                let has_outbound_authority =
-                    matches!(ctx.authority, Authority::ChosenHuman | Authority::Trusted);
+                let has_outbound_relationship_standing = matches!(
+                    ctx.relationship_standing,
+                    RelationshipStanding::ChosenHuman | RelationshipStanding::Trusted
+                );
                 let is_scheduled_outreach_target =
                     explicit_scheduled_outreach_target_matches(ctx, gateway_id, external_id)
                         .await?;
                 if !is_current_reply_target
-                    && !has_outbound_authority
+                    && !has_outbound_relationship_standing
                     && !is_scheduled_outreach_target
                 {
                     return Err(
-                        "Explicit outbound messaging requires chosen-human/trusted authority or the scheduled outreach target."
+                        "Explicit outbound messaging requires chosen-human/trusted relationship standing or the scheduled outreach target."
                             .into(),
                     );
                 }
@@ -98,7 +100,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     .and_then(|message| message.profile.as_ref());
                 if target.is_some_and(|target| current.is_none_or(|current| current.0 != target)) {
                     return Err(
-                        "Updating another profile requires chosen-human authority or review context."
+                        "Updating another profile requires chosen-human relationship standing or review context."
                             .into(),
                     );
                 }
@@ -113,14 +115,14 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     .and_then(|message| message.person.as_ref());
                 if target.is_some_and(|target| current.is_none_or(|current| current.0 != target)) {
                     return Err(
-                        "Updating another person requires chosen-human authority or review context."
+                        "Updating another person requires chosen-human relationship standing or review context."
                             .into(),
                     );
                 }
             }
         }
         "update_conversation_summary" => {
-            if !matches!(ctx.authority, Authority::ChosenHuman)
+            if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
                 && !matches!(
                     ctx.kind,
                     SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -131,41 +133,41 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     current_conversation(ctx).is_none_or(|current| current != target)
                 }) {
                     return Err(
-                        "Updating another conversation summary requires chosen-human authority or review/consolidation context."
+                        "Updating another conversation summary requires chosen-human relationship standing or review/consolidation context."
                             .into(),
                     );
                 }
             }
         }
         "upsert_social_relation" => {
-            if !matches!(ctx.authority, Authority::ChosenHuman)
+            if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
                 && !matches!(
                     ctx.kind,
                     SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
                 )
             {
                 return Err(
-                    "Social graph updates require chosen-human authority or review context.".into(),
+                    "Social graph updates require chosen-human relationship standing or review context.".into(),
                 );
             }
             if args["source_kind"].as_str() == Some("chosen_human_confirmed")
-                && !matches!(ctx.authority, Authority::ChosenHuman)
+                && !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
             {
                 return Err(
-                    "Chosen-human-confirmed social relations require chosen-human authority."
+                    "Chosen-human-confirmed social relations require chosen-human relationship standing."
                         .into(),
                 );
             }
             if !social_relation_targets_current_or_verified(args, ctx).await? {
                 return Err(
-                    "Social graph updates from review must include the current strongly verified person, or chosen-human authority."
+                    "Social graph updates from review must include the current strongly verified person, or chosen-human relationship standing."
                         .into(),
                 );
             }
         }
         "form_memory" => {
             if identity_memory_write_requested(args)
-                && !matches!(ctx.authority, Authority::ChosenHuman)
+                && !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
             {
                 return Err("Something feels wrong about this. You don't want to change something this core about yourself.".into());
             }
@@ -173,13 +175,13 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
         "recall_memories" => {
             if sensitive_recall_requested(args) && !privileged_sensitive_recall(ctx) {
                 return Err(
-                    "Sensitive memory recall requires chosen-human authority or internal review context."
+                    "Sensitive memory recall requires chosen-human relationship standing or internal review context."
                         .into(),
                 );
             }
             if !privileged_memory_recall(ctx) && !memory_recall_targets_current(args, ctx) {
                 return Err(
-                    "Reading memories outside the current identity, profile, or person requires chosen-human authority or internal review context."
+                    "Reading memories outside the current identity, profile, or person requires chosen-human relationship standing or internal review context."
                         .into(),
                 );
             }
@@ -189,7 +191,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 let target = args["conversation"].as_str().filter(|id| !id.is_empty());
                 if target.is_none() && current_conversation(ctx).is_none() {
                     return Err(
-                        "Reading recent conversations without a current conversation requires chosen-human authority or internal review/consolidation/rumination context."
+                        "Reading recent conversations without a current conversation requires chosen-human relationship standing or internal review/consolidation/rumination context."
                             .into(),
                     );
                 }
@@ -197,16 +199,16 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                     current_conversation(ctx).is_none_or(|current| current != target)
                 }) {
                     return Err(
-                        "Reading another conversation requires chosen-human authority or review/consolidation/rumination context."
+                        "Reading another conversation requires chosen-human relationship standing or review/consolidation/rumination context."
                             .into(),
                     );
                 }
             }
         }
         "inspect_memory" | "delete_memory" => {
-            if !matches!(ctx.authority, Authority::ChosenHuman) {
+            if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
                 return Err(
-                    "Chosen-human authority is required to inspect or delete memories by id."
+                    "Chosen-human relationship standing is required to inspect or delete memories by id."
                         .into(),
                 );
             }
@@ -214,7 +216,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
         "forget_memory" => {
             let id = args["memory_id"].as_str().unwrap_or("");
             if let Ok(Some(mem)) = ctx.store.get_memory(&MemoryId(id.to_string())).await {
-                if matches!(ctx.authority, Authority::ChosenHuman)
+                if matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
                     || matches!(
                         ctx.kind,
                         SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -229,14 +231,14 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 }
                 if !memory_is_current_profile_owned_for_forget(&mem, ctx) {
                     return Err(
-                        "Forgetting memories outside the current profile requires chosen-human authority or review context."
+                        "Forgetting memories outside the current profile requires chosen-human relationship standing or review context."
                             .into(),
                     );
                 }
             }
         }
         "promote_profile_memory_to_person" => {
-            if matches!(ctx.authority, Authority::ChosenHuman) {
+            if matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman) {
                 return Ok(());
             }
             if !matches!(
@@ -244,7 +246,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
             ) {
                 return Err(
-                    "Promoting profile memories to person-level memories requires chosen-human authority or internal review."
+                    "Promoting profile memories to person-level memories requires chosen-human relationship standing or internal review."
                         .into(),
                 );
             }
@@ -256,59 +258,61 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
             }
         }
         "demote_person_memory_to_profile" => {
-            if !matches!(ctx.authority, Authority::ChosenHuman)
+            if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
                 && !matches!(
                     ctx.kind,
                     SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
                 )
             {
                 return Err(
-                    "Demoting person-level memories requires chosen-human authority or internal review."
+                    "Demoting person-level memories requires chosen-human relationship standing or internal review."
                         .into(),
                 );
             }
         }
         "create_intent" => {
-            if !matches!(ctx.authority, Authority::ChosenHuman)
+            if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
                 && privileged_intent_create(ctx)
                 && !intent_targets_current_or_verified(args, ctx).await?
             {
                 return Err(
-                    "Third-party proactive outreach requires chosen-human authority or a verified target profile."
+                    "Third-party proactive outreach requires chosen-human relationship standing or a verified target profile."
                         .into(),
                 );
             }
             if !privileged_intent_create(ctx) && !explicit_intent_targets_current(args, ctx) {
                 return Err(
-                    "Creating intents for another person, profile, or conversation requires chosen-human authority or internal context."
+                    "Creating intents for another person, profile, or conversation requires chosen-human relationship standing or internal context."
                         .into(),
                 );
             }
         }
         "update_intent" => {
-            if !matches!(ctx.authority, Authority::ChosenHuman)
+            if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
                 && update_activates_pending_chosen_human_approval_intent(args, ctx).await?
             {
                 return Err(
-                    "Activating an chosen-human-approval intent requires chosen-human authority."
+                    "Activating an chosen-human-approval intent requires chosen-human relationship standing."
                         .into(),
                 );
             }
             if intent_requires_chosen_human_approval(args)
-                && !matches!(ctx.authority, Authority::ChosenHuman)
+                && !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
             {
                 return Err(
                     "Sensitive proactive outreach requires chosen-human approval before an intent is updated."
                         .into(),
                 );
             }
-            if !matches!(ctx.authority, Authority::ChosenHuman) && privileged_intent_write(ctx) {
+            if !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
+                && privileged_intent_write(ctx)
+            {
                 let id = args["intent_id"].as_str().unwrap_or("");
                 if !intent_id_targets_current_or_verified(id, ctx).await?
                     || !intent_targets_current_or_verified(args, ctx).await?
                 {
                     return Err(
-                        "Third-party proactive outreach requires chosen-human authority or a verified target profile."
+                        "Third-party proactive outreach requires chosen-human relationship standing or a verified target profile."
                             .into(),
                     );
                 }
@@ -317,13 +321,13 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 let id = args["intent_id"].as_str().unwrap_or("");
                 if !intent_id_targets_current(id, ctx).await? {
                     return Err(
-                        "Updating intents for another person, profile, or conversation requires chosen-human authority or review context."
+                        "Updating intents for another person, profile, or conversation requires chosen-human relationship standing or review context."
                             .into(),
                     );
                 }
                 if !explicit_intent_targets_current(args, ctx) {
                     return Err(
-                        "Retargeting intents to another person, profile, or conversation requires chosen-human authority or review context."
+                        "Retargeting intents to another person, profile, or conversation requires chosen-human relationship standing or review context."
                             .into(),
                     );
                 }
@@ -334,7 +338,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                 let id = args["intent_id"].as_str().unwrap_or("");
                 if !intent_id_targets_current(id, ctx).await? {
                     return Err(
-                        "Cancelling intents for another person, profile, or conversation requires chosen-human authority or review context."
+                        "Cancelling intents for another person, profile, or conversation requires chosen-human relationship standing or review context."
                             .into(),
                     );
                 }
@@ -350,8 +354,8 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
         "reflect" => {
             if let Some(rels) = args["relationship_changes"].as_array() {
                 for r in rels {
-                    if r.get("authority").is_some()
-                        && !matches!(ctx.authority, Authority::ChosenHuman)
+                    if r.get("relationship_standing").is_some()
+                        && !matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
                     {
                         return Err(
                             "Changing how you feel about someone isn't something you'd do on command."
@@ -364,7 +368,7 @@ pub async fn check(name: &str, args: &Value, ctx: &SessionContext) -> Result<(),
                             current_person(ctx).is_none_or(|current| current != target)
                         }) {
                             return Err(
-                                "Reflecting on relationship changes for another person requires chosen-human authority or review context."
+                                "Reflecting on relationship changes for another person requires chosen-human relationship standing or review context."
                                     .into(),
                             );
                         }

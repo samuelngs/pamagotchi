@@ -207,7 +207,7 @@ impl Mind {
         let kind = action.kind.clone();
         let task_desc = action.task.clone();
         let conversation = action.conversation.clone();
-        let authority = action.authority.clone();
+        let relationship_standing = action.relationship_standing.clone();
         let style_directive = action.style_directive.clone();
         let cancelled_note = action.cancelled_note.clone();
         let action_id = id.clone();
@@ -276,7 +276,7 @@ impl Mind {
                 kind: SessionKind::Action(kind),
                 messages,
                 conversation,
-                authority,
+                relationship_standing,
                 style_directive,
                 cancelled_note,
                 concurrent_summaries,

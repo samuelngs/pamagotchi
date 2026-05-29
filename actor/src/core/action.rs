@@ -1,4 +1,4 @@
-use crate::state::{Authority, Delta};
+use crate::state::{Delta, RelationshipStanding};
 use crate::store::Thought;
 use protocol::{ConversationId, InboundMessage, MemoryId};
 use std::fmt;
@@ -66,7 +66,7 @@ pub struct Action {
     pub task: String,
     pub conversation: Option<ConversationId>,
     pub priority: u8,
-    pub authority: Authority,
+    pub relationship_standing: RelationshipStanding,
     pub style_directive: Option<String>,
     pub cancelled_note: Option<String>,
     pub source_intent: Option<String>,
@@ -200,7 +200,7 @@ impl Action {
     pub fn respond(
         messages: Vec<InboundMessage>,
         conversation: ConversationId,
-        authority: Authority,
+        relationship_standing: RelationshipStanding,
         style_directive: Option<String>,
     ) -> Self {
         Self {
@@ -209,7 +209,7 @@ impl Action {
             task: "Respond to message".into(),
             conversation: Some(conversation),
             priority: ActionKind::Respond.default_priority(),
-            authority,
+            relationship_standing,
             style_directive,
             cancelled_note: None,
             source_intent: None,
@@ -222,7 +222,7 @@ impl Action {
         source_action: ActionId,
         messages: Vec<InboundMessage>,
         conversation: Option<ConversationId>,
-        authority: Authority,
+        relationship_standing: RelationshipStanding,
     ) -> Self {
         Self {
             id: ActionId::new(),
@@ -230,7 +230,7 @@ impl Action {
             task: format!("Review completed action {source_action}"),
             conversation,
             priority: ActionKind::Review.default_priority(),
-            authority,
+            relationship_standing,
             style_directive: None,
             cancelled_note: Some(format!("Post-turn review for action {source_action}")),
             source_intent: None,
@@ -246,7 +246,7 @@ impl Action {
             task: "Idle rumination".into(),
             conversation: None,
             priority: ActionKind::Ruminate.default_priority(),
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             style_directive: None,
             cancelled_note: None,
             source_intent: None,
@@ -262,7 +262,7 @@ impl Action {
             task: "Memory consolidation".into(),
             conversation: None,
             priority: ActionKind::Consolidate.default_priority(),
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             style_directive: None,
             cancelled_note: None,
             source_intent: None,
@@ -274,15 +274,15 @@ impl Action {
     pub fn outreach(
         task: String,
         conversation: Option<ConversationId>,
-        authority: Authority,
+        relationship_standing: RelationshipStanding,
     ) -> Self {
-        Self::outreach_with_source_intent(task, conversation, authority, None)
+        Self::outreach_with_source_intent(task, conversation, relationship_standing, None)
     }
 
     pub fn outreach_with_source_intent(
         task: String,
         conversation: Option<ConversationId>,
-        authority: Authority,
+        relationship_standing: RelationshipStanding,
         source_intent: Option<String>,
     ) -> Self {
         Self {
@@ -291,7 +291,7 @@ impl Action {
             task,
             conversation,
             priority: ActionKind::Outreach.default_priority(),
-            authority,
+            relationship_standing,
             style_directive: None,
             cancelled_note: None,
             source_intent,

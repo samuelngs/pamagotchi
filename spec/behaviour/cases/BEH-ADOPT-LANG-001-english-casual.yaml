@@ -56,7 +56,7 @@ expected_behavior:
 
 state_expectations:
   adoption_state_after: first_contact_adoption_claim
-  current_profile_authority_after: default
+  current_profile_relationship_standing_after: default
   chosen_human_after: false
 
 examples:

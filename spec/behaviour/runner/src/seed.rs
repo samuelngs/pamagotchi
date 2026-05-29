@@ -31,7 +31,12 @@ fn validate_people(seed: &Value, vocab: &Vocabulary, path: &Path, refs: &mut See
     for person in optional_array(seed, "people", path) {
         let id = required_str(person, "id", path);
         assert_unique(&mut refs.people, id, "person", path);
-        validate_optional_enum(person, "authority", &vocab.authorities, path);
+        validate_optional_enum(
+            person,
+            "relationship_standing",
+            &vocab.relationship_standings,
+            path,
+        );
         validate_optional_enum(
             person,
             "relationship_phase",

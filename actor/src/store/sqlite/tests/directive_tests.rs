@@ -37,7 +37,7 @@ async fn behavior_directives() {
     store
         .add_directive(&BehaviorDirective {
             id: "d3".into(),
-            scope: DirectiveScope::Authority(Authority::Default),
+            scope: DirectiveScope::RelationshipStanding(RelationshipStanding::Default),
             directive: "Be warm and respectful".into(),
             set_by: sam.clone(),
             priority: 5,
@@ -49,7 +49,7 @@ async fn behavior_directives() {
         .unwrap();
 
     let directives = store
-        .get_directives_for_context(&mom, &Authority::Default, None)
+        .get_directives_for_context(&mom, &RelationshipStanding::Default, None)
         .await
         .unwrap();
     assert_eq!(directives.len(), 3);
@@ -62,7 +62,7 @@ async fn behavior_directives() {
         .await
         .unwrap();
     let directives = store
-        .get_directives_for_context(&mom, &Authority::Default, None)
+        .get_directives_for_context(&mom, &RelationshipStanding::Default, None)
         .await
         .unwrap();
     assert_eq!(directives.len(), 2);

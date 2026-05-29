@@ -2,7 +2,7 @@ use super::super::action::{ActionId, ActionKind, RunningState};
 use super::super::decision::MindVerdict;
 use super::super::handle::StateHandle;
 use super::super::metrics::ActorMetrics;
-use crate::state::{Authority, Delta};
+use crate::state::{Delta, RelationshipStanding};
 use crate::store::{Store, Thought};
 use gateway::GatewayRouter;
 use inference::Reasoning;
@@ -21,7 +21,7 @@ pub struct SessionContext {
     pub kind: SessionKind,
     pub messages: Vec<InboundMessage>,
     pub conversation: Option<ConversationId>,
-    pub authority: Authority,
+    pub relationship_standing: RelationshipStanding,
     pub style_directive: Option<String>,
     pub cancelled_note: Option<String>,
     pub concurrent_summaries: Vec<(String, String, String)>,

@@ -4,7 +4,7 @@ use super::super::event::{FiredIntent, WakeEvent};
 use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
 use super::{MAX_DEFER_COUNT, Mind};
-use crate::state::{AdoptionRitualState, Authority};
+use crate::state::{AdoptionRitualState, RelationshipStanding};
 use crate::store::ConversationSummary;
 use inference::{Reasoning, RouteContext};
 use protocol::{ConversationId, InboundMessage};
@@ -46,7 +46,7 @@ impl Mind {
             kind: SessionKind::Mind,
             messages: eval_messages,
             conversation: None,
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             style_directive: None,
             cancelled_note: None,
             concurrent_summaries,
@@ -83,8 +83,10 @@ impl Mind {
         verdict: MindVerdict,
         event: &WakeEvent,
     ) -> MindDecision {
-        if matches!(self.resolve_authority(event), Authority::Blocked)
-            && !matches!(event, WakeEvent::IntentFired(intent) if intent.chosen_human_approved)
+        if matches!(
+            self.resolve_relationship_standing(event),
+            RelationshipStanding::Blocked
+        ) && !matches!(event, WakeEvent::IntentFired(intent) if intent.chosen_human_approved)
         {
             tracing::info!("blocked person — dropping silently");
             return MindDecision::Drop;
@@ -166,7 +168,7 @@ impl Mind {
         MindDecision::DeferIntent(deferred, delay_secs.clamp(5, 300))
     }
 
-    pub(super) fn resolve_authority(&self, event: &WakeEvent) -> Authority {
+    pub(super) fn resolve_relationship_standing(&self, event: &WakeEvent) -> RelationshipStanding {
         let person = match event {
             WakeEvent::Message(msg) => msg.person.as_ref(),
             WakeEvent::IntentFired(intent) => intent.person.as_ref(),
@@ -175,7 +177,9 @@ impl Mind {
         let actor = self.state.read_state();
         person
             .and_then(|p| actor.bonds.get(p))
-            .map_or(Authority::Default, |r| r.authority.clone())
+            .map_or(RelationshipStanding::Default, |r| {
+                r.relationship_standing.clone()
+            })
     }
 
     fn adoption_message_requires_response(&self, msg: &InboundMessage) -> bool {

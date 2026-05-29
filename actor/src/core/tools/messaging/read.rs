@@ -191,7 +191,7 @@ fn read_evidence_message(
 }
 
 fn can_read_recent_without_current_conversation(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::ChosenHuman)
+    matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
         || matches!(
             ctx.kind,
             SessionKind::Action(

@@ -18,8 +18,8 @@ pub(super) async fn resolve_person_for_mind(
             name: info.name,
             summary: info.summary,
             comm_style: info.comm_style,
-            authority: rel.authority.as_str().to_string(),
-            bond_role: bond_role(&rel.authority).into(),
+            relationship_standing: rel.relationship_standing.as_str().to_string(),
+            bond_role: bond_role(&rel.relationship_standing).into(),
             bond_state: bond_state(rel).into(),
             last_interaction_quality: interaction_quality(rel).into(),
             trust: pct(rel.trust),
@@ -39,7 +39,7 @@ pub(super) async fn resolve_person_for_mind(
             name: info.name,
             summary: info.summary,
             comm_style: info.comm_style,
-            authority: "default".into(),
+            relationship_standing: "default".into(),
             bond_role: "new_person".into(),
             bond_state: "unfamiliar".into(),
             last_interaction_quality: "unknown".into(),
@@ -87,18 +87,18 @@ pub(super) async fn resolve_person_info(
     }
 }
 
-pub(super) fn bond_role(authority: &Authority) -> &'static str {
-    match authority {
-        Authority::ChosenHuman => "chosen_human",
-        Authority::Trusted => "trusted_person",
-        Authority::Default => "current_person",
-        Authority::Restricted => "guarded_person",
-        Authority::Blocked => "blocked_person",
+pub(super) fn bond_role(relationship_standing: &RelationshipStanding) -> &'static str {
+    match relationship_standing {
+        RelationshipStanding::ChosenHuman => "chosen_human",
+        RelationshipStanding::Trusted => "trusted_person",
+        RelationshipStanding::Default => "current_person",
+        RelationshipStanding::Restricted => "guarded_person",
+        RelationshipStanding::Blocked => "blocked_person",
     }
 }
 
 pub(super) fn bond_state(rel: &crate::state::Relationship) -> &'static str {
-    if matches!(rel.authority, Authority::Blocked) {
+    if matches!(rel.relationship_standing, RelationshipStanding::Blocked) {
         "blocked"
     } else if rel.conflict_level > 0.45 || rel.emotional_valence < -0.45 {
         "strained"

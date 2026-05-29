@@ -1,6 +1,6 @@
 use super::super::context::SessionContext;
 use super::helpers::{current_profile, resolve_person_ref};
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use crate::store::IdentityDisclosureAudit;
 use protocol::{PersonId, ProfileId};
 use serde_json::{Value, json};
@@ -270,7 +270,7 @@ async fn visible_identities(
 ) -> Result<Value, String> {
     let current = ctx.messages.first().and_then(|m| m.person.as_ref());
     let is_self = current == Some(person);
-    let is_chosen_human = ctx.authority == Authority::ChosenHuman;
+    let is_chosen_human = ctx.relationship_standing == RelationshipStanding::ChosenHuman;
 
     if !is_self && !is_chosen_human {
         return Err("Identities are private. If this is an identity claim, use request_identity_verification instead.".into());

@@ -2,7 +2,7 @@ use super::*;
 use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::SessionKind;
-use crate::state::{ActorState, Authority, Delta, GrowthConfig};
+use crate::state::{ActorState, Delta, GrowthConfig, RelationshipStanding};
 use crate::store::{SqliteStore, Store};
 use async_trait::async_trait;
 use gateway::GatewayRouter;
@@ -97,7 +97,7 @@ fn test_context(store: Arc<SqliteStore>) -> (SessionContext, SessionState) {
                 metadata: Value::Null,
             }],
             conversation: Some(ConversationId("relay:local".into())),
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             style_directive: None,
             cancelled_note: None,
             concurrent_summaries: vec![],

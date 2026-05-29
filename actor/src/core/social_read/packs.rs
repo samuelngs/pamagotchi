@@ -1,20 +1,25 @@
 use crate::core::action::ActionKind;
 use crate::core::prompt::context::{RecentMessageCtx, SafetyCtx, ThoughtCtx};
 use crate::core::tools::SessionKind;
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use crate::store::{MemorySubjectType, Store, StoredMessage, Thought};
 use protocol::{ConversationId, IdentityId, InboundMessage, PersonId, ProfileId};
 use std::{collections::HashSet, sync::Arc};
 
-pub(crate) fn build_safety_ctx(authority: &Authority, kind: &SessionKind) -> SafetyCtx {
-    let sensitive_memory_access = if matches!(authority, Authority::ChosenHuman)
-        || matches!(
-            kind,
-            SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
-        ) {
+pub(crate) fn build_safety_ctx(
+    relationship_standing: &RelationshipStanding,
+    kind: &SessionKind,
+) -> SafetyCtx {
+    let sensitive_memory_access = if matches!(
+        relationship_standing,
+        RelationshipStanding::ChosenHuman
+    ) || matches!(
+        kind,
+        SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
+    ) {
         "sensitive recall allowed only when directly relevant; logs and transcripts are redacted"
     } else {
-        "conservative recall only; private or sensitive details require chosen-human authority or review context"
+        "conservative recall only; private or sensitive details require chosen-human relationship standing or review context"
     };
     let proactive_outreach = match kind {
         SessionKind::Action(ActionKind::Outreach) => {
@@ -24,14 +29,15 @@ pub(crate) fn build_safety_ctx(authority: &Authority, kind: &SessionKind) -> Saf
             "create or update proactive intents only when target, consent, timing, and chosen-human-approval rules allow it"
         }
     };
-    let third_party_outreach = if matches!(authority, Authority::ChosenHuman) {
+    let third_party_outreach = if matches!(relationship_standing, RelationshipStanding::ChosenHuman)
+    {
         "chosen human can approve third-party outreach, but verified target and consent/timing guards still apply"
     } else {
         "third-party outreach requires a verified active target; sensitive third-party outreach requires chosen-human approval"
     };
 
     SafetyCtx {
-        authority: authority.as_str().to_string(),
+        relationship_standing: relationship_standing.as_str().to_string(),
         sensitive_memory_access: sensitive_memory_access.into(),
         proactive_outreach: proactive_outreach.into(),
         third_party_outreach: third_party_outreach.into(),

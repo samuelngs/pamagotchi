@@ -37,7 +37,7 @@ impl OpenAiCompatibleBridge for NoopBridge {
     }
 }
 
-fn test_context(authority: Authority, kind: ActionKind) -> SessionContext {
+fn test_context(relationship_standing: RelationshipStanding, kind: ActionKind) -> SessionContext {
     let (_inject_tx, inject_rx) = mpsc::channel(1);
     let (delta_tx, _delta_rx) = mpsc::channel(1);
     let shared = Arc::new(SharedState {
@@ -76,7 +76,7 @@ fn test_context(authority: Authority, kind: ActionKind) -> SessionContext {
         kind: SessionKind::Action(kind),
         messages: vec![message],
         conversation: Some(ConversationId("relay:local".into())),
-        authority,
+        relationship_standing,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

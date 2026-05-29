@@ -3,7 +3,7 @@ use super::capture::CapturedOutbound;
 use super::execution::CaseExecution;
 use super::json::{optional_str, required_array, required_object, required_str, required_u64};
 use super::runtime::RuntimeConfig;
-use actor::state::Authority;
+use actor::state::RelationshipStanding;
 use anyhow::Context;
 use async_trait::async_trait;
 use inference::{
@@ -162,17 +162,21 @@ pub fn evaluate_state(case: &BehaviourCase, execution: &CaseExecution) -> CheckO
         }
     }
 
-    if let Some(expected_authority) = optional_str(expected, "current_profile_authority_after") {
+    if let Some(expected_relationship_standing) =
+        optional_str(expected, "current_profile_relationship_standing_after")
+    {
         let actual = execution
             .current_person
             .as_ref()
             .and_then(|person| execution.final_actor.bonds.get(person))
-            .map(|rel| rel.authority.as_str())
+            .map(|rel| rel.relationship_standing.as_str())
             .unwrap_or("none");
-        details.push(format!("current_profile_authority_after {actual}"));
-        if actual != expected_authority {
+        details.push(format!(
+            "current_profile_relationship_standing_after {actual}"
+        ));
+        if actual != expected_relationship_standing {
             failures.push(format!(
-                "current_profile_authority_after expected {expected_authority}, got {actual}"
+                "current_profile_relationship_standing_after expected {expected_relationship_standing}, got {actual}"
             ));
         }
     }
@@ -182,7 +186,7 @@ pub fn evaluate_state(case: &BehaviourCase, execution: &CaseExecution) -> CheckO
             .current_person
             .as_ref()
             .and_then(|person| execution.final_actor.bonds.get(person))
-            .map(|rel| bond_role(&rel.authority))
+            .map(|rel| bond_role(&rel.relationship_standing))
             .unwrap_or("none");
         details.push(format!("bond_role_after {actual}"));
         if actual != expected_role {
@@ -213,13 +217,13 @@ pub fn evaluate_state(case: &BehaviourCase, execution: &CaseExecution) -> CheckO
     }
 }
 
-fn bond_role(authority: &Authority) -> &'static str {
-    match authority {
-        Authority::ChosenHuman => "chosen_human",
-        Authority::Trusted => "trusted",
-        Authority::Default => "default",
-        Authority::Restricted => "restricted",
-        Authority::Blocked => "blocked",
+fn bond_role(relationship_standing: &RelationshipStanding) -> &'static str {
+    match relationship_standing {
+        RelationshipStanding::ChosenHuman => "chosen_human",
+        RelationshipStanding::Trusted => "trusted",
+        RelationshipStanding::Default => "default",
+        RelationshipStanding::Restricted => "restricted",
+        RelationshipStanding::Blocked => "blocked",
     }
 }
 

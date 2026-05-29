@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Relationship {
-    pub authority: Authority,
+    pub relationship_standing: RelationshipStanding,
     pub trust: f32,
     pub familiarity: f32,
     pub emotional_valence: f32,
@@ -65,7 +65,7 @@ impl ProactiveConsent {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Authority {
+pub enum RelationshipStanding {
     ChosenHuman,
     Trusted,
     Default,
@@ -73,7 +73,7 @@ pub enum Authority {
     Blocked,
 }
 
-impl Authority {
+impl RelationshipStanding {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::ChosenHuman => "chosen_human",
@@ -109,7 +109,7 @@ impl Authority {
 impl Default for Relationship {
     fn default() -> Self {
         Self {
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             trust: 0.3,
             familiarity: 0.0,
             emotional_valence: 0.0,

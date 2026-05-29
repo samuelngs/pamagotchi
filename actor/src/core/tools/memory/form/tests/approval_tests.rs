@@ -25,7 +25,7 @@ async fn form_memory_can_store_chosen_human_approved_actor_self_memory() {
         kind: SessionKind::Action(ActionKind::Respond),
         messages: vec![],
         conversation: None,
-        authority: Authority::ChosenHuman,
+        relationship_standing: RelationshipStanding::ChosenHuman,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

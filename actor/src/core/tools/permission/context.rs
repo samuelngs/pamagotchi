@@ -1,10 +1,10 @@
 use crate::core::ActionKind;
 use crate::core::tools::{SessionContext, SessionKind};
-use crate::state::Authority;
+use crate::state::RelationshipStanding;
 use protocol::ConversationId;
 
 pub(super) fn privileged_profile_write(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::ChosenHuman)
+    matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
         || matches!(
             ctx.kind,
             SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -12,7 +12,7 @@ pub(super) fn privileged_profile_write(ctx: &SessionContext) -> bool {
 }
 
 pub(super) fn privileged_sensitive_recall(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::ChosenHuman)
+    matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
         || matches!(
             ctx.kind,
             SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
@@ -20,7 +20,7 @@ pub(super) fn privileged_sensitive_recall(ctx: &SessionContext) -> bool {
 }
 
 pub(super) fn privileged_memory_recall(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::ChosenHuman)
+    matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
         || matches!(
             ctx.kind,
             SessionKind::Action(
@@ -30,7 +30,7 @@ pub(super) fn privileged_memory_recall(ctx: &SessionContext) -> bool {
 }
 
 pub(super) fn privileged_conversation_read(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::ChosenHuman)
+    matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
         || matches!(
             ctx.kind,
             SessionKind::Action(
@@ -40,7 +40,7 @@ pub(super) fn privileged_conversation_read(ctx: &SessionContext) -> bool {
 }
 
 pub(super) fn privileged_intent_write(ctx: &SessionContext) -> bool {
-    matches!(ctx.authority, Authority::ChosenHuman)
+    matches!(ctx.relationship_standing, RelationshipStanding::ChosenHuman)
         || matches!(
             ctx.kind,
             SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)

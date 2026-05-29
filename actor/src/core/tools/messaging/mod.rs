@@ -2,7 +2,7 @@ use super::context::{
     SessionContext, SessionKind, SessionState, TYPING_ACTIVE_SECS, TypingStateKey,
 };
 use crate::core::ActionKind;
-use crate::state::{Authority, RelationshipChange, RelationshipInteraction};
+use crate::state::{RelationshipChange, RelationshipInteraction, RelationshipStanding};
 use crate::store::{
     ActionMessageRecord, IntentRecord, MessageRole, OutboundDeliveryRecord, StoredMessage,
 };

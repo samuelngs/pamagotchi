@@ -2,12 +2,12 @@ use super::*;
 
 #[tokio::test]
 async fn relationship_trust_ceiling_requires_chosen_human_social_path_for_default_people() {
-    let ctx = test_context(Authority::Default, ActionKind::Review);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Review);
     let chosen_human = PersonId("person-chosen_human".into());
     let stranger = PersonId("person-stranger".into());
     {
         let mut actor = ctx.state.shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
+        actor.set_relationship_config(&chosen_human, Some(RelationshipStanding::ChosenHuman));
     }
 
     let ceiling = relationship_trust_ceiling(&ctx, &stranger).await;
@@ -16,13 +16,13 @@ async fn relationship_trust_ceiling_requires_chosen_human_social_path_for_defaul
 }
 #[tokio::test]
 async fn relationship_trust_ceiling_allows_chosen_human_connected_social_path() {
-    let ctx = test_context(Authority::Default, ActionKind::Review);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Review);
     let chosen_human = PersonId("person-chosen_human".into());
     let middle = PersonId("person-middle".into());
     let connected = PersonId("person-connected".into());
     {
         let mut actor = ctx.state.shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
+        actor.set_relationship_config(&chosen_human, Some(RelationshipStanding::ChosenHuman));
     }
     ctx.store
         .upsert_relation(&SocialRelation {
@@ -59,11 +59,11 @@ async fn relationship_trust_ceiling_allows_chosen_human_connected_social_path() 
 
     let ceiling = relationship_trust_ceiling(&ctx, &connected).await;
 
-    assert_eq!(ceiling, Authority::Default.trust_ceiling());
+    assert_eq!(ceiling, RelationshipStanding::Default.trust_ceiling());
 }
 #[tokio::test]
 async fn default_user_cannot_update_other_profile_or_person() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     ctx.messages[0].profile = Some(ProfileId("profile-current".into()));
     ctx.messages[0].person = Some(PersonId("person-current".into()));
 
@@ -93,7 +93,7 @@ async fn default_user_cannot_update_other_profile_or_person() {
 }
 #[tokio::test]
 async fn current_profile_and_person_updates_are_allowed() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     ctx.messages[0].profile = Some(ProfileId("profile-current".into()));
     ctx.messages[0].person = Some(PersonId("person-current".into()));
 
@@ -121,7 +121,7 @@ async fn current_profile_and_person_updates_are_allowed() {
 }
 #[tokio::test]
 async fn live_reflection_relationship_changes_are_current_person_only() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     ctx.messages[0].person = Some(PersonId("person-current".into()));
 
     check(
@@ -155,7 +155,7 @@ async fn live_reflection_relationship_changes_are_current_person_only() {
     .unwrap_err();
     assert!(denied.contains("another person"));
 
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "reflect",
         &serde_json::json!({
@@ -169,7 +169,7 @@ async fn live_reflection_relationship_changes_are_current_person_only() {
     .await
     .unwrap();
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "reflect",
         &serde_json::json!({
@@ -185,7 +185,7 @@ async fn live_reflection_relationship_changes_are_current_person_only() {
 }
 #[tokio::test]
 async fn chosen_human_or_review_can_update_other_profile_and_person() {
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "update_profile",
         &serde_json::json!({
@@ -197,7 +197,7 @@ async fn chosen_human_or_review_can_update_other_profile_and_person() {
     .await
     .unwrap();
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "update_person",
         &serde_json::json!({

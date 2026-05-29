@@ -2,7 +2,7 @@ use super::*;
 use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::{SessionKind, empty_delta};
-use crate::state::{ActorState, Authority, GrowthConfig};
+use crate::state::{ActorState, GrowthConfig, RelationshipStanding};
 use crate::store::{MessageRole, SqliteStore, Store, StoredMessage};
 use async_trait::async_trait;
 use gateway::{
@@ -138,7 +138,7 @@ fn test_context(
             kind: SessionKind::Action(ActionKind::Respond),
             messages: vec![msg],
             conversation: Some(conversation),
-            authority: Authority::Default,
+            relationship_standing: RelationshipStanding::Default,
             style_directive: None,
             cancelled_note: None,
             concurrent_summaries: vec![],

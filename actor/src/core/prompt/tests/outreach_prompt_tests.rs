@@ -134,7 +134,7 @@ async fn outreach_prompt_uses_conversation_target_context_without_current_messag
     let (_inject_tx, inject_rx) = mpsc::channel(1);
     let (delta_tx, _delta_rx) = mpsc::channel(1);
     let mut actor = ActorState::new(CoreTraits::default());
-    actor.set_relationship_config(&person_id, Some(Authority::Default));
+    actor.set_relationship_config(&person_id, Some(RelationshipStanding::Default));
     if let Some(rel) = actor.bonds.get_mut(&person_id) {
         rel.response_cadence = Some("reply within one business day".into());
         rel.channel_preference = Some("relay for proactive check-ins".into());
@@ -149,7 +149,7 @@ async fn outreach_prompt_uses_conversation_target_context_without_current_messag
         kind: SessionKind::Action(ActionKind::Outreach),
         messages: vec![],
         conversation: Some(conversation.clone()),
-        authority: Authority::Default,
+        relationship_standing: RelationshipStanding::Default,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],
@@ -177,7 +177,7 @@ async fn outreach_prompt_uses_conversation_target_context_without_current_messag
         &ctx.messages,
         Some(&conversation),
         &ctx,
-        &Authority::Default,
+        &RelationshipStanding::Default,
     )
     .await
     .unwrap();

@@ -4,7 +4,9 @@ use crate::core::decision::{MindDecision, MindVerdict};
 use crate::core::event::FiredIntent;
 use crate::core::handle::{SharedState, StateTask};
 use crate::identity::{Identity, Profile};
-use crate::state::{ActorState, Authority, GrowthConfig, ProactiveConsent, QuietHoursUtc};
+use crate::state::{
+    ActorState, GrowthConfig, ProactiveConsent, QuietHoursUtc, RelationshipStanding,
+};
 use crate::store::{
     EventInboxRecord, IntentRecord, Memory, MemoryKind, MemorySource, MemorySubject, MessageRole,
     RecallQuery, SqliteStore, StoredMessage, Thought, ThoughtKind,
@@ -306,7 +308,7 @@ fn fill_capacity_with_running_responses(mind: &mut Mind) {
         let action = Action::respond(
             vec![msg.clone()],
             msg.conversation.clone(),
-            Authority::Default,
+            RelationshipStanding::Default,
             None,
         );
         let id = mind.registry.schedule(action);

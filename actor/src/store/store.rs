@@ -10,7 +10,7 @@ use crate::identity::{
     ClaimStatus, Group, Identity, IdentityClaim, Person, PersonProfileLink, PersonProfileStatus,
     Profile, ProfileIdentityLink, Relation, ResolvedActorIdentity, SocialRelation,
 };
-use crate::state::{Authority, BehaviorDirective};
+use crate::state::{BehaviorDirective, RelationshipStanding};
 use async_trait::async_trait;
 use protocol::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
 
@@ -334,7 +334,7 @@ pub trait Store: Send + Sync {
     async fn get_directives_for_context(
         &self,
         person: &PersonId,
-        authority: &Authority,
+        relationship_standing: &RelationshipStanding,
         group: Option<&GroupId>,
     ) -> anyhow::Result<Vec<BehaviorDirective>>;
     async fn update_directive(

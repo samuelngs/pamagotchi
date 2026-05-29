@@ -106,7 +106,10 @@ async fn apply_review_sets_social_trust_ceiling_for_positive_relationship_delta(
     let (ctx, mut session_state) = test_context(store.clone(), &profile, &person, &conversation);
     {
         let mut actor = ctx.state.shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_human, Some(crate::state::Authority::ChosenHuman));
+        actor.set_relationship_config(
+            &chosen_human,
+            Some(crate::state::RelationshipStanding::ChosenHuman),
+        );
     }
 
     let result = apply(

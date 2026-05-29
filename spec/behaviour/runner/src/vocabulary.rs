@@ -10,7 +10,7 @@ pub struct Vocabulary {
     pub required_beats: BTreeSet<String>,
     pub forbidden_beats: BTreeSet<String>,
     pub tone_labels: BTreeSet<String>,
-    pub authorities: BTreeSet<String>,
+    pub relationship_standings: BTreeSet<String>,
     pub visibility_scopes: BTreeSet<String>,
 }
 
@@ -49,7 +49,7 @@ impl Vocabulary {
             required_beats,
             forbidden_beats,
             tone_labels,
-            authorities: [
+            relationship_standings: [
                 "chosen_human",
                 "trusted",
                 "default",

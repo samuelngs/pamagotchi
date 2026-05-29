@@ -2,20 +2,20 @@ use super::*;
 
 #[tokio::test]
 async fn apply_review_is_review_only() {
-    let respond = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let respond = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     let denied = check("apply_review", &serde_json::json!({}), &respond)
         .await
         .unwrap_err();
     assert!(denied.contains("review actions"));
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check("apply_review", &serde_json::json!({}), &review)
         .await
         .unwrap();
 }
 #[tokio::test]
 async fn conversation_summary_updates_are_current_or_privileged() {
-    let current = test_context(Authority::Default, ActionKind::Respond);
+    let current = test_context(RelationshipStanding::Default, ActionKind::Respond);
     check(
         "update_conversation_summary",
         &serde_json::json!({
@@ -39,7 +39,7 @@ async fn conversation_summary_updates_are_current_or_privileged() {
     .unwrap_err();
     assert!(denied.contains("another conversation summary"));
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "update_conversation_summary",
         &serde_json::json!({
@@ -51,7 +51,7 @@ async fn conversation_summary_updates_are_current_or_privileged() {
     .await
     .unwrap();
 
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "update_conversation_summary",
         &serde_json::json!({
@@ -65,7 +65,7 @@ async fn conversation_summary_updates_are_current_or_privileged() {
 }
 #[tokio::test]
 async fn message_reads_are_current_or_privileged() {
-    let current = test_context(Authority::Default, ActionKind::Respond);
+    let current = test_context(RelationshipStanding::Default, ActionKind::Respond);
     check(
         "read_messages",
         &serde_json::json!({
@@ -81,7 +81,7 @@ async fn message_reads_are_current_or_privileged() {
         .await
         .unwrap();
 
-    let mut no_current = test_context(Authority::Default, ActionKind::Respond);
+    let mut no_current = test_context(RelationshipStanding::Default, ActionKind::Respond);
     no_current.messages.clear();
     no_current.conversation = None;
     let denied = check(
@@ -93,7 +93,7 @@ async fn message_reads_are_current_or_privileged() {
     .unwrap_err();
     assert!(denied.contains("without a current conversation"));
 
-    let mut ruminate = test_context(Authority::Default, ActionKind::Ruminate);
+    let mut ruminate = test_context(RelationshipStanding::Default, ActionKind::Ruminate);
     ruminate.messages.clear();
     ruminate.conversation = None;
     check("read_messages", &serde_json::json!({"limit": 5}), &ruminate)
@@ -112,7 +112,7 @@ async fn message_reads_are_current_or_privileged() {
     .unwrap_err();
     assert!(denied.contains("Reading another conversation"));
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "read_messages",
         &serde_json::json!({
@@ -124,7 +124,7 @@ async fn message_reads_are_current_or_privileged() {
     .await
     .unwrap();
 
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     check(
         "read_messages",
         &serde_json::json!({

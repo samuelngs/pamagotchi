@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn default_user_can_forget_current_profile_memory_only() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     let profile = ProfileId("profile-current".into());
     ctx.messages[0].profile = Some(profile.clone());
 
@@ -34,7 +34,7 @@ async fn default_user_can_forget_current_profile_memory_only() {
 }
 #[tokio::test]
 async fn default_user_cannot_forget_other_profile_memory() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     ctx.store
         .store_memory(&Memory {
@@ -70,7 +70,7 @@ async fn default_user_cannot_forget_other_profile_memory() {
 }
 #[tokio::test]
 async fn default_user_cannot_forget_current_person_level_memory() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     let profile = ProfileId("profile-current".into());
     let person = PersonId("person-current".into());
     ctx.messages[0].profile = Some(profile.clone());
@@ -107,7 +107,7 @@ async fn default_user_cannot_forget_current_person_level_memory() {
 }
 #[tokio::test]
 async fn live_user_cannot_promote_profile_memory_to_person_level_memory() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     let denied = check(
         "promote_profile_memory_to_person",
@@ -124,7 +124,7 @@ async fn live_user_cannot_promote_profile_memory_to_person_level_memory() {
 }
 #[tokio::test]
 async fn review_can_promote_profile_memory_to_verified_person() {
-    let ctx = test_context(Authority::Default, ActionKind::Review);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Review);
     let profile = ProfileId("profile-current".into());
     let person = PersonId("person-current".into());
     add_verified_target(&ctx, &profile, &person).await;
@@ -153,7 +153,7 @@ async fn review_can_promote_profile_memory_to_verified_person() {
 }
 #[tokio::test]
 async fn review_cannot_promote_profile_memory_to_unverified_person() {
-    let ctx = test_context(Authority::Default, ActionKind::Review);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Review);
     let profile = ProfileId("profile-unverified".into());
     let person = PersonId("person-unverified".into());
     ctx.store
@@ -207,7 +207,7 @@ async fn review_cannot_promote_profile_memory_to_unverified_person() {
 }
 #[tokio::test]
 async fn live_user_cannot_demote_person_level_memory_subjects() {
-    let ctx = test_context(Authority::Default, ActionKind::Respond);
+    let ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
 
     let denied = check(
         "demote_person_memory_to_profile",
@@ -221,7 +221,7 @@ async fn live_user_cannot_demote_person_level_memory_subjects() {
     .unwrap_err();
     assert!(denied.contains("Demoting person-level memories"));
 
-    let review = test_context(Authority::Default, ActionKind::Review);
+    let review = test_context(RelationshipStanding::Default, ActionKind::Review);
     check(
         "demote_person_memory_to_profile",
         &serde_json::json!({
@@ -235,7 +235,7 @@ async fn live_user_cannot_demote_person_level_memory_subjects() {
 }
 #[tokio::test]
 async fn default_user_cannot_forget_sensitive_current_profile_memory() {
-    let mut ctx = test_context(Authority::Default, ActionKind::Respond);
+    let mut ctx = test_context(RelationshipStanding::Default, ActionKind::Respond);
     let profile = ProfileId("profile-current".into());
     ctx.messages[0].profile = Some(profile.clone());
 
@@ -270,7 +270,7 @@ async fn default_user_cannot_forget_sensitive_current_profile_memory() {
 }
 #[tokio::test]
 async fn memory_inspection_and_deletion_by_id_are_chosen_human_only() {
-    let default = test_context(Authority::Default, ActionKind::Respond);
+    let default = test_context(RelationshipStanding::Default, ActionKind::Respond);
     for tool in ["inspect_memory", "delete_memory"] {
         let denied = check(
             tool,
@@ -279,10 +279,10 @@ async fn memory_inspection_and_deletion_by_id_are_chosen_human_only() {
         )
         .await
         .unwrap_err();
-        assert!(denied.contains("Chosen-human authority"));
+        assert!(denied.contains("Chosen-human relationship standing"));
     }
 
-    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    let chosen_human = test_context(RelationshipStanding::ChosenHuman, ActionKind::Respond);
     for tool in ["inspect_memory", "delete_memory"] {
         check(
             tool,

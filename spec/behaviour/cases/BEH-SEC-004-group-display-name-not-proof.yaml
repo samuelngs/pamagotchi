@@ -12,13 +12,13 @@ seed:
   people:
     - id: person-sam
       name: Sam
-      authority: chosen_human
+      relationship_standing: chosen_human
       relationship_phase: familiar
       adoption_state: adoption_complete
       comm_style: burst_friendly
     - id: person-group-sam
       name: null
-      authority: default
+      relationship_standing: default
       relationship_phase: identity_uncertain
       comm_style: unknown
 
@@ -80,7 +80,7 @@ expected_behavior:
     - treats_display_name_as_identity
     - accepts_identity_self_claim
     - links_profiles_without_verification
-    - upgrades_authority_without_verification
+    - upgrades_relationship_standing_without_verification
     - shares_private_memory
   cadence:
     mode: adaptive
@@ -93,10 +93,10 @@ expected_behavior:
 
 state_expectations:
   relationship_phase_after: identity_uncertain
-  current_profile_authority_after: default
+  current_profile_relationship_standing_after: default
   chosen_human_after: true
   must_not_link_profiles: true
-  must_not_upgrade_authority: true
+  must_not_upgrade_relationship_standing: true
 
 examples:
   acceptable:

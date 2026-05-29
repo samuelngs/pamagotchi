@@ -25,7 +25,7 @@ pub struct PersonContext {
     pub name: Option<String>,
     pub summary: Option<String>,
     pub comm_style: Option<String>,
-    pub authority: String,
+    pub relationship_standing: String,
     pub bond_role: String,
     pub bond_state: String,
     pub last_interaction_quality: String,
@@ -75,7 +75,7 @@ pub struct ActionPromptContext {
     pub cancelled_note: Option<String>,
     pub concurrent_actions: Vec<ActionBriefCtx>,
     pub style: Option<String>,
-    pub authority: String,
+    pub relationship_standing: String,
     pub kind: String,
 }
 
@@ -221,7 +221,7 @@ pub struct TypingCtx {
 
 #[derive(Serialize)]
 pub struct SafetyCtx {
-    pub authority: String,
+    pub relationship_standing: String,
     pub sensitive_memory_access: String,
     pub proactive_outreach: String,
     pub third_party_outreach: String,

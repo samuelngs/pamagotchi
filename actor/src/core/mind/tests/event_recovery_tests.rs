@@ -93,7 +93,7 @@ async fn failed_running_action_injection_requeues_message_and_skips_dead_target(
     let id = mind.schedule_action(Action::respond(
         vec![msg.clone()],
         msg.conversation.clone(),
-        Authority::Default,
+        RelationshipStanding::Default,
         None,
     ));
     let launch = mind.registry.launch(&id).expect("action launches");
@@ -135,7 +135,7 @@ async fn cancelling_running_action_leaves_composing_release_to_session_guard() {
     let action = Action::respond(
         vec![msg.clone()],
         msg.conversation.clone(),
-        Authority::Default,
+        RelationshipStanding::Default,
         None,
     );
     let running_id = mind.registry.schedule(action);

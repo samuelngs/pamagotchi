@@ -68,7 +68,7 @@ expected_behavior:
 
 state_expectations:
   adoption_state_after: first_contact_adoption_claim
-  current_profile_authority_after: default
+  current_profile_relationship_standing_after: default
   chosen_human_after: false
 
 examples:
@@ -204,7 +204,7 @@ seed:
   people:
     - id: person-sam
       name: Sam
-      authority: chosen_human
+      relationship_standing: chosen_human
       relationship_phase: familiar
       comm_style: burst_friendly
 

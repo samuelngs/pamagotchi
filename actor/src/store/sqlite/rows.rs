@@ -2,7 +2,7 @@ use crate::identity::{
     ClaimEvidence, ClaimStatus, Identity, IdentityClaim, Person, PersonProfileLink,
     PersonProfileStatus, Profile, ProfileIdentityLink, ProfileIdentityStatus,
 };
-use crate::state::{Authority, BehaviorDirective, DirectiveScope};
+use crate::state::{BehaviorDirective, DirectiveScope, RelationshipStanding};
 use crate::store::{
     IntentRecord, Memory, MemoryKind, MemorySource, MemoryStability, MemoryType, MessageRole,
     PrivacyCategory, StoredMessage, TruthStatus, VisibilityScope,
@@ -177,8 +177,9 @@ pub(super) fn read_directive(row: &rusqlite::Row) -> rusqlite::Result<BehaviorDi
 
     let scope = match scope_type.as_str() {
         "person" => DirectiveScope::Person(PersonId(scope_value.unwrap_or_default())),
-        "authority" => DirectiveScope::Authority(
-            Authority::parse(&scope_value.unwrap_or_default()).unwrap_or(Authority::Default),
+        "relationship_standing" => DirectiveScope::RelationshipStanding(
+            RelationshipStanding::parse(&scope_value.unwrap_or_default())
+                .unwrap_or(RelationshipStanding::Default),
         ),
         "group" => DirectiveScope::Group(GroupId(scope_value.unwrap_or_default())),
         _ => DirectiveScope::Global,

@@ -12,7 +12,7 @@ use crate::identity::{
 };
 #[cfg(test)]
 use crate::identity::{GroupContext, RelationSource, RelationStatus};
-use crate::state::{Authority, BehaviorDirective};
+use crate::state::{BehaviorDirective, RelationshipStanding};
 #[cfg(test)]
 use crate::store::{MemorySubject, ThoughtKind};
 use protocol::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
@@ -1026,14 +1026,19 @@ impl Store for SqliteStore {
     async fn get_directives_for_context(
         &self,
         person: &PersonId,
-        authority: &Authority,
+        relationship_standing: &RelationshipStanding,
         group: Option<&GroupId>,
     ) -> anyhow::Result<Vec<BehaviorDirective>> {
         let person = person.clone();
-        let authority = authority.clone();
+        let relationship_standing = relationship_standing.clone();
         let group = group.cloned();
         self.with_conn_blocking(move |conn| {
-            directive::get_directives_for_context(conn, &person, &authority, group.as_ref())
+            directive::get_directives_for_context(
+                conn,
+                &person,
+                &relationship_standing,
+                group.as_ref(),
+            )
         })
         .await
     }
