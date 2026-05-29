@@ -3,7 +3,7 @@ use crate::store::{
     ActionMessageRecord, ActionPromptSnapshotRecord, ActionRunRecord, ActionTranscriptRecord,
     ActionTurnRecord, OutboundDeliveryRecord, ReviewOutputAudit, ToolCallRecord,
 };
-use protocol::{ConversationId, MemoryId};
+use protocol::{ChannelId, ConversationId, MemoryId, MessageId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 mod deliveries;

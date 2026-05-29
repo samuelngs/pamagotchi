@@ -261,8 +261,8 @@ impl Mind {
                     conversation: Some(msg.conversation.clone()),
                     source_gateway_id: Some(msg.gateway_id.clone()),
                     source_message_id: Some(msg.message_id.clone()),
-                    sender_external_id: Some(msg.sender_external_id.clone()),
-                    reply_external_id: Some(msg.reply_external_id.clone()),
+                    sender_external_id: msg.sender_external_id().map(str::to_string),
+                    reply_external_id: Some(msg.channel_external_id().to_string()),
                     content: Some(msg.display_content()),
                     created_at: msg.timestamp,
                 };

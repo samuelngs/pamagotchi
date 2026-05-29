@@ -168,18 +168,46 @@ fn read_evidence_message(
     group: Option<&GroupId>,
     message: &StoredMessage,
 ) -> InboundMessage {
+    let gateway_id = message
+        .source_gateway_id
+        .clone()
+        .or_else(|| gateway_hint.map(str::to_string))
+        .unwrap_or_default();
+    let channel_external_id = message.reply_external_id.clone().unwrap_or_default();
+    let gateway = GatewayId(gateway_id.clone());
     InboundMessage {
         message_id: message.readable_message_id(),
-        gateway_id: message
-            .source_gateway_id
-            .clone()
-            .or_else(|| gateway_hint.map(str::to_string))
-            .unwrap_or_default(),
-        sender_external_id: message.sender_external_id.clone().unwrap_or_default(),
-        sender_display_name: None,
-        reply_external_id: message.reply_external_id.clone().unwrap_or_default(),
+        gateway_id,
+        sender: message
+            .sender_external_id
+            .as_ref()
+            .filter(|external_id| !external_id.trim().is_empty())
+            .map(|external_id| protocol::ObservedSender {
+                primary: protocol::ObservedIdentityKey {
+                    gateway_id: gateway.clone(),
+                    external_id: external_id.clone(),
+                    kind: None,
+                    confidence: 1.0,
+                    source: "stored_message".into(),
+                },
+                aliases: Vec::new(),
+                display_name: None,
+                metadata: Value::Null,
+            }),
+        channel: protocol::ChannelKey {
+            gateway_id: gateway,
+            external_id: channel_external_id,
+            kind: if group.is_some() {
+                protocol::ChannelKind::GroupChat
+            } else {
+                protocol::ChannelKind::Unknown
+            },
+            display_name: None,
+            space: None,
+            parent: None,
+            metadata: Value::Null,
+        },
         conversation: conversation.clone(),
-        group: group.cloned(),
         identity: message.identity.clone(),
         profile: message.profile.clone(),
         person: message.person.clone(),

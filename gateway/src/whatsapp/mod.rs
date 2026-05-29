@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use events::{handle_chatstate_event, handle_event};
 use media::MediaStore;
 use outbound::{build_outbound_media_message, text_message, whatsapp_media_type};
-use protocol::{InboundMessage, MediaAttachment, MediaKind};
+use protocol::{InboundEnvelope, MediaAttachment, MediaKind};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info};
@@ -34,7 +34,7 @@ impl WhatsAppAdapter {
     pub async fn connect_with_id(
         id: impl Into<String>,
         db_path: &str,
-        inbound_tx: mpsc::Sender<InboundMessage>,
+        inbound_tx: mpsc::Sender<InboundEnvelope>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
         media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
@@ -128,7 +128,7 @@ impl GatewayAdapter for WhatsAppAdapter {
         id: String,
         db_path: String,
         _vars: std::collections::BTreeMap<String, serde_json::Value>,
-        inbound_tx: mpsc::Sender<InboundMessage>,
+        inbound_tx: mpsc::Sender<InboundEnvelope>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
         media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {

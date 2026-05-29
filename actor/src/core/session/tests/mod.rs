@@ -7,7 +7,9 @@ use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::{SessionContext, SessionKind, SessionState, empty_delta};
 use crate::state::{ActorState, GrowthConfig, RelationshipStanding};
-use crate::store::{MessageRole, SqliteStore, Store, Thought, ThoughtKind};
+use crate::store::{
+    ChannelRecord, GatewayRecord, MessageRole, SqliteStore, Store, Thought, ThoughtKind,
+};
 use async_trait::async_trait;
 use gateway::{
     GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayContentCapabilities,
@@ -19,7 +21,8 @@ use inference::{
     Reasoning, RouteContext, SamplingConfig, ToolCall, Usage, UserMessage,
 };
 use protocol::{
-    ConversationId, InboundMessage, MediaAssetId, MediaAttachment, MediaKind, MemoryId,
+    ChannelId, ChannelKey, ChannelKind, ConversationId, InboundEnvelope, InboundMessage,
+    MediaAssetId, MediaAttachment, MediaKind, MemoryId, ObservedSender,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -33,11 +36,14 @@ fn inbound(metadata: Value) -> InboundMessage {
     InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "whatsapp".into(),
-        sender_external_id: "sender-1".into(),
-        sender_display_name: Some("Sender".into()),
-        reply_external_id: "chat-1".into(),
+        sender: Some(ObservedSender::primary(
+            "whatsapp",
+            "sender-1",
+            Some("Sender".into()),
+            "test",
+        )),
+        channel: ChannelKey::new("whatsapp", "chat-1", ChannelKind::Direct),
         conversation: ConversationId("whatsapp:chat-1".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,
@@ -59,11 +65,14 @@ fn text_inbound(message_id: &str, content: &str) -> InboundMessage {
     InboundMessage {
         message_id: message_id.into(),
         gateway_id: "whatsapp".into(),
-        sender_external_id: "sender-1".into(),
-        sender_display_name: Some("Sender".into()),
-        reply_external_id: "chat-1".into(),
+        sender: Some(ObservedSender::primary(
+            "whatsapp",
+            "sender-1",
+            Some("Sender".into()),
+            "test",
+        )),
+        channel: ChannelKey::new("whatsapp", "chat-1", ChannelKind::Direct),
         conversation: ConversationId("whatsapp:chat-1".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,
@@ -211,7 +220,7 @@ impl GatewayAdapter for RecordingAdapter {
         _id: String,
         _db_path: String,
         _vars: BTreeMap<String, serde_json::Value>,
-        _inbound_tx: mpsc::Sender<InboundMessage>,
+        _inbound_tx: mpsc::Sender<InboundEnvelope>,
         _gateway_event_tx: mpsc::Sender<gateway::GatewayRuntimeEvent>,
         _media_store: Arc<media::MediaStore>,
     ) -> anyhow::Result<Self>
@@ -308,6 +317,37 @@ fn test_context(store: Arc<SqliteStore>, source: InboundMessage) -> SessionConte
         metrics: Arc::new(crate::core::ActorMetrics::default()),
         session_start: std::time::Instant::now(),
     }
+}
+
+async fn ensure_test_channel(store: &SqliteStore, source: &InboundMessage) -> ChannelId {
+    let gateway = source.channel.gateway_id.clone();
+    store
+        .upsert_gateway(&GatewayRecord {
+            id: gateway.clone(),
+            kind: source.gateway_id.clone(),
+            display_name: None,
+            metadata: serde_json::json!({}),
+            created_at: source.timestamp,
+            updated_at: source.timestamp,
+        })
+        .await
+        .unwrap();
+    let channel = ChannelRecord {
+        id: source.channel_id(),
+        gateway,
+        external_id: source.channel.external_id.clone(),
+        kind: source.channel.kind.clone(),
+        space: None,
+        parent: None,
+        display_name: source.channel.display_name.clone(),
+        metadata: source.channel.metadata.clone(),
+        created_at: source.timestamp,
+        updated_at: source.timestamp,
+        last_seen_at: source.timestamp,
+    };
+    let id = channel.id.clone();
+    store.upsert_channel(&channel).await.unwrap();
+    id
 }
 
 async fn wait_for_composing_count(

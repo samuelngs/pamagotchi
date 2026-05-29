@@ -7,6 +7,7 @@ pub struct MindContext {
     pub profile: Option<CurrentProfileCtx>,
     pub person: Option<PersonContext>,
     pub conversation: Option<ConversationCtx>,
+    pub channel: Option<ChannelCtx>,
     pub group: Option<GroupCtx>,
     pub recent_messages: Vec<RecentMessageCtx>,
     pub actions: Vec<ActionBriefCtx>,
@@ -57,6 +58,7 @@ pub struct ActionPromptContext {
     pub current_profile: Option<CurrentProfileCtx>,
     pub current_person: Option<CurrentPersonCtx>,
     pub conversation: Option<ConversationCtx>,
+    pub channel: Option<ChannelCtx>,
     pub group: Option<GroupCtx>,
     pub recent_messages: Vec<RecentMessageCtx>,
     pub relationship: Option<RelationshipCtx>,
@@ -108,6 +110,15 @@ pub struct CurrentPersonCtx {
 pub struct ConversationCtx {
     pub ref_id: String,
     pub summary: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ChannelCtx {
+    pub ref_id: String,
+    pub gateway_id: String,
+    pub external_id: String,
+    pub kind: String,
+    pub display_name: Option<String>,
 }
 
 #[derive(Serialize)]

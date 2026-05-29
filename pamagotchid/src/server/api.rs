@@ -15,17 +15,33 @@ async fn handle_api_request(message: ApiClientRequest, ctx: &GwApiContext) {
     match message.request {
         ClientRequest::Subscribe { .. } => {}
         ClientRequest::SendChatMessage { content } => {
-            let inbound = InboundMessage {
-                message_id: format!("local-{}", now_millis()),
-                gateway_id: "relay".into(),
-                sender_external_id: "local".into(),
-                sender_display_name: None,
-                reply_external_id: "local".into(),
-                conversation: ConversationId("relay:local".into()),
-                group: None,
-                identity: None,
-                profile: None,
-                person: None,
+            let gateway_id = protocol::GatewayId("relay".into());
+            let inbound = InboundEnvelope {
+                gateway_id: gateway_id.clone(),
+                platform_message_id: format!("local-{}", now_millis()),
+                channel: protocol::ChannelKey {
+                    gateway_id: gateway_id.clone(),
+                    external_id: "local".into(),
+                    kind: protocol::ChannelKind::RelayRoom,
+                    display_name: None,
+                    space: None,
+                    parent: None,
+                    metadata: serde_json::json!({
+                        "platform": "local_api",
+                    }),
+                },
+                sender: Some(protocol::ObservedSender {
+                    primary: protocol::ObservedIdentityKey {
+                        gateway_id: gateway_id.clone(),
+                        external_id: "local".into(),
+                        kind: Some("relay_user".into()),
+                        confidence: 1.0,
+                        source: "primary_sender".into(),
+                    },
+                    aliases: vec![],
+                    display_name: None,
+                    metadata: serde_json::Value::Null,
+                }),
                 content,
                 attachments: Vec::new(),
                 timestamp: now_secs(),

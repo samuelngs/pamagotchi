@@ -7,7 +7,7 @@ use super::{MAX_DEFER_COUNT, Mind};
 use crate::state::{AdoptionRitualState, RelationshipStanding};
 use crate::store::ConversationSummary;
 use inference::{Reasoning, RouteContext};
-use protocol::{ConversationId, InboundMessage};
+use protocol::{ChannelKey, ChannelKind, ConversationId, GatewayId, InboundMessage};
 
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
@@ -422,11 +422,9 @@ fn control_event_message(event_desc: String) -> InboundMessage {
     InboundMessage {
         message_id: String::new(),
         gateway_id: String::new(),
-        sender_external_id: String::new(),
-        sender_display_name: None,
-        reply_external_id: String::new(),
+        sender: None,
+        channel: inbound_channel("", "", ChannelKind::Unknown),
         conversation: ConversationId("mind".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,
@@ -453,11 +451,19 @@ fn intent_context_message(
         gateway_id: summary
             .and_then(|summary| summary.gateway_id.clone())
             .unwrap_or_default(),
-        sender_external_id: String::new(),
-        sender_display_name: None,
-        reply_external_id: String::new(),
+        sender: None,
+        channel: summary
+            .and_then(|summary| {
+                summary.group.as_ref().map(|group| {
+                    inbound_channel(
+                        summary.gateway_id.as_deref().unwrap_or_default(),
+                        group.0.as_str(),
+                        ChannelKind::GroupChat,
+                    )
+                })
+            })
+            .unwrap_or_else(|| inbound_channel("", "", ChannelKind::Unknown)),
         conversation,
-        group: summary.and_then(|summary| summary.group.clone()),
         identity: summary.and_then(|summary| summary.identity.clone()),
         profile: summary.and_then(|summary| summary.profile.clone()),
         person: intent
@@ -474,6 +480,18 @@ fn intent_context_message(
             "chosen_human_approved": intent.chosen_human_approved,
             "defer_count": intent.defer_count,
         }),
+    }
+}
+
+fn inbound_channel(gateway_id: &str, external_id: &str, kind: ChannelKind) -> ChannelKey {
+    ChannelKey {
+        gateway_id: GatewayId(gateway_id.to_string()),
+        external_id: external_id.to_string(),
+        kind,
+        display_name: None,
+        space: None,
+        parent: None,
+        metadata: serde_json::Value::Null,
     }
 }
 

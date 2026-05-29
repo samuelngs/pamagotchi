@@ -117,10 +117,13 @@ impl Mind {
     }
 
     pub(super) fn sender_is_typing(&self, msg: &InboundMessage) -> bool {
+        let Some(sender_external_id) = msg.sender_external_id() else {
+            return false;
+        };
         let key = (
             msg.conversation.clone(),
             msg.gateway_id.clone(),
-            msg.sender_external_id.clone(),
+            sender_external_id.to_string(),
         );
         self.typing.read().ok().is_some_and(|typing_state| {
             typing_state.get(&key).is_some_and(|started_at| {

@@ -130,7 +130,8 @@ pub(in crate::store::sqlite) fn action_transcript(
         .collect();
 
     let mut deliveries_stmt = conn.prepare(
-        "SELECT action_id, conversation_id, gateway_id, external_id, status, error, attempted_at
+        "SELECT action_id, conversation_id, message_id, channel_id, gateway_id, external_id,
+                status, error, attempted_at
          FROM action_outbound_deliveries
          WHERE action_id = ?1
          ORDER BY attempted_at ASC, id ASC",
@@ -138,9 +139,13 @@ pub(in crate::store::sqlite) fn action_transcript(
     let deliveries = deliveries_stmt
         .query_map(params![action_id], |row| {
             let conversation: Option<String> = row.get("conversation_id")?;
+            let message: Option<String> = row.get("message_id")?;
+            let channel: Option<String> = row.get("channel_id")?;
             Ok(OutboundDeliveryRecord {
                 action_id: row.get("action_id")?,
                 conversation: conversation.map(ConversationId),
+                message: message.map(MessageId),
+                channel: channel.map(ChannelId),
                 gateway_id: row.get("gateway_id")?,
                 external_id: row.get("external_id")?,
                 status: row.get("status")?,

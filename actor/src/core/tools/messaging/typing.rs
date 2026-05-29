@@ -29,10 +29,11 @@ pub(super) async fn wait_if_current_sender_is_typing(ctx: &SessionContext) {
 
 fn current_sender_typing_key(ctx: &SessionContext) -> Option<TypingStateKey> {
     let msg = ctx.messages.first()?;
+    let sender_external_id = msg.sender_external_id()?;
     Some((
         msg.conversation.clone(),
         msg.gateway_id.clone(),
-        msg.sender_external_id.clone(),
+        sender_external_id.to_string(),
     ))
 }
 

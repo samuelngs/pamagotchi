@@ -38,8 +38,6 @@ async fn apply_review_writes_structured_outputs() {
     store
         .append_message(
             &conversation,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: 1000,
                 role: MessageRole::User,

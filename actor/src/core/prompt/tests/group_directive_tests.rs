@@ -9,6 +9,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
     let identity_id = IdentityId("identity-alice".into());
     let conversation = ConversationId("discord:channel-1".into());
     let group = GroupId("discord:guild-1".into());
+    let channel = protocol::channel_id(&protocol::GatewayId("discord".into()), "channel-1");
     let now = chrono::Utc::now().timestamp();
 
     store
@@ -145,7 +146,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
     store
         .add_directive(&BehaviorDirective {
             id: "group-directive".into(),
-            scope: DirectiveScope::Group(group.clone()),
+            scope: DirectiveScope::Channel(channel),
             directive: "Use the group norm: keep deployment updates brief.".into(),
             set_by: person_id.clone(),
             priority: 10,
@@ -159,24 +160,31 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
     let inbound = InboundMessage {
         message_id: "discord-msg-1".into(),
         gateway_id: "discord".into(),
-        sender_external_id: "author-a".into(),
-        sender_display_name: Some("Alice".into()),
-        reply_external_id: "channel-1".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "discord",
+            "author-a",
+            Some("Alice".into()),
+            "test",
+        )),
+        channel: protocol::ChannelKey::new(
+            "discord",
+            "channel-1",
+            protocol::ChannelKind::PublicChannel,
+        ),
         conversation: conversation.clone(),
-        group: Some(group.clone()),
         identity: Some(identity_id.clone()),
         profile: Some(profile_id.clone()),
         person: Some(person_id.clone()),
         content: "deploy status?".into(),
         attachments: vec![],
         timestamp: now,
-        metadata: serde_json::Value::Null,
+        metadata: serde_json::json!({
+            "group_id": group.0,
+        }),
     };
     store
         .append_message(
             &conversation,
-            Some("discord"),
-            Some(&group),
             &StoredMessage {
                 timestamp: now - 60,
                 role: MessageRole::User,
@@ -196,8 +204,6 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
     store
         .append_message(
             &conversation,
-            Some("discord"),
-            Some(&group),
             &StoredMessage {
                 timestamp: now,
                 role: MessageRole::User,

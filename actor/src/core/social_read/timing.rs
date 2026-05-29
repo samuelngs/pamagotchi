@@ -65,12 +65,9 @@ fn active_typing_ctx(
     conversation: Option<&ConversationId>,
     now: i64,
 ) -> Vec<TypingCtx> {
-    let current = messages.first().map(|message| {
-        (
-            &message.conversation,
-            message.gateway_id.as_str(),
-            message.sender_external_id.as_str(),
-        )
+    let current = messages.first().and_then(|message| {
+        let sender = message.sender_external_id()?;
+        Some((&message.conversation, message.gateway_id.as_str(), sender))
     });
     let Ok(typing) = session_ctx.typing.read() else {
         return vec![];

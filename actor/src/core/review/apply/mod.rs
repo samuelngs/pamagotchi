@@ -12,7 +12,7 @@ use crate::store::{
     VisibilityScope, memory_privacy_policy, memory_stability_policy, memory_truth_status_policy,
     sensitive_memory_next_review_at,
 };
-use protocol::{ConversationId, GroupId, InboundMessage, MemoryId, PersonId, ProfileId};
+use protocol::{ChannelId, ConversationId, InboundMessage, MemoryId, PersonId, ProfileId};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 

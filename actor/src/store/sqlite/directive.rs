@@ -1,7 +1,7 @@
 use super::rows::read_directive;
 use super::support::TxGuard;
 use crate::state::{BehaviorDirective, RelationshipStanding};
-use protocol::{GroupId, PersonId};
+use protocol::{ChannelId, PersonId};
 use rusqlite::{Connection, params};
 
 pub(super) fn add_directive(
@@ -30,7 +30,7 @@ pub(super) fn get_directives_for_context(
     conn: &Connection,
     person: &PersonId,
     relationship_standing: &RelationshipStanding,
-    group: Option<&GroupId>,
+    channel: Option<&ChannelId>,
 ) -> anyhow::Result<Vec<BehaviorDirective>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -46,15 +46,15 @@ pub(super) fn get_directives_for_context(
              scope_type = 'global'
              OR (scope_type = 'person' AND scope_value = ?1)
              OR (scope_type = 'relationship_standing' AND scope_value = ?2)
-             OR (scope_type = 'group' AND scope_value = ?3)
+             OR (scope_type = 'channel' AND scope_value = ?3)
          )
          ORDER BY priority DESC",
     )?;
 
-    let group_value: Option<&str> = group.map(|g| g.0.as_str());
+    let channel_value: Option<&str> = channel.map(|c| c.0.as_str());
     let results = stmt
         .query_map(
-            params![person.0, relationship_standing.as_str(), group_value, now],
+            params![person.0, relationship_standing.as_str(), channel_value, now],
             read_directive,
         )?
         .filter_map(|row| row.ok())

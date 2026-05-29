@@ -170,10 +170,10 @@ pub(crate) fn tools() -> Vec<Tool> {
                         "properties": {
                             "scope": {
                                 "type": "string",
-                                "enum": ["group", "person", "relationship_standing", "global"],
-                                "description": "Where the norm applies. Non-chosen-human review may write only the current person or current group."
+                                "enum": ["channel", "person", "relationship_standing", "global"],
+                                "description": "Where the norm applies. Non-chosen-human review may write only the current person or current channel."
                             },
-                            "group_id": { "type": "string" },
+                            "channel_id": { "type": "string" },
                             "person_id": { "type": "string" },
                             "relationship_standing": { "type": "string", "enum": ["chosen_human", "trusted", "default", "restricted", "blocked"] },
                             "directive": {

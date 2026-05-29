@@ -9,9 +9,10 @@ use crate::state::{
     BehaviorDirective, CoreTraits, Delta, DirectiveScope, GrowthConfig, RelationshipSignalUpdate,
 };
 use crate::store::{
-    ActionMessageRecord, ActionRunRecord, ActionTurnRecord, IntentRecord, Memory, MemoryKind,
-    MemorySource, MemorySubject, MemoryType, MessageRole, OutboundDeliveryRecord, PrivacyCategory,
-    SqliteStore, StoredMessage, Thought, ThoughtKind, ToolCallRecord,
+    ActionMessageRecord, ActionRunRecord, ActionTurnRecord, ChannelRecord, GatewayRecord,
+    IntentRecord, Memory, MemoryKind, MemorySource, MemorySubject, MemoryType, MessageRole,
+    OutboundDeliveryRecord, PrivacyCategory, SqliteStore, StoredMessage, Thought, ThoughtKind,
+    ToolCallRecord,
 };
 use async_trait::async_trait;
 use gateway::GatewayRouter;
@@ -62,6 +63,7 @@ fn test_router() -> inference::InferenceRouter {
 }
 
 mod group_directive_tests;
+mod identity_context_tests;
 mod identity_tests;
 mod outreach_prompt_tests;
 mod review_prompt_tests;

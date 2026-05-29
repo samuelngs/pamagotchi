@@ -6,8 +6,11 @@ use super::support::TxGuard;
 use crate::identity::{
     ClaimStatus, Identity, IdentityClaim, Profile, ProfileIdentityLink, ResolvedActorIdentity,
 };
-use crate::store::{DisplayNameObservation, IdentityDisclosureAudit};
-use protocol::{IdentityId, PersonId, ProfileId};
+use crate::store::{
+    DisplayNameObservation, IdentityConflictIdentity, IdentityConflictRecord,
+    IdentityDisclosureAudit,
+};
+use protocol::{ChannelId, IdentityId, PersonId, ProfileId};
 use rusqlite::{Connection, OptionalExtension, params};
 
 pub(super) fn add_identity(conn: &Connection, identity: &Identity) -> anyhow::Result<IdentityId> {
@@ -68,7 +71,7 @@ pub(super) fn resolve_identity(
         Err(e) => return Err(e.into()),
     };
 
-    let (profile, _profile_link) = conn.query_row(
+    let Some((profile, _profile_link)) = conn.query_row(
         "SELECT p.id, p.display_name, p.summary, p.comm_style, p.first_seen, p.last_seen, p.created_at, p.updated_at,
                 l.profile_id, l.identity_id, l.status, l.confidence, l.evidence_json, l.created_at, l.removed_at
          FROM profile_identities l
@@ -78,7 +81,10 @@ pub(super) fn resolve_identity(
          LIMIT 1",
         params![identity.id.0],
         |row| Ok((read_profile(row)?, read_profile_identity_link(row)?)),
-    )?;
+    )
+    .optional()? else {
+        return Ok(None);
+    };
 
     let person_link = conn
         .query_row(
@@ -179,6 +185,143 @@ pub(super) fn display_name_observations(
         .filter_map(|row| row.ok())
         .collect();
     Ok(observations)
+}
+
+pub(super) fn record_identity_conflict(
+    conn: &Connection,
+    conflict: &IdentityConflictRecord,
+) -> anyhow::Result<()> {
+    let tx = TxGuard::begin(conn)?;
+    let resolution_json = serde_json::to_string(&conflict.resolution)?;
+    conn.execute(
+        "INSERT INTO identity_conflicts (
+            id, channel_id, platform_message_id, primary_identity_id, reason,
+            status, created_at, resolved_at, resolution_json
+         )
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(id) DO UPDATE SET
+            channel_id = excluded.channel_id,
+            platform_message_id = excluded.platform_message_id,
+            primary_identity_id = excluded.primary_identity_id,
+            reason = excluded.reason,
+            status = excluded.status,
+            resolved_at = excluded.resolved_at,
+            resolution_json = excluded.resolution_json",
+        params![
+            conflict.id.as_str(),
+            conflict.channel.as_ref().map(|id| id.0.as_str()),
+            conflict.platform_message_id.as_deref(),
+            conflict.primary_identity.as_ref().map(|id| id.0.as_str()),
+            conflict.reason.as_str(),
+            conflict.status.as_str(),
+            conflict.created_at,
+            conflict.resolved_at,
+            resolution_json,
+        ],
+    )?;
+    for identity in &conflict.identities {
+        conn.execute(
+            "INSERT OR REPLACE INTO identity_conflict_identities (
+                conflict_id, identity_id, role, source
+             )
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                conflict.id.as_str(),
+                identity.identity.0.as_str(),
+                identity.role.as_str(),
+                identity.source.as_deref(),
+            ],
+        )?;
+    }
+    for profile in &conflict.profiles {
+        conn.execute(
+            "INSERT OR IGNORE INTO identity_conflict_profiles (conflict_id, profile_id)
+             VALUES (?1, ?2)",
+            params![conflict.id.as_str(), profile.0.as_str()],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub(super) fn identity_conflicts(
+    conn: &Connection,
+    limit: usize,
+) -> anyhow::Result<Vec<IdentityConflictRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, channel_id, platform_message_id, primary_identity_id, reason,
+                status, created_at, resolved_at, resolution_json
+         FROM identity_conflicts
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit as i64], |row| {
+        let channel: Option<String> = row.get("channel_id")?;
+        let primary_identity: Option<String> = row.get("primary_identity_id")?;
+        let resolution_json: String = row.get("resolution_json")?;
+        Ok(IdentityConflictRecord {
+            id: row.get("id")?,
+            channel: channel.map(ChannelId),
+            platform_message_id: row.get("platform_message_id")?,
+            primary_identity: primary_identity.map(IdentityId),
+            reason: row.get("reason")?,
+            status: row.get("status")?,
+            created_at: row.get("created_at")?,
+            resolved_at: row.get("resolved_at")?,
+            resolution: serde_json::from_str(&resolution_json).unwrap_or_default(),
+            identities: Vec::new(),
+            profiles: Vec::new(),
+        })
+    })?;
+    let mut conflicts = Vec::new();
+    for row in rows {
+        let mut conflict = row?;
+        conflict.identities = conflict_identities(conn, &conflict.id)?;
+        conflict.profiles = conflict_profiles(conn, &conflict.id)?;
+        conflicts.push(conflict);
+    }
+    Ok(conflicts)
+}
+
+fn conflict_identities(
+    conn: &Connection,
+    conflict_id: &str,
+) -> anyhow::Result<Vec<IdentityConflictIdentity>> {
+    let mut stmt = conn.prepare(
+        "SELECT identity_id, role, source
+         FROM identity_conflict_identities
+         WHERE conflict_id = ?1
+         ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, identity_id ASC",
+    )?;
+    let identities = stmt
+        .query_map(params![conflict_id], |row| {
+            let identity: String = row.get("identity_id")?;
+            Ok(IdentityConflictIdentity {
+                identity: IdentityId(identity),
+                role: row.get("role")?,
+                source: row.get("source")?,
+            })
+        })?
+        .filter_map(|row| row.ok())
+        .collect();
+    Ok(identities)
+}
+
+fn conflict_profiles(conn: &Connection, conflict_id: &str) -> anyhow::Result<Vec<ProfileId>> {
+    let mut stmt = conn.prepare(
+        "SELECT profile_id
+         FROM identity_conflict_profiles
+         WHERE conflict_id = ?1
+         ORDER BY profile_id ASC",
+    )?;
+    let profiles = stmt
+        .query_map(params![conflict_id], |row| {
+            let profile: String = row.get("profile_id")?;
+            Ok(ProfileId(profile))
+        })?
+        .filter_map(|row| row.ok())
+        .collect();
+    Ok(profiles)
 }
 
 pub(super) fn get_profile_for_identity(

@@ -1,5 +1,5 @@
 use super::*;
-use protocol::MediaAssetId;
+use protocol::{ChannelKind, GatewayId, MediaAssetId};
 use whatsapp_rust::download::MediaType;
 use whatsapp_rust::upload::UploadResponse;
 
@@ -24,29 +24,31 @@ fn build_media_attachment_preserves_asset_and_direct_path() {
 
 #[test]
 fn whatsapp_chatstate_typing_uses_group_participant_as_sender() {
-    let (conversation, sender, typing) = events::typing_update_from_chatstate(
-        "whatsapp",
+    let gateway = GatewayId("whatsapp".into());
+    let (channel, sender, typing) = events::typing_update_from_chatstate(
+        &gateway,
         "12345-67890@g.us",
         Some("15551234567@s.whatsapp.net"),
         "Typing",
     );
 
-    assert_eq!(conversation.0, "whatsapp:12345-67890@g.us");
-    assert_eq!(sender, "15551234567@s.whatsapp.net");
+    assert_eq!(channel.gateway_id.0, "whatsapp");
+    assert_eq!(channel.external_id, "12345-67890@g.us");
+    assert_eq!(channel.kind, ChannelKind::GroupChat);
+    assert_eq!(sender.external_id, "15551234567@s.whatsapp.net");
     assert!(typing);
 }
 
 #[test]
 fn whatsapp_chatstate_idle_stops_direct_typing() {
-    let (conversation, sender, typing) = events::typing_update_from_chatstate(
-        "whatsapp",
-        "15557654321@s.whatsapp.net",
-        None,
-        "Idle",
-    );
+    let gateway = GatewayId("whatsapp".into());
+    let (channel, sender, typing) =
+        events::typing_update_from_chatstate(&gateway, "15557654321@s.whatsapp.net", None, "Idle");
 
-    assert_eq!(conversation.0, "whatsapp:15557654321@s.whatsapp.net");
-    assert_eq!(sender, "15557654321@s.whatsapp.net");
+    assert_eq!(channel.gateway_id.0, "whatsapp");
+    assert_eq!(channel.external_id, "15557654321@s.whatsapp.net");
+    assert_eq!(channel.kind, ChannelKind::Direct);
+    assert_eq!(sender.external_id, "15557654321@s.whatsapp.net");
     assert!(!typing);
 }
 

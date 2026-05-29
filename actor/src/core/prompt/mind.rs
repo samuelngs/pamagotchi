@@ -1,5 +1,6 @@
 use super::conversation::{
-    conversation_ctx_from_summary, fetch_conversation_summary, fetch_group_ctx,
+    conversation_ctx_from_summary, fetch_conversation_summary, fetch_current_channel_ctx,
+    fetch_group_ctx,
 };
 use super::format::format_now;
 use super::identity::recall_identity_name;
@@ -41,13 +42,13 @@ pub(super) async fn build_mind(
     let conversation = conversation_summary
         .as_ref()
         .map(conversation_ctx_from_summary);
-    let group_id = first_message
-        .and_then(|message| message.group.as_ref())
-        .or_else(|| {
-            conversation_summary
-                .as_ref()
-                .and_then(|summary| summary.group.as_ref())
-        });
+    let channel = fetch_current_channel_ctx(store, first_message, conversation_id).await;
+    let message_group = first_message.and_then(|message| message.legacy_group_id());
+    let group_id = message_group.as_ref().or_else(|| {
+        conversation_summary
+            .as_ref()
+            .and_then(|summary| summary.group.as_ref())
+    });
     let group = fetch_group_ctx(store, group_id).await;
     let timing = social_read::build_timing_ctx(
         store,
@@ -112,6 +113,7 @@ pub(super) async fn build_mind(
         profile,
         person,
         conversation,
+        channel,
         group,
         recent_messages,
         actions,

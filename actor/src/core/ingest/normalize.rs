@@ -1,5 +1,5 @@
 use super::identity::{resolve_gateway_person, resolve_relay_person};
-use super::observation::observe_group_membership;
+use super::observation::observe_channel_membership;
 use crate::core::handle::StateHandle;
 use crate::store::Store;
 use protocol::InboundMessage;
@@ -11,7 +11,7 @@ pub(crate) async fn resolve_person(
     msg: &mut InboundMessage,
 ) {
     if msg.identity.is_some() && msg.profile.is_some() {
-        observe_group_membership(store, msg).await;
+        observe_channel_membership(store, msg).await;
         return;
     }
     if msg.gateway_id == "relay" {
@@ -19,5 +19,5 @@ pub(crate) async fn resolve_person(
     } else {
         resolve_gateway_person(state, store, msg).await;
     }
-    observe_group_membership(store, msg).await;
+    observe_channel_membership(store, msg).await;
 }

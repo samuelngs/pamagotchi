@@ -4,7 +4,10 @@ use crate::{
 };
 use async_trait::async_trait;
 use media::MediaStore;
-use protocol::{ConversationId, InboundMessage, MediaAttachment};
+use protocol::{
+    ChannelKey, ChannelKind, GatewayId, InboundEnvelope, MediaAttachment, ObservedIdentityKey,
+    ObservedSender,
+};
 use relay::{RelayEvent, RelaySender};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -20,7 +23,7 @@ impl RelayAdapter {
     pub async fn connect(
         port: u16,
         channel: &str,
-        inbound_tx: mpsc::Sender<InboundMessage>,
+        inbound_tx: mpsc::Sender<InboundEnvelope>,
     ) -> anyhow::Result<Self> {
         let (sender, mut receiver) = relay::connect(port, channel).await?;
 
@@ -28,17 +31,17 @@ impl RelayAdapter {
             while let Some(event) = receiver.recv().await {
                 match event {
                     RelayEvent::Message { content } => {
-                        let inbound = InboundMessage {
-                            message_id: nanoid::nanoid!(),
-                            gateway_id: "relay".into(),
-                            sender_external_id: "local".into(),
-                            sender_display_name: None,
-                            reply_external_id: "local".into(),
-                            conversation: ConversationId("relay:local".into()),
-                            group: None,
-                            identity: None,
-                            profile: None,
-                            person: None,
+                        let gateway = GatewayId("relay".into());
+                        let inbound = InboundEnvelope {
+                            gateway_id: gateway.clone(),
+                            platform_message_id: nanoid::nanoid!(),
+                            channel: relay_channel_key(&gateway, "local"),
+                            sender: Some(ObservedSender {
+                                primary: relay_identity_key(&gateway, "local"),
+                                aliases: vec![],
+                                display_name: None,
+                                metadata: serde_json::Value::Null,
+                            }),
                             content,
                             attachments: Vec::new(),
                             timestamp: chrono::Utc::now().timestamp(),
@@ -69,7 +72,7 @@ impl GatewayAdapter for RelayAdapter {
         _id: String,
         _db_path: String,
         _vars: BTreeMap<String, Value>,
-        _inbound_tx: mpsc::Sender<InboundMessage>,
+        _inbound_tx: mpsc::Sender<InboundEnvelope>,
         _gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
         _media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
@@ -122,5 +125,29 @@ impl GatewayAdapter for RelayAdapter {
     async fn stop_composing(&self, _external_id: &str) -> anyhow::Result<()> {
         debug!(gateway = "relay", "composing stopped");
         self.sender.send(RelayEvent::ComposingStopped).await
+    }
+}
+
+fn relay_channel_key(gateway_id: &GatewayId, room: &str) -> ChannelKey {
+    ChannelKey {
+        gateway_id: gateway_id.clone(),
+        external_id: room.to_string(),
+        kind: ChannelKind::RelayRoom,
+        display_name: None,
+        space: None,
+        parent: None,
+        metadata: serde_json::json!({
+            "platform": "relay",
+        }),
+    }
+}
+
+fn relay_identity_key(gateway_id: &GatewayId, user: &str) -> ObservedIdentityKey {
+    ObservedIdentityKey {
+        gateway_id: gateway_id.clone(),
+        external_id: user.to_string(),
+        kind: Some("relay_user".into()),
+        confidence: 1.0,
+        source: "primary_sender".into(),
     }
 }

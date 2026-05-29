@@ -95,11 +95,16 @@ async fn directive_scope(item: &Value, ctx: &SessionContext) -> Option<Directive
             .filter(|id| !id.trim().is_empty())
             .map(|id| DirectiveScope::Person(PersonId(id.to_string())))
             .or_else(|| current_review_person(ctx).map(DirectiveScope::Person)),
-        "group" => {
-            if let Some(id) = item["group_id"].as_str().filter(|id| !id.trim().is_empty()) {
-                Some(DirectiveScope::Group(GroupId(id.to_string())))
+        "channel" => {
+            if let Some(id) = item["channel_id"]
+                .as_str()
+                .filter(|id| !id.trim().is_empty())
+            {
+                Some(DirectiveScope::Channel(ChannelId(id.to_string())))
             } else {
-                current_review_group(ctx).await.map(DirectiveScope::Group)
+                current_review_channel(ctx)
+                    .await
+                    .map(DirectiveScope::Channel)
             }
         }
         _ => None,
@@ -113,8 +118,12 @@ async fn directive_scope_allowed(scope: &DirectiveScope, ctx: &SessionContext) -
 
     match scope {
         DirectiveScope::Person(person) => current_review_person(ctx).as_ref() == Some(person),
-        DirectiveScope::Group(group) => current_review_group(ctx).await.as_ref() == Some(group),
-        DirectiveScope::Global | DirectiveScope::RelationshipStanding(_) => false,
+        DirectiveScope::Channel(channel) => {
+            current_review_channel(ctx).await.as_ref() == Some(channel)
+        }
+        DirectiveScope::Global
+        | DirectiveScope::RelationshipStanding(_)
+        | DirectiveScope::Group(_) => false,
     }
 }
 
@@ -135,22 +144,16 @@ fn current_review_person(ctx: &SessionContext) -> Option<PersonId> {
         .find_map(|message| message.person.clone())
 }
 
-async fn current_review_group(ctx: &SessionContext) -> Option<GroupId> {
-    if let Some(group) = ctx
-        .messages
-        .iter()
-        .find_map(|message| message.group.clone())
-    {
-        return Some(group);
+async fn current_review_channel(ctx: &SessionContext) -> Option<ChannelId> {
+    if let Some(channel) = ctx.messages.first().map(|message| message.channel_id()) {
+        return Some(channel);
     }
     let conversation = ctx.conversation.as_ref()?;
     ctx.store
-        .list_conversations()
+        .channel_for_conversation(conversation)
         .await
         .ok()?
-        .into_iter()
-        .find(|summary| summary.id == *conversation)
-        .and_then(|summary| summary.group)
+        .map(|channel| channel.id)
 }
 
 fn directive_id(scope: &DirectiveScope, directive: &str) -> String {

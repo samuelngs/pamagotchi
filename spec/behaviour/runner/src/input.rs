@@ -2,7 +2,10 @@ use super::BehaviourCase;
 use super::json::{optional_str, required_array, required_object, required_str};
 use super::world::{SeedContexts, SeedProfileContext};
 use anyhow::Context;
-use protocol::{ConversationId, GroupId, InboundMessage};
+use protocol::{
+    ChannelKey, ChannelKind, ConversationId, GatewayId, InboundMessage, ObservedIdentityKey,
+    ObservedSender,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
@@ -95,6 +98,10 @@ fn build_inbound_message(
                 .cloned()
         })
         .unwrap_or_else(|| ConversationId(format!("{gateway_id}:{reply_external_id}")));
+    let sender_display_name = profile
+        .and_then(|profile| profile.display_name.clone())
+        .or_else(|| optional_str(message, "display_name").map(str::to_string));
+    let gateway = GatewayId(gateway_id.clone());
 
     Ok(InboundMessage {
         message_id: format!(
@@ -102,13 +109,32 @@ fn build_inbound_message(
             required_str(&case.value, "id", &case.path)
         ),
         gateway_id,
-        sender_external_id,
-        sender_display_name: profile
-            .and_then(|profile| profile.display_name.clone())
-            .or_else(|| optional_str(message, "display_name").map(str::to_string)),
-        reply_external_id,
+        sender: Some(ObservedSender {
+            primary: ObservedIdentityKey {
+                gateway_id: gateway.clone(),
+                external_id: sender_external_id,
+                kind: None,
+                confidence: 1.0,
+                source: "behaviour_spec_input".into(),
+            },
+            aliases: Vec::new(),
+            display_name: sender_display_name,
+            metadata: Value::Null,
+        }),
+        channel: ChannelKey {
+            gateway_id: gateway,
+            external_id: reply_external_id,
+            kind: if group.is_some() {
+                ChannelKind::GroupChat
+            } else {
+                ChannelKind::Direct
+            },
+            display_name: group.map(|group| group.name.clone()),
+            space: None,
+            parent: None,
+            metadata: Value::Null,
+        },
         conversation,
-        group: group_id.map(|id| GroupId(id.to_string())),
         identity: profile.map(|profile| profile.identity_id.clone()),
         profile: profile.map(|profile| profile.profile_id.clone()),
         person: profile.map(|profile| profile.person_id.clone()),

@@ -35,8 +35,6 @@ async fn profile_attach_reconnects_identity_without_deleting_person() {
     store
         .append_message(
             &conv,
-            None,
-            None,
             &StoredMessage {
                 timestamp: 1000,
                 role: MessageRole::User,

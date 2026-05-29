@@ -3,7 +3,7 @@ use crate::core::action::{ActionId, ActionKind, RunningState};
 use crate::core::handle::{SharedState, StateHandle};
 use crate::core::tools::{SessionKind, empty_delta};
 use crate::state::{ActorState, GrowthConfig, RelationshipStanding};
-use crate::store::{MessageRole, SqliteStore, Store, StoredMessage};
+use crate::store::{ChannelRecord, GatewayRecord, MessageRole, SqliteStore, Store, StoredMessage};
 use async_trait::async_trait;
 use gateway::{
     GatewayAdapter, GatewayCapabilities, GatewayConnectionState, GatewayContentCapabilities,
@@ -14,7 +14,10 @@ use inference::{
     InferenceProtocol, InferenceRouterBuilder, OpenAiCompatibleBridge, Reasoning, SamplingConfig,
     Usage,
 };
-use protocol::{InboundMessage, MediaAttachment, PersonId};
+use protocol::{
+    ChannelId, ChannelKey, ChannelKind, GatewayId, InboundEnvelope, InboundMessage,
+    MediaAttachment, ObservedSender, PersonId, channel_id,
+};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::mpsc;
@@ -31,7 +34,7 @@ impl GatewayAdapter for RecordingAdapter {
         _id: String,
         _db_path: String,
         _vars: BTreeMap<String, serde_json::Value>,
-        _inbound_tx: mpsc::Sender<InboundMessage>,
+        _inbound_tx: mpsc::Sender<InboundEnvelope>,
         _gateway_event_tx: mpsc::Sender<gateway::GatewayRuntimeEvent>,
         _media_store: Arc<media::MediaStore>,
     ) -> anyhow::Result<Self>
@@ -166,11 +169,14 @@ fn inbound() -> InboundMessage {
     InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "missing-gateway".into(),
-        sender_external_id: "sender-1".into(),
-        sender_display_name: Some("Sender".into()),
-        reply_external_id: "reply-target".into(),
+        sender: Some(ObservedSender::primary(
+            "missing-gateway",
+            "sender-1",
+            Some("Sender".into()),
+            "test",
+        )),
+        channel: ChannelKey::new("missing-gateway", "reply-target", ChannelKind::Direct),
         conversation: ConversationId("missing-gateway:reply-target".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,
@@ -179,6 +185,42 @@ fn inbound() -> InboundMessage {
         timestamp: 1000,
         metadata: Value::Null,
     }
+}
+
+async fn ensure_test_channel(
+    store: &SqliteStore,
+    gateway_id: &str,
+    external_id: &str,
+    kind: ChannelKind,
+) -> ChannelId {
+    let gateway = GatewayId(gateway_id.into());
+    store
+        .upsert_gateway(&GatewayRecord {
+            id: gateway.clone(),
+            kind: gateway_id.into(),
+            display_name: None,
+            metadata: serde_json::json!({}),
+            created_at: 1000,
+            updated_at: 1000,
+        })
+        .await
+        .unwrap();
+    let channel = ChannelRecord {
+        id: channel_id(&gateway, external_id),
+        gateway: gateway.clone(),
+        external_id: external_id.into(),
+        kind,
+        space: None,
+        parent: None,
+        display_name: None,
+        metadata: serde_json::json!({}),
+        created_at: 1000,
+        updated_at: 1000,
+        last_seen_at: 1000,
+    };
+    let id = channel.id.clone();
+    store.upsert_channel(&channel).await.unwrap();
+    id
 }
 
 mod delivery_tests;

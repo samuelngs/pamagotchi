@@ -1,15 +1,32 @@
 use super::*;
-use crate::{MediaAssetId, MediaAttachment, MediaKind};
+use crate::{ConversationId, MediaAssetId, MediaAttachment, MediaKind};
 
 fn inbound(attachments: Vec<MediaAttachment>, content: &str) -> InboundMessage {
     InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "whatsapp".into(),
-        sender_external_id: "sender-1".into(),
-        sender_display_name: Some("Sender".into()),
-        reply_external_id: "chat-1".into(),
+        sender: Some(ObservedSender {
+            primary: ObservedIdentityKey {
+                gateway_id: GatewayId("whatsapp".into()),
+                external_id: "sender-1".into(),
+                kind: None,
+                confidence: 1.0,
+                source: "test".into(),
+            },
+            aliases: Vec::new(),
+            display_name: Some("Sender".into()),
+            metadata: serde_json::Value::Null,
+        }),
+        channel: ChannelKey {
+            gateway_id: GatewayId("whatsapp".into()),
+            external_id: "chat-1".into(),
+            kind: ChannelKind::Direct,
+            display_name: None,
+            space: None,
+            parent: None,
+            metadata: serde_json::Value::Null,
+        },
         conversation: ConversationId("whatsapp:chat-1".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,

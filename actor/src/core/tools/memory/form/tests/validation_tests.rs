@@ -25,11 +25,11 @@ async fn form_memory_rejects_unavailable_explicit_evidence_message_ids() {
         messages: vec![InboundMessage {
             message_id: "msg-present".into(),
             gateway_id: "relay".into(),
-            sender_external_id: "local".into(),
-            sender_display_name: None,
-            reply_external_id: "local".into(),
+            sender: Some(protocol::ObservedSender::primary(
+                "relay", "local", None, "test",
+            )),
+            channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
             conversation: conversation.clone(),
-            group: None,
             identity: None,
             profile: Some(profile),
             person: None,
@@ -142,11 +142,11 @@ async fn form_memory_accepts_read_message_evidence() {
     let read_message = InboundMessage {
         message_id: "msg-read".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "local".into(),
-        sender_display_name: None,
-        reply_external_id: "local".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay", "local", None, "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
         conversation: conversation.clone(),
-        group: None,
         identity: None,
         profile: Some(profile.clone()),
         person: None,
@@ -222,11 +222,11 @@ async fn form_memory_defaults_uncertain_and_emotional_memories_to_transient() {
         messages: vec![InboundMessage {
             message_id: "msg-1".into(),
             gateway_id: "relay".into(),
-            sender_external_id: "local".into(),
-            sender_display_name: None,
-            reply_external_id: "local".into(),
+            sender: Some(protocol::ObservedSender::primary(
+                "relay", "local", None, "test",
+            )),
+            channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
             conversation: conversation.clone(),
-            group: None,
             identity: None,
             profile: Some(profile),
             person: None,

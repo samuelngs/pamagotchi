@@ -21,6 +21,36 @@ pub(super) fn conversation_ctx_from_summary(summary: &ConversationSummary) -> Co
     }
 }
 
+pub(super) async fn fetch_current_channel_ctx(
+    store: &Arc<dyn Store>,
+    current_msg: Option<&InboundMessage>,
+    conversation: Option<&ConversationId>,
+) -> Option<ChannelCtx> {
+    if let Some(message) = current_msg {
+        return Some(ChannelCtx {
+            ref_id: message.channel_id().0,
+            gateway_id: message.channel.gateway_id.0.clone(),
+            external_id: message.channel.external_id.clone(),
+            kind: message.channel.kind.as_str().to_string(),
+            display_name: message.channel.display_name.clone(),
+        });
+    }
+
+    let conversation = conversation?;
+    store
+        .channel_for_conversation(conversation)
+        .await
+        .ok()
+        .flatten()
+        .map(|channel| ChannelCtx {
+            ref_id: channel.id.0,
+            gateway_id: channel.gateway.0,
+            external_id: channel.external_id,
+            kind: channel.kind.as_str().to_string(),
+            display_name: channel.display_name,
+        })
+}
+
 pub(super) async fn fetch_group_ctx(
     store: &Arc<dyn Store>,
     group_id: Option<&GroupId>,

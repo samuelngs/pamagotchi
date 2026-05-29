@@ -3,13 +3,13 @@ use crate::core::Outcome;
 use crate::core::decision::{MindDecision, MindVerdict};
 use crate::core::event::FiredIntent;
 use crate::core::handle::{SharedState, StateTask};
-use crate::identity::{Identity, Profile};
+use crate::identity::{Identity, Person, PersonProfileStatus, Profile};
 use crate::state::{
     ActorState, GrowthConfig, ProactiveConsent, QuietHoursUtc, RelationshipStanding,
 };
 use crate::store::{
-    EventInboxRecord, IntentRecord, Memory, MemoryKind, MemorySource, MemorySubject, MessageRole,
-    RecallQuery, SqliteStore, StoredMessage, Thought, ThoughtKind,
+    ChannelRecord, EventInboxRecord, GatewayRecord, IntentRecord, Memory, MemoryKind, MemorySource,
+    MemorySubject, MessageRole, RecallQuery, SqliteStore, StoredMessage, Thought, ThoughtKind,
 };
 use async_trait::async_trait;
 use gateway::{
@@ -21,8 +21,9 @@ use inference::{
     OpenAiCompatibleBridge, Reasoning, SamplingConfig, Usage,
 };
 use protocol::{
-    ConversationId, GroupId, IdentityId, InboundMessage, MediaAttachment, MemoryId, PersonId,
-    ProfileId,
+    ChannelKey, ChannelKind, ConversationId, GatewayId, IdentityId, InboundEnvelope,
+    InboundMessage, MediaAttachment, MemoryId, ObservedIdentityKey, ObservedSender, PersonId,
+    ProfileId, channel_id,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
@@ -163,7 +164,7 @@ impl GatewayAdapter for StateAdapter {
         _id: String,
         _db_path: String,
         _vars: BTreeMap<String, serde_json::Value>,
-        _inbound_tx: mpsc::Sender<InboundMessage>,
+        _inbound_tx: mpsc::Sender<InboundEnvelope>,
         _gateway_event_tx: mpsc::Sender<gateway::GatewayRuntimeEvent>,
         _media_store: Arc<media::MediaStore>,
     ) -> anyhow::Result<Self>
@@ -227,18 +228,31 @@ fn inbound(
     InboundMessage {
         message_id: message_id.into(),
         gateway_id: gateway_id.into(),
-        sender_external_id: sender.into(),
-        sender_display_name: Some(display_name.into()),
-        reply_external_id: reply_target.into(),
+        sender: Some(ObservedSender::primary(
+            gateway_id,
+            sender,
+            Some(display_name.into()),
+            "test",
+        )),
+        channel: ChannelKey::new(
+            gateway_id,
+            reply_target,
+            if group.is_some() {
+                ChannelKind::GroupChat
+            } else {
+                ChannelKind::Direct
+            },
+        ),
         conversation: ConversationId(conversation.into()),
-        group: group.map(|id| GroupId(id.into())),
         identity: None,
         profile: None,
         person: None,
         content: "hello".into(),
         attachments: vec![],
         timestamp: 1000,
-        metadata: serde_json::Value::Null,
+        metadata: group
+            .map(|id| serde_json::json!({ "group_id": id }))
+            .unwrap_or(serde_json::Value::Null),
     }
 }
 
@@ -252,17 +266,12 @@ async fn append_inbound(store: &dyn Store, msg: &InboundMessage) {
         person: msg.person.clone(),
         source_gateway_id: Some(msg.gateway_id.clone()),
         source_message_id: Some(msg.message_id.clone()),
-        sender_external_id: Some(msg.sender_external_id.clone()),
-        reply_external_id: Some(msg.reply_external_id.clone()),
+        sender_external_id: msg.sender_external_id().map(str::to_string),
+        reply_external_id: Some(msg.channel_external_id().to_string()),
         metadata: serde_json::Value::Null,
     };
     store
-        .append_message(
-            &msg.conversation,
-            Some(&msg.gateway_id),
-            msg.group.as_ref(),
-            &stored,
-        )
+        .append_message(&msg.conversation, &stored)
         .await
         .unwrap();
 }

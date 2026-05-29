@@ -272,6 +272,8 @@ async fn debug_snapshot_includes_action_traces() {
         .append_outbound_delivery(&OutboundDeliveryRecord {
             action_id: "action-debug".into(),
             conversation: Some(ConversationId("relay:local".into())),
+            message: None,
+            channel: None,
             gateway_id: "relay".into(),
             external_id: "reply-private".into(),
             status: "failed".into(),

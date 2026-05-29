@@ -40,8 +40,10 @@ async fn apply_review_uses_cited_evidence_message_as_memory_source() {
     ctx.router = Arc::new(router_with_successful_embedding_endpoint());
     let mut second = inbound(&other_profile, &other_person, &conversation);
     second.message_id = "msg-2".into();
-    second.sender_external_id = "alice".into();
-    second.reply_external_id = "alice".into();
+    second.sender = Some(protocol::ObservedSender::primary(
+        "relay", "alice", None, "test",
+    ));
+    second.channel = protocol::ChannelKey::new("relay", "alice", protocol::ChannelKind::Direct);
     second.content = "Alice prefers release notes with chosen_people.".into();
     ctx.messages.push(second);
 

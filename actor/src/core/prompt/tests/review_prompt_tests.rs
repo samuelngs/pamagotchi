@@ -97,6 +97,8 @@ async fn review_prompt_includes_source_action_transcript() {
         .append_outbound_delivery(&OutboundDeliveryRecord {
             action_id: source_action.into(),
             conversation: Some(conversation.clone()),
+            message: None,
+            channel: None,
             gateway_id: "relay".into(),
             external_id: "local".into(),
             status: "delivered".into(),

@@ -8,8 +8,6 @@ async fn message_revision_events_update_stored_conversation_history() {
     store
         .append_message(
             &conv,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: 1000,
                 role: MessageRole::User,

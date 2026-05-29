@@ -13,7 +13,7 @@ use inference::{
     InferenceProtocol, InferenceRouterBuilder, OpenAiCompatibleBridge, Reasoning, SamplingConfig,
     Usage,
 };
-use protocol::{ConversationId, GroupId, IdentityId, InboundMessage, ProfileId};
+use protocol::{ConversationId, IdentityId, InboundMessage, ProfileId};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 
@@ -104,11 +104,14 @@ fn inbound(
     InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "local".into(),
-        sender_display_name: Some("Sam".into()),
-        reply_external_id: "local".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay",
+            "local",
+            Some("Sam".into()),
+            "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
         conversation: conversation.clone(),
-        group: None,
         identity: None,
         profile: Some(profile.clone()),
         person: Some(person.clone()),

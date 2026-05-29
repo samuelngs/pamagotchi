@@ -1,10 +1,11 @@
 use super::{
     ActionMessageRecord, ActionPromptSnapshotRecord, ActionRunRecord, ActionTranscriptRecord,
-    ActionTurnRecord, ActorSnapshot, ConversationSummary, DisplayNameObservation,
-    EventInboxDebugRecord, EventInboxRecord, IdentityDisclosureAudit, IntentRecord,
+    ActionTurnRecord, ActorSnapshot, ChannelFilter, ChannelMembership, ChannelRecord,
+    ConversationSummary, DisplayNameObservation, EventInboxDebugRecord, EventInboxRecord,
+    GatewayRecord, IdentityConflictRecord, IdentityDisclosureAudit, IntentRecord,
     IntentUpdateRecord, Memory, MemoryMutationRecord, MemorySubjectDebugRecord, MemorySubjectType,
     MemoryUpdate, OutboundDeliveryRecord, RecallQuery, ReviewJobRecord, ReviewOutputAudit,
-    StateJournalRecord, Store, StoredMessage, Thought, ToolCallRecord,
+    SpaceRecord, StateJournalRecord, Store, StoredMessage, Thought, ToolCallRecord,
 };
 use crate::identity::{
     ClaimStatus, Group, Identity, IdentityClaim, Person, PersonProfileLink, PersonProfileStatus,
@@ -15,7 +16,10 @@ use crate::identity::{GroupContext, RelationSource, RelationStatus};
 use crate::state::{BehaviorDirective, RelationshipStanding};
 #[cfg(test)]
 use crate::store::{MemorySubject, ThoughtKind};
-use protocol::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
+use protocol::{
+    ChannelId, ConversationId, GatewayId, GroupId, IdentityId, MemoryId, PersonId, ProfileId,
+    SpaceId,
+};
 use rusqlite::Connection;
 #[cfg(test)]
 use std::collections::HashSet;
@@ -83,6 +87,7 @@ impl SqliteStore {
 }
 
 mod action_log;
+mod channel;
 mod conversation;
 mod debug;
 mod directive;
@@ -478,21 +483,94 @@ impl Store for SqliteStore {
         .await
     }
 
+    async fn upsert_gateway(&self, gateway: &GatewayRecord) -> anyhow::Result<GatewayId> {
+        let gateway = gateway.clone();
+        self.with_conn_blocking(move |conn| channel::upsert_gateway(conn, &gateway))
+            .await
+    }
+
+    async fn upsert_space(&self, space: &SpaceRecord) -> anyhow::Result<SpaceId> {
+        let space = space.clone();
+        self.with_conn_blocking(move |conn| channel::upsert_space(conn, &space))
+            .await
+    }
+
+    async fn upsert_channel(&self, channel_record: &ChannelRecord) -> anyhow::Result<ChannelId> {
+        let channel_record = channel_record.clone();
+        self.with_conn_blocking(move |conn| channel::upsert_channel(conn, &channel_record))
+            .await
+    }
+
+    async fn get_channel(&self, id: &ChannelId) -> anyhow::Result<Option<ChannelRecord>> {
+        let id = id.clone();
+        self.with_conn_blocking(move |conn| channel::get_channel(conn, &id))
+            .await
+    }
+
+    async fn resolve_channel(
+        &self,
+        gateway: &GatewayId,
+        external_id: &str,
+    ) -> anyhow::Result<Option<ChannelRecord>> {
+        let gateway = gateway.clone();
+        let external_id = external_id.to_string();
+        self.with_conn_blocking(move |conn| channel::resolve_channel(conn, &gateway, &external_id))
+            .await
+    }
+
+    async fn list_channels(&self, filter: ChannelFilter) -> anyhow::Result<Vec<ChannelRecord>> {
+        self.with_conn_blocking(move |conn| channel::list_channels(conn, &filter))
+            .await
+    }
+
+    async fn upsert_channel_membership(
+        &self,
+        membership: &ChannelMembership,
+    ) -> anyhow::Result<()> {
+        let membership = membership.clone();
+        self.with_conn_blocking(move |conn| channel::upsert_channel_membership(conn, &membership))
+            .await
+    }
+
+    async fn list_channel_memberships(
+        &self,
+        channel_id: &ChannelId,
+    ) -> anyhow::Result<Vec<ChannelMembership>> {
+        let channel_id = channel_id.clone();
+        self.with_conn_blocking(move |conn| channel::list_channel_memberships(conn, &channel_id))
+            .await
+    }
+
+    async fn get_or_create_active_conversation(
+        &self,
+        channel_id: &ChannelId,
+        now: i64,
+    ) -> anyhow::Result<ConversationId> {
+        let channel_id = channel_id.clone();
+        self.with_conn_blocking(move |conn| {
+            channel::get_or_create_active_conversation(conn, &channel_id, now)
+        })
+        .await
+    }
+
+    async fn channel_for_conversation(
+        &self,
+        conversation: &ConversationId,
+    ) -> anyhow::Result<Option<ChannelRecord>> {
+        let conversation = conversation.clone();
+        self.with_conn_blocking(move |conn| channel::channel_for_conversation(conn, &conversation))
+            .await
+    }
+
     async fn append_message(
         &self,
         conv: &ConversationId,
-        gateway_id: Option<&str>,
-        group: Option<&GroupId>,
         msg: &StoredMessage,
     ) -> anyhow::Result<()> {
         let conv = conv.clone();
-        let gateway_id = gateway_id.map(str::to_string);
-        let group = group.cloned();
         let msg = msg.clone();
-        self.with_conn_blocking(move |conn| {
-            conversation::append_message(conn, &conv, gateway_id.as_deref(), group.as_ref(), &msg)
-        })
-        .await
+        self.with_conn_blocking(move |conn| conversation::append_message(conn, &conv, &msg))
+            .await
     }
 
     async fn update_message_content_by_source(
@@ -687,6 +765,23 @@ impl Store for SqliteStore {
             identity::display_name_observations(conn, &identity, limit)
         })
         .await
+    }
+
+    async fn record_identity_conflict(
+        &self,
+        conflict: &IdentityConflictRecord,
+    ) -> anyhow::Result<()> {
+        let conflict = conflict.clone();
+        self.with_conn_blocking(move |conn| identity::record_identity_conflict(conn, &conflict))
+            .await
+    }
+
+    async fn identity_conflicts(
+        &self,
+        limit: usize,
+    ) -> anyhow::Result<Vec<IdentityConflictRecord>> {
+        self.with_conn_blocking(move |conn| identity::identity_conflicts(conn, limit))
+            .await
     }
 
     async fn add_profile(&self, profile: &Profile) -> anyhow::Result<ProfileId> {
@@ -1027,17 +1122,17 @@ impl Store for SqliteStore {
         &self,
         person: &PersonId,
         relationship_standing: &RelationshipStanding,
-        group: Option<&GroupId>,
+        channel: Option<&ChannelId>,
     ) -> anyhow::Result<Vec<BehaviorDirective>> {
         let person = person.clone();
         let relationship_standing = relationship_standing.clone();
-        let group = group.cloned();
+        let channel = channel.cloned();
         self.with_conn_blocking(move |conn| {
             directive::get_directives_for_context(
                 conn,
                 &person,
                 &relationship_standing,
-                group.as_ref(),
+                channel.as_ref(),
             )
         })
         .await

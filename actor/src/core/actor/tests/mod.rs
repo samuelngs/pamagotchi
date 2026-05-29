@@ -13,17 +13,20 @@ use inference::{
     InferenceEndpoint, InferenceProtocol, InferenceRouterBuilder, OpenAiCompatibleBridge,
     Reasoning, SamplingConfig, Usage,
 };
-use protocol::{ConversationId, InboundMessage, PersonId};
+use protocol::{ChannelKey, ChannelKind, ConversationId, InboundMessage, ObservedSender, PersonId};
 
 fn inbound() -> InboundMessage {
     InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "local".into(),
-        sender_display_name: Some("Sam".into()),
-        reply_external_id: "local".into(),
+        sender: Some(ObservedSender::primary(
+            "relay",
+            "local",
+            Some("Sam".into()),
+            "test",
+        )),
+        channel: ChannelKey::new("relay", "local", ChannelKind::Direct),
         conversation: ConversationId("relay:local".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,

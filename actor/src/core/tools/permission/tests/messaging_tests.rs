@@ -103,15 +103,19 @@ async fn outreach_context_can_only_send_explicit_scheduled_target() {
 #[tokio::test]
 async fn outreach_without_current_messages_uses_stored_conversation_target() {
     let mut outreach = test_context(RelationshipStanding::Default, ActionKind::Outreach);
-    let conversation = ConversationId("relay:outreach".into());
+    let channel =
+        ensure_test_channel(&outreach.store, "relay", "target-1", ChannelKind::Direct).await;
+    let conversation = outreach
+        .store
+        .get_or_create_active_conversation(&channel, 1000)
+        .await
+        .unwrap();
     outreach.messages.clear();
     outreach.conversation = Some(conversation.clone());
     outreach
         .store
         .append_message(
             &conversation,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: 1000,
                 role: MessageRole::User,
@@ -122,7 +126,7 @@ async fn outreach_without_current_messages_uses_stored_conversation_target() {
                 source_gateway_id: Some("relay".into()),
                 source_message_id: Some("msg-outreach-context".into()),
                 sender_external_id: Some("target-1".into()),
-                reply_external_id: Some("target-1".into()),
+                reply_external_id: Some("stale-legacy-reply".into()),
                 metadata: serde_json::Value::Null,
             },
         )

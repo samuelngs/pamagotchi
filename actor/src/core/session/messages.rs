@@ -35,19 +35,11 @@ pub(super) async fn ingest_messages(ctx: &SessionContext, llm_messages: &mut Vec
                 person: inbound.person.clone(),
                 source_gateway_id: Some(inbound.gateway_id.clone()),
                 source_message_id: Some(inbound.message_id.clone()),
-                sender_external_id: Some(inbound.sender_external_id.clone()),
-                reply_external_id: Some(inbound.reply_external_id.clone()),
+                sender_external_id: inbound.sender_external_id().map(str::to_string),
+                reply_external_id: Some(inbound.channel_external_id().to_string()),
                 metadata: message_metadata(inbound),
             };
-            ctx.store
-                .append_message(
-                    conv,
-                    Some(&inbound.gateway_id),
-                    inbound.group.as_ref(),
-                    &stored,
-                )
-                .await
-                .ok();
+            ctx.store.append_message(conv, &stored).await.ok();
         }
     }
 }
@@ -101,14 +93,11 @@ pub(super) async fn inject_pending_messages(
                 person: msg.person.clone(),
                 source_gateway_id: Some(msg.gateway_id.clone()),
                 source_message_id: Some(msg.message_id.clone()),
-                sender_external_id: Some(msg.sender_external_id.clone()),
-                reply_external_id: Some(msg.reply_external_id.clone()),
+                sender_external_id: msg.sender_external_id().map(str::to_string),
+                reply_external_id: Some(msg.channel_external_id().to_string()),
                 metadata: message_metadata(&msg),
             };
-            ctx.store
-                .append_message(conv, Some(&msg.gateway_id), msg.group.as_ref(), &stored)
-                .await
-                .ok();
+            ctx.store.append_message(conv, &stored).await.ok();
         }
         let record = ActionMessageRecord {
             action_id: ctx.action_id.0.clone(),
@@ -116,8 +105,8 @@ pub(super) async fn inject_pending_messages(
             conversation: Some(msg.conversation.clone()),
             source_gateway_id: Some(msg.gateway_id.clone()),
             source_message_id: Some(msg.message_id.clone()),
-            sender_external_id: Some(msg.sender_external_id.clone()),
-            reply_external_id: Some(msg.reply_external_id.clone()),
+            sender_external_id: msg.sender_external_id().map(str::to_string),
+            reply_external_id: Some(msg.channel_external_id().to_string()),
             content: Some(display),
             created_at: msg.timestamp,
         };
@@ -272,10 +261,11 @@ pub(super) fn message_metadata(msg: &protocol::InboundMessage) -> Value {
     let source = serde_json::json!({
         "message_id": msg.message_id,
         "gateway_id": msg.gateway_id,
-        "sender_external_id": msg.sender_external_id,
-        "sender_display_name": msg.sender_display_name,
-        "reply_external_id": msg.reply_external_id,
-        "group_id": msg.group.as_ref().map(|group| group.0.clone()),
+        "sender": &msg.sender,
+        "sender_display_name": msg.sender_display_name(),
+        "channel": &msg.channel,
+        "channel_external_id": msg.channel_external_id(),
+        "legacy_group_id": msg.legacy_group_id().map(|group| group.0),
     });
 
     let attachments_value = if msg.attachments.is_empty() {

@@ -1,4 +1,4 @@
-use protocol::{ConversationId, MemoryId};
+use protocol::{ChannelId, ConversationId, MemoryId, MessageId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -71,6 +71,8 @@ pub struct ActionMessageRecord {
 pub struct OutboundDeliveryRecord {
     pub action_id: String,
     pub conversation: Option<ConversationId>,
+    pub message: Option<MessageId>,
+    pub channel: Option<ChannelId>,
     pub gateway_id: String,
     pub external_id: String,
     pub status: String,

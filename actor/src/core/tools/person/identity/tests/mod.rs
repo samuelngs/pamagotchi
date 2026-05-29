@@ -85,11 +85,14 @@ fn test_context_with_relationships(
     let message = InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "claimant".into(),
-        sender_display_name: Some("Claimant".into()),
-        reply_external_id: "claimant".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay",
+            "claimant",
+            Some("Claimant".into()),
+            "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "claimant", protocol::ChannelKind::Direct),
         conversation: ConversationId("relay:claimant".into()),
-        group: None,
         identity: None,
         profile: None,
         person: Some(claimant),

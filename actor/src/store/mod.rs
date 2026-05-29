@@ -1,5 +1,6 @@
 mod action_log;
 mod audit;
+mod channel;
 mod conversation;
 mod event_inbox;
 mod intent;
@@ -15,7 +16,12 @@ pub use action_log::{
     ActionTurnRecord, OutboundDeliveryRecord, ReviewJobRecord, ToolCallRecord,
 };
 pub use audit::{
-    DisplayNameObservation, IdentityDisclosureAudit, MemoryMutationRecord, ReviewOutputAudit,
+    DisplayNameObservation, IdentityConflictIdentity, IdentityConflictRecord,
+    IdentityDisclosureAudit, MemoryMutationRecord, ReviewOutputAudit,
+};
+pub use channel::{
+    ChannelFilter, ChannelMembership, ChannelMembershipStatus, ChannelRecord, GatewayRecord,
+    SpaceRecord,
 };
 pub use conversation::{ConversationSummary, MessageRole, StoredMessage};
 pub use event_inbox::{EventInboxDebugRecord, EventInboxRecord};

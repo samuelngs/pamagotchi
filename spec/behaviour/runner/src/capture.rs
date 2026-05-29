@@ -4,7 +4,7 @@ use gateway::{
     GatewayRuntimeEvent,
 };
 use media::MediaStore;
-use protocol::{GatewaySetupInstructions, InboundMessage, MediaAttachment};
+use protocol::{GatewaySetupInstructions, InboundEnvelope, MediaAttachment};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -64,7 +64,7 @@ impl GatewayAdapter for RecordingGateway {
         _id: String,
         _db_path: String,
         _vars: BTreeMap<String, Value>,
-        _inbound_tx: mpsc::Sender<InboundMessage>,
+        _inbound_tx: mpsc::Sender<InboundEnvelope>,
         _gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
         _media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self>

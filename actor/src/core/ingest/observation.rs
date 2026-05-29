@@ -1,8 +1,7 @@
 use crate::core::handle::StateHandle;
 use crate::core::tools::empty_delta;
-use crate::identity::{Group, GroupContext};
 use crate::state::{RelationshipChange, RelationshipInteraction};
-use crate::store::Store;
+use crate::store::{ChannelMembership, ChannelMembershipStatus, Store};
 use protocol::InboundMessage;
 use std::sync::Arc;
 use tracing::warn;
@@ -26,49 +25,42 @@ pub(crate) async fn observe_inbound(state: &StateHandle, msg: &InboundMessage) {
     state.send_delta(delta).await;
 }
 
-pub(super) async fn observe_group_membership(store: &Arc<dyn Store>, msg: &InboundMessage) {
-    let (Some(group), Some(person)) = (msg.group.as_ref(), msg.person.as_ref()) else {
+pub(super) async fn observe_channel_membership(store: &Arc<dyn Store>, msg: &InboundMessage) {
+    let Some(profile) = msg.profile.as_ref() else {
         return;
     };
-
-    match store.get_group(group).await {
-        Ok(Some(_)) => {}
-        Ok(None) => {
-            let group_record = Group {
-                id: group.clone(),
-                name: msg
-                    .metadata
-                    .get("group_name")
-                    .or_else(|| msg.metadata.get("guild_name"))
-                    .and_then(|value| value.as_str())
-                    .filter(|name| !name.trim().is_empty())
-                    .unwrap_or(&group.0)
-                    .to_string(),
-                gateway_id: msg.gateway_id.clone(),
-                external_id: msg
-                    .metadata
-                    .get("group_id")
-                    .or_else(|| msg.metadata.get("guild_id"))
-                    .and_then(|value| value.as_str())
-                    .filter(|id| !id.trim().is_empty())
-                    .unwrap_or(&group.0)
-                    .to_string(),
-                context: GroupContext::Social,
-                members: vec![],
-            };
-            if let Err(e) = store.add_group(&group_record).await {
-                warn!(%e, group = %group.0, "failed to create observed group");
-            }
-        }
-        Err(e) => warn!(%e, group = %group.0, "failed to load observed group"),
-    }
-
-    if let Err(e) = store.add_group_member(group, person).await {
+    let channel = msg.channel_id();
+    let platform_message_id = msg
+        .metadata
+        .get("normalized_envelope")
+        .and_then(|value| {
+            value
+                .get("platform_message_id")
+                .and_then(|id| id.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| msg.message_id.clone());
+    if let Err(e) = store
+        .upsert_channel_membership(&ChannelMembership {
+            channel: channel.clone(),
+            profile: profile.clone(),
+            role: None,
+            status: ChannelMembershipStatus::Observed,
+            first_seen_at: msg.timestamp,
+            last_seen_at: msg.timestamp,
+            metadata: serde_json::json!({
+                "source": "inbound_message",
+                "platform_message_id": platform_message_id,
+                "sender": msg.sender,
+            }),
+        })
+        .await
+    {
         warn!(
             %e,
-            group = %group.0,
-            person = %person.0,
-            "failed to record observed group member"
+            channel = %channel.0,
+            profile = %profile.0,
+            "failed to record observed channel membership"
         );
     }
 }

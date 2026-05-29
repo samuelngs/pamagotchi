@@ -1,14 +1,17 @@
 use super::*;
 
 #[tokio::test]
-async fn outreach_send_defaults_to_stored_conversation_reply_target() {
+async fn outreach_send_defaults_to_stored_conversation_channel() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
-    let conv = ConversationId("relay:local".into());
+    let channel =
+        ensure_test_channel(store.as_ref(), "relay", "local", ChannelKind::RelayRoom).await;
+    let conv = store
+        .get_or_create_active_conversation(&channel, 1000)
+        .await
+        .unwrap();
     store
         .append_message(
             &conv,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: 1000,
                 role: MessageRole::User,
@@ -18,8 +21,8 @@ async fn outreach_send_defaults_to_stored_conversation_reply_target() {
                 person: Some(PersonId("person-sam".into())),
                 source_gateway_id: Some("relay".into()),
                 source_message_id: Some("msg-1".into()),
-                sender_external_id: Some("local".into()),
-                reply_external_id: Some("local".into()),
+                sender_external_id: Some("sender-local".into()),
+                reply_external_id: Some("stale-legacy-reply".into()),
                 metadata: Value::Null,
             },
         )
@@ -78,9 +81,10 @@ async fn outreach_send_marks_relationship_delta_as_proactive_outbound() {
     gateway.register(Arc::new(RecordingAdapter { sent: sent.clone() }));
     let mut msg = inbound();
     msg.gateway_id = "relay".into();
-    msg.reply_external_id = "local".into();
+    msg.channel = protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct);
     msg.conversation = ConversationId("relay:local".into());
     msg.person = Some(protocol::PersonId("person-sam".into()));
+    ensure_test_channel(store.as_ref(), "relay", "local", ChannelKind::Direct).await;
     let (mut ctx, _inject_tx) = test_context(store, gateway, msg);
     ctx.kind = SessionKind::Action(ActionKind::Outreach);
     let mut state = SessionState {

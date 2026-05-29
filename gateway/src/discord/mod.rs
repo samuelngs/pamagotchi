@@ -13,7 +13,7 @@ pub use config::DiscordConfig;
 use config::{is_missing_bot_token_error, setup_instructions};
 use media::MediaStore;
 use message::{DiscordHandler, parse_channel_id};
-use protocol::{InboundMessage, MediaAttachment};
+use protocol::{InboundEnvelope, MediaAttachment};
 use serde_json::Value;
 use serenity::all::{Client, GatewayIntents, Http};
 use serenity::builder::{CreateAttachment, CreateMessage};
@@ -53,7 +53,7 @@ impl DiscordAdapter {
     pub async fn connect_with_config(
         id: impl Into<String>,
         config: DiscordConfig,
-        inbound_tx: mpsc::Sender<InboundMessage>,
+        inbound_tx: mpsc::Sender<InboundEnvelope>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
         media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {
@@ -114,7 +114,7 @@ impl GatewayAdapter for DiscordAdapter {
         id: String,
         _db_path: String,
         vars: BTreeMap<String, Value>,
-        inbound_tx: mpsc::Sender<InboundMessage>,
+        inbound_tx: mpsc::Sender<InboundEnvelope>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
         media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self> {

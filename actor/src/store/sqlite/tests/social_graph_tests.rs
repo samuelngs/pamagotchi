@@ -112,8 +112,6 @@ async fn merge_person_context_moves_person_scoped_store_records() {
     store
         .append_message(
             &ConversationId("relay:claimant".into()),
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: 1000,
                 role: MessageRole::User,

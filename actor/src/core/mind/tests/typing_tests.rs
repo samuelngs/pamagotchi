@@ -18,7 +18,7 @@ async fn typing_sender_defers_fresh_response_until_typing_stops() {
     mind.update_typing(
         &msg.conversation,
         &msg.gateway_id,
-        &msg.sender_external_id,
+        msg.sender_external_id().unwrap(),
         true,
     );
 
@@ -42,7 +42,7 @@ async fn typing_sender_defers_fresh_response_until_typing_stops() {
     mind.update_typing(
         &msg.conversation,
         &msg.gateway_id,
-        &msg.sender_external_id,
+        msg.sender_external_id().unwrap(),
         false,
     );
     let decision = mind
@@ -96,7 +96,7 @@ async fn typing_stop_flushes_matching_deferred_typing_message() {
     mind.flush_deferred_typing_messages(
         &msg.conversation,
         &msg.gateway_id,
-        &msg.sender_external_id,
+        msg.sender_external_id().unwrap(),
     )
     .await;
 

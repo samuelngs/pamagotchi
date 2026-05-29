@@ -253,10 +253,7 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
         }
     };
 
-    let current_target = ctx
-        .messages
-        .first()
-        .map(|m| (m.gateway_id.as_str(), m.sender_external_id.as_str()));
+    let current_target = ctx.messages.first().and_then(|m| m.sender_key());
     let mut contacted = 0usize;
     let mut failed = 0usize;
 

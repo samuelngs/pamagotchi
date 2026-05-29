@@ -99,11 +99,11 @@ fn context(
     let message = InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "local".into(),
-        sender_display_name: None,
-        reply_external_id: "local".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay", "local", None, "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
         conversation: conversation.clone(),
-        group: None,
         identity: None,
         profile: Some(profile.clone()),
         person: None,

@@ -1,5 +1,6 @@
 use super::conversation::{
-    conversation_ctx_from_summary, fetch_conversation_summary, fetch_group_ctx,
+    conversation_ctx_from_summary, fetch_conversation_summary, fetch_current_channel_ctx,
+    fetch_group_ctx,
 };
 use super::directives::load_directives;
 use super::format::{format_now, pct, relative_duration};
@@ -164,14 +165,14 @@ pub(super) async fn build_action(
     let conversation_ctx = conversation_summary
         .as_ref()
         .map(conversation_ctx_from_summary);
+    let channel = fetch_current_channel_ctx(store, current_msg, conversation).await;
     let recent_messages = social_read::fetch_recent_messages(store, conversation, messages).await;
-    let group_id = current_msg
-        .and_then(|message| message.group.as_ref())
-        .or_else(|| {
-            conversation_summary
-                .as_ref()
-                .and_then(|summary| summary.group.as_ref())
-        });
+    let message_group = current_msg.and_then(|message| message.legacy_group_id());
+    let group_id = message_group.as_ref().or_else(|| {
+        conversation_summary
+            .as_ref()
+            .and_then(|summary| summary.group.as_ref())
+    });
     let group = fetch_group_ctx(store, group_id).await;
 
     let (relationship, comm_style) = if let Some(pid) = person_id {
@@ -290,7 +291,7 @@ pub(super) async fn build_action(
         social_read::fetch_open_loops(store, person_id, profile_id, conversation, now_unix).await;
 
     let directives = if let Some(pid) = person_id {
-        load_directives(store, &actor, pid, conversation)
+        load_directives(store, &actor, pid, conversation, current_msg)
             .await
             .unwrap_or_default()
     } else {
@@ -324,6 +325,7 @@ pub(super) async fn build_action(
         current_profile,
         current_person,
         conversation: conversation_ctx,
+        channel,
         group,
         recent_messages,
         relationship,

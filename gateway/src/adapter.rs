@@ -2,15 +2,15 @@ use crate::content::GatewayCapabilities;
 use async_trait::async_trait;
 use media::MediaStore;
 use protocol::{
-    ConversationId, GatewayConnectionState, GatewaySetupInstructions, InboundMessage,
-    MediaAttachment,
+    ChannelKey, GatewayConnectionState, GatewayId, GatewaySetupInstructions, InboundEnvelope,
+    MediaAttachment, ObservedIdentityKey,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GatewayRuntimeEvent {
     ConnectionStateChanged {
         gateway_id: String,
@@ -21,22 +21,22 @@ pub enum GatewayRuntimeEvent {
         setup: Option<GatewaySetupInstructions>,
     },
     TypingUpdate {
-        gateway_id: String,
-        conversation: ConversationId,
-        sender_external_id: String,
+        gateway_id: GatewayId,
+        channel: ChannelKey,
+        sender: ObservedIdentityKey,
         typing: bool,
     },
     MessageEdited {
-        gateway_id: String,
-        conversation: ConversationId,
-        message_id: String,
+        gateway_id: GatewayId,
+        channel: ChannelKey,
+        platform_message_id: String,
         content: String,
         edited_at: i64,
     },
     MessageDeleted {
-        gateway_id: String,
-        conversation: ConversationId,
-        message_id: String,
+        gateway_id: GatewayId,
+        channel: ChannelKey,
+        platform_message_id: String,
         deleted_at: i64,
     },
 }
@@ -47,7 +47,7 @@ pub trait GatewayAdapter: Send + Sync {
         id: String,
         db_path: String,
         vars: BTreeMap<String, Value>,
-        inbound_tx: mpsc::Sender<InboundMessage>,
+        inbound_tx: mpsc::Sender<InboundEnvelope>,
         gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
         media_store: Arc<MediaStore>,
     ) -> anyhow::Result<Self>

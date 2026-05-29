@@ -1,6 +1,8 @@
 use crate::config::{Config, InferenceEntry, ProviderConfig};
 use actor::core::{ActorBuilder, ActorMetrics, MessageDeletedEvent, MessageEditedEvent, WakeEvent};
-use actor::store::{EventInboxRecord, SqliteConfig, SqliteStore, Store};
+use actor::store::{
+    ChannelRecord, EventInboxRecord, GatewayRecord, SpaceRecord, SqliteConfig, SqliteStore, Store,
+};
 use gateway::discord::DiscordAdapter;
 use gateway::local::LocalAdapter;
 use gateway::storage::{GatewayEntry, GatewayStore, gateway_data_dir};
@@ -13,7 +15,7 @@ use inference::{
 use media::MediaStore;
 use protocol::{
     ClientRequest, ConversationId, GatewayKindView, GatewayVarKind, GatewayVarSpec, GatewayView,
-    InboundMessage, MediaAssetView, MediaKind, ServerEvent,
+    InboundEnvelope, InboundMessage, MediaAssetView, MediaKind, ServerEvent,
 };
 use relay::{ApiClientRequest, ApiServer, ApiServerHandle};
 use std::path::PathBuf;
@@ -47,7 +49,7 @@ const INBOUND_ACTOR_HANDOFF_TIMEOUT: Duration = Duration::from_millis(250);
 
 struct GwApiContext {
     api_handle: ApiServerHandle,
-    inbound_tx: mpsc::Sender<InboundMessage>,
+    inbound_tx: mpsc::Sender<InboundEnvelope>,
     gw_router: Arc<GatewayRouter>,
     gateway_store: GatewayStore,
     gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,

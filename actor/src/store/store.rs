@@ -1,10 +1,11 @@
 use super::{
     ActionMessageRecord, ActionPromptSnapshotRecord, ActionRunRecord, ActionTranscriptRecord,
-    ActionTurnRecord, ActorSnapshot, ConversationSummary, DisplayNameObservation,
-    EventInboxDebugRecord, EventInboxRecord, IdentityDisclosureAudit, IntentRecord,
+    ActionTurnRecord, ActorSnapshot, ChannelFilter, ChannelMembership, ChannelRecord,
+    ConversationSummary, DisplayNameObservation, EventInboxDebugRecord, EventInboxRecord,
+    GatewayRecord, IdentityConflictRecord, IdentityDisclosureAudit, IntentRecord,
     IntentUpdateRecord, Memory, MemoryMutationRecord, MemorySubjectDebugRecord, MemorySubjectType,
     MemoryUpdate, OutboundDeliveryRecord, RecallQuery, ReviewJobRecord, ReviewOutputAudit,
-    StateJournalRecord, StoredMessage, Thought, ToolCallRecord,
+    SpaceRecord, StateJournalRecord, StoredMessage, Thought, ToolCallRecord,
 };
 use crate::identity::{
     ClaimStatus, Group, Identity, IdentityClaim, Person, PersonProfileLink, PersonProfileStatus,
@@ -12,7 +13,10 @@ use crate::identity::{
 };
 use crate::state::{BehaviorDirective, RelationshipStanding};
 use async_trait::async_trait;
-use protocol::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
+use protocol::{
+    ChannelId, ConversationId, GatewayId, GroupId, IdentityId, MemoryId, PersonId, ProfileId,
+    SpaceId,
+};
 
 #[async_trait]
 pub trait Store: Send + Sync {
@@ -139,12 +143,37 @@ pub trait Store: Send + Sync {
         error: Option<&str>,
     ) -> anyhow::Result<bool>;
 
+    // Gateways, spaces, and channels
+    async fn upsert_gateway(&self, gateway: &GatewayRecord) -> anyhow::Result<GatewayId>;
+    async fn upsert_space(&self, space: &SpaceRecord) -> anyhow::Result<SpaceId>;
+    async fn upsert_channel(&self, channel: &ChannelRecord) -> anyhow::Result<ChannelId>;
+    async fn get_channel(&self, id: &ChannelId) -> anyhow::Result<Option<ChannelRecord>>;
+    async fn resolve_channel(
+        &self,
+        gateway: &GatewayId,
+        external_id: &str,
+    ) -> anyhow::Result<Option<ChannelRecord>>;
+    async fn list_channels(&self, filter: ChannelFilter) -> anyhow::Result<Vec<ChannelRecord>>;
+    async fn upsert_channel_membership(&self, membership: &ChannelMembership)
+    -> anyhow::Result<()>;
+    async fn list_channel_memberships(
+        &self,
+        channel: &ChannelId,
+    ) -> anyhow::Result<Vec<ChannelMembership>>;
+    async fn get_or_create_active_conversation(
+        &self,
+        channel: &ChannelId,
+        now: i64,
+    ) -> anyhow::Result<ConversationId>;
+    async fn channel_for_conversation(
+        &self,
+        conversation: &ConversationId,
+    ) -> anyhow::Result<Option<ChannelRecord>>;
+
     // Conversations
     async fn append_message(
         &self,
         conv: &ConversationId,
-        gateway_id: Option<&str>,
-        group: Option<&GroupId>,
         msg: &StoredMessage,
     ) -> anyhow::Result<()>;
     async fn update_message_content_by_source(
@@ -221,6 +250,12 @@ pub trait Store: Send + Sync {
         identity: &IdentityId,
         limit: usize,
     ) -> anyhow::Result<Vec<DisplayNameObservation>>;
+    async fn record_identity_conflict(
+        &self,
+        conflict: &IdentityConflictRecord,
+    ) -> anyhow::Result<()>;
+    async fn identity_conflicts(&self, limit: usize)
+    -> anyhow::Result<Vec<IdentityConflictRecord>>;
 
     async fn add_profile(&self, profile: &Profile) -> anyhow::Result<ProfileId>;
     async fn get_profile(&self, id: &ProfileId) -> anyhow::Result<Option<Profile>>;
@@ -335,7 +370,7 @@ pub trait Store: Send + Sync {
         &self,
         person: &PersonId,
         relationship_standing: &RelationshipStanding,
-        group: Option<&GroupId>,
+        channel: Option<&ChannelId>,
     ) -> anyhow::Result<Vec<BehaviorDirective>>;
     async fn update_directive(
         &self,

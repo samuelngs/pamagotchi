@@ -8,13 +8,16 @@ async fn send_waits_for_current_sender_typing_to_stop() {
     gateway.register(Arc::new(RecordingAdapter { sent: sent.clone() }));
     let mut msg = inbound();
     msg.gateway_id = "relay".into();
-    msg.sender_external_id = "local".into();
-    msg.reply_external_id = "local".into();
+    msg.sender = Some(protocol::ObservedSender::primary(
+        "relay", "local", None, "test",
+    ));
+    msg.channel = protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct);
     msg.conversation = ConversationId("relay:local".into());
+    ensure_test_channel(store.as_ref(), "relay", "local", ChannelKind::Direct).await;
     let key = (
         msg.conversation.clone(),
         msg.gateway_id.clone(),
-        msg.sender_external_id.clone(),
+        msg.sender_external_id().unwrap().to_string(),
     );
     let (ctx, _inject_tx) = test_context(store, gateway, msg);
     ctx.typing

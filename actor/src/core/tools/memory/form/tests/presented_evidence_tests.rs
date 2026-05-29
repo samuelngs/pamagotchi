@@ -13,11 +13,11 @@ async fn form_memory_uses_presented_injected_message_evidence() {
     let source_message = InboundMessage {
         message_id: "msg-source".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "source".into(),
-        sender_display_name: None,
-        reply_external_id: "source".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay", "source", None, "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "source", protocol::ChannelKind::Direct),
         conversation: source_conversation.clone(),
-        group: None,
         identity: Some(source_identity.clone()),
         profile: Some(source_profile.clone()),
         person: None,
@@ -29,11 +29,11 @@ async fn form_memory_uses_presented_injected_message_evidence() {
     let injected_message = InboundMessage {
         message_id: "msg-injected".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "injected".into(),
-        sender_display_name: None,
-        reply_external_id: "injected".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay", "injected", None, "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "injected", protocol::ChannelKind::Direct),
         conversation: injected_conversation.clone(),
-        group: None,
         identity: Some(injected_identity.clone()),
         profile: Some(injected_profile.clone()),
         person: None,

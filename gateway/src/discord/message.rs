@@ -1,7 +1,10 @@
 use super::DiscordConfig;
 use crate::{GatewayConnectionState, GatewayRuntime};
 use async_trait::async_trait;
-use protocol::{ConversationId, GroupId, InboundMessage, MediaAttachment, MediaKind};
+use protocol::{
+    ChannelKey as ProtocolChannelKey, ChannelKind, GatewayId, InboundEnvelope, MediaAttachment,
+    MediaKind, ObservedIdentityKey, ObservedSender, ParentChannelKey, SpaceKey, SpaceKind,
+};
 use serenity::all::{
     ChannelId, Context, EventHandler, Message, MessageId, MessageUpdateEvent, Ready,
     TypingStartEvent,
@@ -13,7 +16,7 @@ use tracing::{info, warn};
 pub struct DiscordHandler {
     pub gateway_id: String,
     pub config: DiscordConfig,
-    pub inbound_tx: mpsc::Sender<InboundMessage>,
+    pub inbound_tx: mpsc::Sender<InboundEnvelope>,
     pub runtime: Arc<GatewayRuntime>,
 }
 
@@ -45,19 +48,26 @@ impl EventHandler for DiscordHandler {
             return;
         }
 
-        let inbound = InboundMessage {
-            message_id: msg.id.to_string(),
-            gateway_id: self.gateway_id.clone(),
-            sender_external_id: msg.author.id.get().to_string(),
-            sender_display_name: Some(msg.author.name.clone()),
-            reply_external_id: channel_id.to_string(),
-            conversation: ConversationId(format!("{}:{channel_id}", self.gateway_id)),
-            group: msg
-                .guild_id
-                .map(|guild_id| GroupId(format!("discord:{}", guild_id.get()))),
-            identity: None,
-            profile: None,
-            person: None,
+        let gateway = GatewayId(self.gateway_id.clone());
+        let channel = discord_channel_key(
+            &gateway,
+            channel_id,
+            msg.guild_id.map(|guild_id| guild_id.get()),
+            None,
+        );
+        let inbound = InboundEnvelope {
+            gateway_id: gateway.clone(),
+            platform_message_id: msg.id.to_string(),
+            channel,
+            sender: Some(ObservedSender {
+                primary: discord_identity_key(&gateway, msg.author.id.get(), "primary_sender"),
+                aliases: vec![],
+                display_name: Some(msg.author.name.clone()),
+                metadata: serde_json::json!({
+                    "author_name": msg.author.name,
+                    "bot": msg.author.bot,
+                }),
+            }),
             content,
             attachments,
             timestamp: msg.timestamp.unix_timestamp(),
@@ -70,6 +80,11 @@ impl EventHandler for DiscordHandler {
                 "message_id": msg.id.get().to_string(),
             }),
         };
+
+        if let Err(e) = inbound.validate() {
+            warn!(%e, gateway = %self.gateway_id, message_id = %msg.id, "invalid discord inbound envelope");
+            return;
+        }
 
         if let Err(e) = self.inbound_tx.send(inbound).await {
             warn!(%e, gateway = %self.gateway_id, "failed to forward discord message");
@@ -86,11 +101,17 @@ impl EventHandler for DiscordHandler {
             return;
         }
 
+        let gateway = GatewayId(self.gateway_id.clone());
         self.runtime
             .emit_typing(
                 &self.gateway_id,
-                ConversationId(format!("{}:{channel_id}", self.gateway_id)),
-                event.user_id.get().to_string(),
+                discord_channel_key(
+                    &gateway,
+                    channel_id,
+                    event.guild_id.map(|guild_id| guild_id.get()),
+                    None,
+                ),
+                discord_identity_key(&gateway, event.user_id.get(), "typing"),
                 true,
             )
             .await;
@@ -126,10 +147,16 @@ impl EventHandler for DiscordHandler {
             .map(|timestamp| timestamp.unix_timestamp())
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
+        let gateway = GatewayId(self.gateway_id.clone());
         self.runtime
             .emit_message_edited(
                 &self.gateway_id,
-                ConversationId(format!("{}:{channel_id}", self.gateway_id)),
+                discord_channel_key(
+                    &gateway,
+                    channel_id,
+                    event.guild_id.map(|guild_id| guild_id.get()),
+                    None,
+                ),
                 event.id.to_string(),
                 content,
                 edited_at,
@@ -149,10 +176,16 @@ impl EventHandler for DiscordHandler {
             return;
         }
 
+        let gateway = GatewayId(self.gateway_id.clone());
         self.runtime
             .emit_message_deleted(
                 &self.gateway_id,
-                ConversationId(format!("{}:{channel_id_raw}", self.gateway_id)),
+                discord_channel_key(
+                    &gateway,
+                    channel_id_raw,
+                    _guild_id.map(|guild_id| guild_id.get()),
+                    None,
+                ),
                 deleted_message_id.to_string(),
                 chrono::Utc::now().timestamp(),
             )
@@ -170,19 +203,76 @@ impl EventHandler for DiscordHandler {
         if !self.config.allows_channel(channel_id_raw) {
             return;
         }
-        let conversation = ConversationId(format!("{}:{channel_id_raw}", self.gateway_id));
+        let gateway = GatewayId(self.gateway_id.clone());
+        let channel = discord_channel_key(
+            &gateway,
+            channel_id_raw,
+            _guild_id.map(|guild_id| guild_id.get()),
+            None,
+        );
         let deleted_at = chrono::Utc::now().timestamp();
 
         for message_id in multiple_deleted_messages_ids {
             self.runtime
                 .emit_message_deleted(
                     &self.gateway_id,
-                    conversation.clone(),
+                    channel.clone(),
                     message_id.to_string(),
                     deleted_at,
                 )
                 .await;
         }
+    }
+}
+
+fn discord_channel_key(
+    gateway_id: &GatewayId,
+    channel_id: u64,
+    guild_id: Option<u64>,
+    parent_channel_id: Option<u64>,
+) -> ProtocolChannelKey {
+    let space = guild_id.map(|guild_id| SpaceKey {
+        gateway_id: gateway_id.clone(),
+        external_id: guild_id.to_string(),
+        kind: SpaceKind::DiscordGuild,
+        display_name: None,
+        metadata: serde_json::json!({
+            "platform": "discord",
+        }),
+    });
+    ProtocolChannelKey {
+        gateway_id: gateway_id.clone(),
+        external_id: channel_id.to_string(),
+        kind: if guild_id.is_some() {
+            ChannelKind::PublicChannel
+        } else {
+            ChannelKind::Direct
+        },
+        display_name: None,
+        space: space.clone(),
+        parent: parent_channel_id.map(|parent| ParentChannelKey {
+            gateway_id: gateway_id.clone(),
+            external_id: parent.to_string(),
+            kind: ChannelKind::PublicChannel,
+            display_name: None,
+            space,
+            metadata: serde_json::json!({
+                "platform": "discord",
+            }),
+        }),
+        metadata: serde_json::json!({
+            "platform": "discord",
+        }),
+    }
+}
+
+fn discord_identity_key(gateway_id: &GatewayId, user_id: u64, source: &str) -> ObservedIdentityKey {
+    ObservedIdentityKey {
+        gateway_id: gateway_id.clone(),
+        external_id: user_id.to_string(),
+        kind: Some("discord_user".into()),
+        confidence: 1.0,
+        source: source.to_string(),
     }
 }
 

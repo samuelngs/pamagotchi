@@ -7,7 +7,7 @@ use crate::store::{
     IntentRecord, Memory, MemoryKind, MemorySource, MemoryStability, MemoryType, MessageRole,
     PrivacyCategory, StoredMessage, TruthStatus, VisibilityScope,
 };
-use protocol::{ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
+use protocol::{ChannelId, ConversationId, GroupId, IdentityId, MemoryId, PersonId, ProfileId};
 
 pub(super) fn read_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
     let id: String = row.get("id")?;
@@ -181,6 +181,7 @@ pub(super) fn read_directive(row: &rusqlite::Row) -> rusqlite::Result<BehaviorDi
             RelationshipStanding::parse(&scope_value.unwrap_or_default())
                 .unwrap_or(RelationshipStanding::Default),
         ),
+        "channel" => DirectiveScope::Channel(ChannelId(scope_value.unwrap_or_default())),
         "group" => DirectiveScope::Group(GroupId(scope_value.unwrap_or_default())),
         _ => DirectiveScope::Global,
     };

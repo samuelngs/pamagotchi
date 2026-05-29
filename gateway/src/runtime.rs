@@ -1,5 +1,5 @@
 use crate::{GatewayConnectionState, GatewayRuntimeEvent, GatewaySetupInstructions};
-use protocol::ConversationId;
+use protocol::{ChannelKey, GatewayId, ObservedIdentityKey};
 use std::sync::RwLock;
 use tokio::sync::mpsc;
 
@@ -44,16 +44,16 @@ impl GatewayRuntime {
     pub async fn emit_typing(
         &self,
         gateway_id: &str,
-        conversation: ConversationId,
-        sender_external_id: String,
+        channel: ChannelKey,
+        sender: ObservedIdentityKey,
         typing: bool,
     ) {
         let _ = self
             .event_tx
             .send(GatewayRuntimeEvent::TypingUpdate {
-                gateway_id: gateway_id.to_string(),
-                conversation,
-                sender_external_id,
+                gateway_id: GatewayId(gateway_id.to_string()),
+                channel,
+                sender,
                 typing,
             })
             .await;
@@ -62,17 +62,17 @@ impl GatewayRuntime {
     pub async fn emit_message_edited(
         &self,
         gateway_id: &str,
-        conversation: ConversationId,
-        message_id: String,
+        channel: ChannelKey,
+        platform_message_id: String,
         content: String,
         edited_at: i64,
     ) {
         let _ = self
             .event_tx
             .send(GatewayRuntimeEvent::MessageEdited {
-                gateway_id: gateway_id.to_string(),
-                conversation,
-                message_id,
+                gateway_id: GatewayId(gateway_id.to_string()),
+                channel,
+                platform_message_id,
                 content,
                 edited_at,
             })
@@ -82,16 +82,16 @@ impl GatewayRuntime {
     pub async fn emit_message_deleted(
         &self,
         gateway_id: &str,
-        conversation: ConversationId,
-        message_id: String,
+        channel: ChannelKey,
+        platform_message_id: String,
         deleted_at: i64,
     ) {
         let _ = self
             .event_tx
             .send(GatewayRuntimeEvent::MessageDeleted {
-                gateway_id: gateway_id.to_string(),
-                conversation,
-                message_id,
+                gateway_id: GatewayId(gateway_id.to_string()),
+                channel,
+                platform_message_id,
                 deleted_at,
             })
             .await;

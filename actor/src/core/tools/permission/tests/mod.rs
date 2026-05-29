@@ -6,15 +6,18 @@ use crate::identity::{
 };
 use crate::state::{ActorState, GrowthConfig};
 use crate::store::{
-    IntentRecord, Memory, MemoryKind, MemorySource, MemorySubject, MessageRole, PrivacyCategory,
-    SqliteStore, StoredMessage, VisibilityScope,
+    ChannelRecord, GatewayRecord, IntentRecord, Memory, MemoryKind, MemorySource, MemorySubject,
+    MessageRole, PrivacyCategory, SqliteStore, Store, StoredMessage, VisibilityScope,
 };
 use gateway::GatewayRouter;
 use inference::{
     Capability, InferenceEndpoint, InferenceProtocol, InferenceRouterBuilder,
     OpenAiCompatibleBridge, Reasoning, SamplingConfig,
 };
-use protocol::{ConversationId, IdentityId, InboundMessage, PersonId, ProfileId};
+use protocol::{
+    ChannelId, ChannelKind, ConversationId, GatewayId, IdentityId, InboundMessage, PersonId,
+    ProfileId, channel_id,
+};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 
@@ -57,11 +60,11 @@ fn test_context(relationship_standing: RelationshipStanding, kind: ActionKind) -
     let message = InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "local".into(),
-        sender_display_name: None,
-        reply_external_id: "local".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay", "local", None, "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
         conversation: ConversationId("relay:local".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,
@@ -127,6 +130,42 @@ async fn add_verified_target(ctx: &SessionContext, profile: &ProfileId, person: 
         .attach_profile_to_person(profile, person, PersonProfileStatus::Verified, 1.0, None)
         .await
         .unwrap();
+}
+
+async fn ensure_test_channel(
+    store: &Arc<dyn Store>,
+    gateway_id: &str,
+    external_id: &str,
+    kind: ChannelKind,
+) -> ChannelId {
+    let gateway = GatewayId(gateway_id.into());
+    store
+        .upsert_gateway(&GatewayRecord {
+            id: gateway.clone(),
+            kind: gateway_id.into(),
+            display_name: None,
+            metadata: serde_json::json!({}),
+            created_at: 1000,
+            updated_at: 1000,
+        })
+        .await
+        .unwrap();
+    let channel = ChannelRecord {
+        id: channel_id(&gateway, external_id),
+        gateway: gateway.clone(),
+        external_id: external_id.into(),
+        kind,
+        space: None,
+        parent: None,
+        display_name: None,
+        metadata: serde_json::json!({}),
+        created_at: 1000,
+        updated_at: 1000,
+        last_seen_at: 1000,
+    };
+    let id = channel.id.clone();
+    store.upsert_channel(&channel).await.unwrap();
+    id
 }
 
 mod identity_memory_tests;

@@ -8,8 +8,6 @@ async fn read_messages_includes_source_message_ids_for_review_evidence() {
     store
         .append_message(
             &msg.conversation,
-            Some("missing-gateway"),
-            None,
             &StoredMessage {
                 timestamp: 1000,
                 role: MessageRole::User,
@@ -65,8 +63,8 @@ async fn read_messages_includes_source_message_ids_for_review_evidence() {
         "missing-gateway"
     );
     assert_eq!(
-        state.presented_read_messages[0].sender_external_id,
-        "sender-1"
+        state.presented_read_messages[0].sender_external_id(),
+        Some("sender-1")
     );
 
     let _ = read_with_state(&json!({"limit": 5}), &ctx, &mut state).await;
@@ -80,8 +78,6 @@ async fn read_messages_assigns_local_ids_to_unsourced_messages_for_summary_cover
     store
         .append_message(
             &msg.conversation,
-            Some("missing-gateway"),
-            None,
             &StoredMessage {
                 timestamp: 1001,
                 role: MessageRole::Assistant,
@@ -139,15 +135,13 @@ async fn ruminate_reads_recent_messages_without_current_conversation() {
     let gateway = Arc::new(GatewayRouter::new());
     let newer = ConversationId("relay:newer".into());
     let older = ConversationId("relay:older".into());
-    for (conversation, timestamp, content, source_message_id) in [
-        (&older, 1000, "older context", "older-msg"),
-        (&newer, 2000, "newer context", "newer-msg"),
+    for (conversation, timestamp, content, source_message_id, reply_external_id) in [
+        (&older, 1000, "older context", "older-msg", "older"),
+        (&newer, 2000, "newer context", "newer-msg", "newer"),
     ] {
         store
             .append_message(
                 conversation,
-                Some("relay"),
-                None,
                 &StoredMessage {
                     timestamp,
                     role: MessageRole::User,
@@ -158,7 +152,7 @@ async fn ruminate_reads_recent_messages_without_current_conversation() {
                     source_gateway_id: Some("relay".into()),
                     source_message_id: Some(source_message_id.into()),
                     sender_external_id: Some("local".into()),
-                    reply_external_id: Some("local".into()),
+                    reply_external_id: Some(reply_external_id.into()),
                     metadata: Value::Null,
                 },
             )

@@ -1,15 +1,13 @@
 use super::*;
-use protocol::{GroupId, IdentityId, PersonId, ProfileId};
+use protocol::{ChannelKey, ChannelKind, GroupId, IdentityId, ObservedSender, PersonId, ProfileId};
 
 fn message_with_metadata(metadata: serde_json::Value) -> InboundMessage {
     InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "local".into(),
-        sender_display_name: None,
-        reply_external_id: "local".into(),
+        sender: Some(ObservedSender::primary("relay", "local", None, "test")),
+        channel: ChannelKey::new("relay", "local", ChannelKind::Direct),
         conversation: protocol::ConversationId("relay:local".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,
@@ -120,7 +118,13 @@ fn intent_context_message_uses_target_context() {
     assert_eq!(message.identity, Some(IdentityId("identity-target".into())));
     assert_eq!(message.profile, Some(ProfileId("profile-target".into())));
     assert_eq!(message.person, Some(PersonId("person-intent".into())));
-    assert_eq!(message.group, Some(GroupId("group-target".into())));
+    assert_eq!(
+        message
+            .legacy_group_id()
+            .as_ref()
+            .map(|group| group.0.as_str()),
+        Some("group-target")
+    );
     assert_eq!(message.metadata["event"], "intent_fired");
     assert_eq!(message.metadata["scheduled_at"], 1200);
     assert_eq!(message.metadata["chosen_human_approved"], true);

@@ -89,11 +89,11 @@ fn failed_delivery_outcome_does_not_requeue_source_message() {
     let source = protocol::InboundMessage {
         message_id: "msg-1".into(),
         gateway_id: "relay".into(),
-        sender_external_id: "local".into(),
-        sender_display_name: None,
-        reply_external_id: "local".into(),
+        sender: Some(protocol::ObservedSender::primary(
+            "relay", "local", None, "test",
+        )),
+        channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
         conversation: ConversationId("relay:local".into()),
-        group: None,
         identity: None,
         profile: None,
         person: None,

@@ -28,11 +28,11 @@ async fn form_memory_defaults_evidence_to_current_action_messages() {
         InboundMessage {
             message_id: "msg-1".into(),
             gateway_id: "relay".into(),
-            sender_external_id: "local".into(),
-            sender_display_name: None,
-            reply_external_id: "local".into(),
+            sender: Some(protocol::ObservedSender::primary(
+                "relay", "local", None, "test",
+            )),
+            channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
             conversation: conversation.clone(),
-            group: None,
             identity: Some(identity.clone()),
             profile: Some(profile.clone()),
             person: None,
@@ -44,11 +44,11 @@ async fn form_memory_defaults_evidence_to_current_action_messages() {
         InboundMessage {
             message_id: "msg-2".into(),
             gateway_id: "relay".into(),
-            sender_external_id: "local".into(),
-            sender_display_name: None,
-            reply_external_id: "local".into(),
+            sender: Some(protocol::ObservedSender::primary(
+                "relay", "local", None, "test",
+            )),
+            channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
             conversation: conversation.clone(),
-            group: None,
             identity: Some(other_identity.clone()),
             profile: Some(other_profile.clone()),
             person: None,

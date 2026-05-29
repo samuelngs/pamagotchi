@@ -71,11 +71,11 @@ fn test_context(
         messages: vec![InboundMessage {
             message_id: "msg-1".into(),
             gateway_id: "relay".into(),
-            sender_external_id: "local".into(),
-            sender_display_name: None,
-            reply_external_id: "local".into(),
+            sender: Some(protocol::ObservedSender::primary(
+                "relay", "local", None, "test",
+            )),
+            channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
             conversation: ConversationId("relay:local".into()),
-            group: None,
             identity: None,
             profile: None,
             person: current_person,

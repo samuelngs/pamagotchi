@@ -1,4 +1,4 @@
-use protocol::{IdentityId, MemoryId, PersonId, ProfileId};
+use protocol::{ChannelId, IdentityId, MemoryId, PersonId, ProfileId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -23,6 +23,28 @@ pub struct DisplayNameObservation {
     pub display_name: String,
     pub source_message_id: Option<String>,
     pub observed_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct IdentityConflictRecord {
+    pub id: String,
+    pub channel: Option<ChannelId>,
+    pub platform_message_id: Option<String>,
+    pub primary_identity: Option<IdentityId>,
+    pub reason: String,
+    pub status: String,
+    pub created_at: i64,
+    pub resolved_at: Option<i64>,
+    pub resolution: Value,
+    pub identities: Vec<IdentityConflictIdentity>,
+    pub profiles: Vec<ProfileId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityConflictIdentity {
+    pub identity: IdentityId,
+    pub role: String,
+    pub source: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -317,10 +317,6 @@ pub(super) fn merge_person_context(
         params![from.0, into.0],
     )?;
     conn.execute(
-        "UPDATE conversations SET person_id = ?2 WHERE person_id = ?1",
-        params![from.0, into.0],
-    )?;
-    conn.execute(
         "UPDATE intents SET person_id = ?2, updated_at = unixepoch() WHERE person_id = ?1",
         params![from.0, into.0],
     )?;

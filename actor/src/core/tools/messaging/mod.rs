@@ -4,11 +4,13 @@ use super::context::{
 use crate::core::ActionKind;
 use crate::state::{RelationshipChange, RelationshipInteraction, RelationshipStanding};
 use crate::store::{
-    ActionMessageRecord, IntentRecord, MessageRole, OutboundDeliveryRecord, StoredMessage,
+    ActionMessageRecord, ChannelRecord, IntentRecord, MessageRole, OutboundDeliveryRecord,
+    StoredMessage,
 };
 use inference::Tool;
 use protocol::{
-    ConversationId, GroupId, InboundMessage, MediaAssetId, MediaAttachment, MediaKind, PersonId,
+    ChannelId, ConversationId, GatewayId, GroupId, InboundEnvelope, InboundMessage, MediaAssetId,
+    MediaAttachment, MediaKind, PersonId, generated_message_id,
 };
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};

@@ -333,7 +333,10 @@ fn print_input(input: &CaseInput) {
             .unwrap_or("unseeded");
         println!(
             "  user({}/{}, profile={}): {}",
-            message.gateway_id, message.sender_external_id, profile, message.content
+            message.gateway_id,
+            message.sender_external_id().unwrap_or(""),
+            profile,
+            message.content
         );
     }
 }

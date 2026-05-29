@@ -11,8 +11,6 @@ async fn proactive_intent_drops_when_last_visible_message_is_assistant() {
     store
         .append_message(
             &conversation,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: now - 10,
                 role: MessageRole::User,
@@ -32,8 +30,6 @@ async fn proactive_intent_drops_when_last_visible_message_is_assistant() {
     store
         .append_message(
             &conversation,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: now - 5,
                 role: MessageRole::Assistant,
@@ -82,8 +78,6 @@ async fn proactive_intent_drops_when_target_replied_after_scheduling() {
     store
         .append_message(
             &conversation,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: now - 300,
                 role: MessageRole::User,
@@ -126,8 +120,6 @@ async fn proactive_intent_drops_when_target_replied_after_scheduling() {
     store
         .append_message(
             &conversation,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: now - 60,
                 role: MessageRole::User,
@@ -190,8 +182,6 @@ async fn proactive_intent_uses_latest_schedule_time_for_reply_obsolescence() {
     store
         .append_message(
             &conversation,
-            Some("relay"),
-            None,
             &StoredMessage {
                 timestamp: now - 120,
                 role: MessageRole::User,

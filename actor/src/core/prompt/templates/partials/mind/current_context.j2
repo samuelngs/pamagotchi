@@ -31,6 +31,16 @@ Proactive outreach consent: {{ person.proactive_consent }}
 {% endif %}
 
 {% endif %}
+{% if channel %}
+## Current channel
+- id: {{ channel.ref_id }}
+- gateway: {{ channel.gateway_id }}
+- external id: {{ channel.external_id }}
+- kind: {{ channel.kind }}
+{% if channel.display_name %}- display name: {{ channel.display_name }}
+{% endif %}This is the addressable delivery context, not the sender identity or person.
+
+{% endif %}
 {% if group %}
 ## Current group
 - id: {{ group.ref_id }}

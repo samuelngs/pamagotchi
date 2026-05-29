@@ -7,9 +7,37 @@ async fn outreach_prompt_uses_conversation_target_context_without_current_messag
     let identity_id = IdentityId("identity-outreach".into());
     let profile_id = ProfileId("profile-outreach".into());
     let person_id = PersonId("person-outreach".into());
-    let conversation = ConversationId("relay:outreach".into());
-    let group = GroupId("relay:team-chat".into());
     let now = chrono::Utc::now().timestamp();
+    let gateway = protocol::GatewayId("relay".into());
+    store
+        .upsert_gateway(&GatewayRecord {
+            id: gateway.clone(),
+            kind: "relay".into(),
+            display_name: None,
+            metadata: serde_json::json!({}),
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .unwrap();
+    let channel = ChannelRecord {
+        id: protocol::channel_id(&gateway, "local"),
+        gateway: gateway.clone(),
+        external_id: "local".into(),
+        kind: protocol::ChannelKind::RelayRoom,
+        space: None,
+        parent: None,
+        display_name: Some("Relay outreach".into()),
+        metadata: serde_json::json!({}),
+        created_at: now,
+        updated_at: now,
+        last_seen_at: now,
+    };
+    store.upsert_channel(&channel).await.unwrap();
+    let conversation = store
+        .get_or_create_active_conversation(&channel.id, now)
+        .await
+        .unwrap();
 
     store
         .add_identity(&Identity {
@@ -62,21 +90,8 @@ async fn outreach_prompt_uses_conversation_target_context_without_current_messag
         .await
         .unwrap();
     store
-        .add_group(&Group {
-            id: group.clone(),
-            name: "Relay Team Chat".into(),
-            gateway_id: "relay".into(),
-            external_id: "team-chat".into(),
-            context: GroupContext::Work,
-            members: vec![person_id.clone()],
-        })
-        .await
-        .unwrap();
-    store
         .append_message(
             &conversation,
-            Some("relay"),
-            Some(&group),
             &StoredMessage {
                 timestamp: now,
                 role: MessageRole::User,
@@ -187,12 +202,12 @@ async fn outreach_prompt_uses_conversation_target_context_without_current_messag
     assert!(prompt.contains("Profile summary for outreach."));
     assert!(prompt.contains("Profile prefers short scheduling messages."));
     assert!(prompt.contains("Person summary for outreach."));
-    assert!(prompt.contains("## Current group"));
-    assert!(prompt.contains("- id: relay:team-chat"));
-    assert!(prompt.contains("- name: Relay Team Chat"));
-    assert!(prompt.contains("- context: work"));
-    assert!(prompt.contains("person-outreach (Sam)"));
-    assert!(prompt.contains("Use group membership as local participant context only."));
+    assert!(prompt.contains("## Current channel"));
+    assert!(prompt.contains("- id: channel:"));
+    assert!(prompt.contains("- gateway: relay"));
+    assert!(prompt.contains("- external id: local"));
+    assert!(prompt.contains("- kind: relay_room"));
+    assert!(prompt.contains("- display name: Relay outreach"));
     assert!(prompt.contains("## Current action"));
     assert!(prompt.contains("- kind: outreach"));
     assert!(prompt.contains("- task: Ask Sam whether the deployment checklist is ready"));

@@ -21,7 +21,9 @@ async fn response_action_retries_when_model_emits_text_without_tool_call() {
     let sent = Arc::new(Mutex::new(Vec::new()));
     let gateway = Arc::new(GatewayRouter::new());
     gateway.register(Arc::new(RecordingAdapter { sent: sent.clone() }));
-    let mut ctx = test_context(store, text_inbound("msg-1", "hello"));
+    let source = text_inbound("msg-1", "hello");
+    ensure_test_channel(store.as_ref(), &source).await;
+    let mut ctx = test_context(store, source);
     ctx.router = router.clone();
     ctx.endpoints = router.resolve_chain(&RouteContext::Action(Reasoning::Basic));
     ctx.gateway = gateway;
@@ -64,7 +66,9 @@ async fn response_action_reemits_injected_messages_not_presented_before_send() {
     let gateway = Arc::new(GatewayRouter::new());
     gateway.register(Arc::new(RecordingAdapter { sent: sent.clone() }));
 
-    let mut ctx = test_context(store, text_inbound("msg-1", "hello"));
+    let source = text_inbound("msg-1", "hello");
+    ensure_test_channel(store.as_ref(), &source).await;
+    let mut ctx = test_context(store, source);
     ctx.router = router.clone();
     ctx.endpoints = router.resolve_chain(&RouteContext::Action(Reasoning::Basic));
     ctx.gateway = gateway;
@@ -112,7 +116,9 @@ async fn response_action_stops_retrying_after_delivery_attempt_fails() {
             .build()
             .unwrap(),
     );
-    let mut ctx = test_context(store.clone(), text_inbound("msg-1", "hello"));
+    let source = text_inbound("msg-1", "hello");
+    ensure_test_channel(store.as_ref(), &source).await;
+    let mut ctx = test_context(store.clone(), source);
     ctx.router = router.clone();
     ctx.endpoints = router.resolve_chain(&RouteContext::Action(Reasoning::Basic));
     ctx.max_action_attempts = 3;

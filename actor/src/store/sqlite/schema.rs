@@ -41,25 +41,162 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
         CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
         CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
 
+        CREATE TABLE IF NOT EXISTS gateways (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            display_name TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS spaces (
+            id TEXT PRIMARY KEY,
+            gateway_id TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('discord_guild', 'workspace', 'whatsapp_community', 'unknown')),
+            display_name TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            FOREIGN KEY(gateway_id) REFERENCES gateways(id),
+            UNIQUE(gateway_id, external_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_spaces_gateway ON spaces(gateway_id, kind);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_spaces_id_gateway ON spaces(id, gateway_id);
+
+        CREATE TABLE IF NOT EXISTS channels (
+            id TEXT PRIMARY KEY,
+            gateway_id TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('direct', 'group_chat', 'public_channel', 'private_channel', 'thread', 'relay_room', 'unknown')),
+            space_id TEXT,
+            parent_channel_id TEXT,
+            display_name TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            FOREIGN KEY(gateway_id) REFERENCES gateways(id),
+            FOREIGN KEY(space_id, gateway_id) REFERENCES spaces(id, gateway_id),
+            FOREIGN KEY(parent_channel_id, gateway_id) REFERENCES channels(id, gateway_id),
+            UNIQUE(gateway_id, external_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_channels_gateway_kind ON channels(gateway_id, kind);
+        CREATE INDEX IF NOT EXISTS idx_channels_space ON channels(space_id);
+        CREATE INDEX IF NOT EXISTS idx_channels_parent ON channels(parent_channel_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_id_gateway ON channels(id, gateway_id);
+
+        CREATE TABLE IF NOT EXISTS channel_memberships (
+            channel_id TEXT NOT NULL,
+            profile_id TEXT NOT NULL,
+            role TEXT,
+            status TEXT NOT NULL CHECK(status IN ('observed', 'active', 'left', 'blocked')),
+            first_seen_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(channel_id) REFERENCES channels(id),
+            FOREIGN KEY(profile_id) REFERENCES profiles(id),
+            PRIMARY KEY(channel_id, profile_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_channel_memberships_profile
+            ON channel_memberships(profile_id, status);
+
+        CREATE TABLE IF NOT EXISTS identity_conflicts (
+            id TEXT PRIMARY KEY,
+            channel_id TEXT,
+            platform_message_id TEXT,
+            primary_identity_id TEXT,
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('open', 'resolved', 'ignored')),
+            created_at INTEGER NOT NULL,
+            resolved_at INTEGER,
+            resolution_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(channel_id) REFERENCES channels(id),
+            FOREIGN KEY(primary_identity_id) REFERENCES identities(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_identity_conflicts_status
+            ON identity_conflicts(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_identity_conflicts_channel
+            ON identity_conflicts(channel_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS identity_conflict_identities (
+            conflict_id TEXT NOT NULL,
+            identity_id TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('primary', 'alias')),
+            source TEXT,
+            PRIMARY KEY(conflict_id, identity_id),
+            FOREIGN KEY(conflict_id) REFERENCES identity_conflicts(id),
+            FOREIGN KEY(identity_id) REFERENCES identities(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_identity_conflict_identities_identity
+            ON identity_conflict_identities(identity_id);
+
+        CREATE TABLE IF NOT EXISTS identity_conflict_profiles (
+            conflict_id TEXT NOT NULL,
+            profile_id TEXT NOT NULL,
+            PRIMARY KEY(conflict_id, profile_id),
+            FOREIGN KEY(conflict_id) REFERENCES identity_conflicts(id),
+            FOREIGN KEY(profile_id) REFERENCES profiles(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_identity_conflict_profiles_profile
+            ON identity_conflict_profiles(profile_id);
+
+        CREATE TABLE IF NOT EXISTS conversation_summary_coverage (
+            conversation_id TEXT NOT NULL,
+            summary_version INTEGER NOT NULL,
+            message_id TEXT NOT NULL,
+            PRIMARY KEY(conversation_id, summary_version, message_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_conversation_summary_coverage_message
+            ON conversation_summary_coverage(message_id);
+
+        CREATE TABLE IF NOT EXISTS outbound_deliveries (
+            id TEXT PRIMARY KEY,
+            action_id TEXT,
+            message_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            gateway_id TEXT NOT NULL,
+            external_id_snapshot TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('pending', 'delivered', 'failed')),
+            error TEXT,
+            attempted_at INTEGER NOT NULL,
+            FOREIGN KEY(channel_id, gateway_id) REFERENCES channels(id, gateway_id),
+            FOREIGN KEY(gateway_id) REFERENCES gateways(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_outbound_deliveries_action
+            ON outbound_deliveries(action_id, attempted_at);
+        CREATE INDEX IF NOT EXISTS idx_outbound_deliveries_channel
+            ON outbound_deliveries(channel_id, attempted_at);
+
         CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
-            gateway_id TEXT,
-            identity_id TEXT,
-            profile_id TEXT,
-            person_id TEXT,
-            group_id TEXT,
+            channel_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived')),
             summary TEXT,
             summary_covered_message_ids TEXT NOT NULL DEFAULT '[]',
             summary_updated_at INTEGER,
             summary_version INTEGER NOT NULL DEFAULT 0,
             started_at INTEGER NOT NULL,
             last_message_at INTEGER NOT NULL,
-            message_count INTEGER NOT NULL DEFAULT 0
+            message_count INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(channel_id) REFERENCES channels(id)
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_one_active_channel
+            ON conversations(channel_id)
+            WHERE status = 'active' AND channel_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_id_channel
+            ON conversations(id, channel_id);
+        CREATE INDEX IF NOT EXISTS idx_conversations_channel_last
+            ON conversations(channel_id, last_message_at);
 
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id TEXT NOT NULL,
             conversation_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound', 'internal')),
             timestamp INTEGER NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -70,9 +207,11 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
             source_message_id TEXT,
             sender_external_id TEXT,
             reply_external_id TEXT,
-            metadata TEXT NOT NULL DEFAULT '{}'
+            metadata TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(conversation_id, channel_id) REFERENCES conversations(id, channel_id)
         );
         CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, timestamp);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_source_unique
             ON messages(conversation_id, source_gateway_id, source_message_id, role)
             WHERE source_gateway_id IS NOT NULL AND source_message_id IS NOT NULL;
@@ -190,6 +329,8 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             action_id TEXT NOT NULL,
             conversation_id TEXT,
+            message_id TEXT,
+            channel_id TEXT,
             gateway_id TEXT NOT NULL,
             external_id TEXT NOT NULL,
             status TEXT NOT NULL,

@@ -3,7 +3,7 @@ use super::*;
 pub(super) async fn attach_configured_gateways(
     gw_router: &Arc<GatewayRouter>,
     data_dir: &std::path::Path,
-    inbound_tx: mpsc::Sender<InboundMessage>,
+    inbound_tx: mpsc::Sender<InboundEnvelope>,
     gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
     media_store: Arc<MediaStore>,
 ) -> anyhow::Result<()> {
@@ -34,7 +34,7 @@ pub(super) async fn attach_configured_gateway(
     gw_router: &Arc<GatewayRouter>,
     data_dir: &std::path::Path,
     entry: &GatewayEntry,
-    inbound_tx: mpsc::Sender<InboundMessage>,
+    inbound_tx: mpsc::Sender<InboundEnvelope>,
     gateway_event_tx: mpsc::Sender<GatewayRuntimeEvent>,
     media_store: Arc<MediaStore>,
 ) -> anyhow::Result<()> {

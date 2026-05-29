@@ -126,11 +126,14 @@ async fn get_person_identity_lookup_is_durably_audited() {
         messages: vec![InboundMessage {
             message_id: "msg-1".into(),
             gateway_id: "relay".into(),
-            sender_external_id: "local".into(),
-            sender_display_name: Some("Requester".into()),
-            reply_external_id: "local".into(),
+            sender: Some(protocol::ObservedSender::primary(
+                "relay",
+                "local",
+                Some("Requester".into()),
+                "test",
+            )),
+            channel: protocol::ChannelKey::new("relay", "local", protocol::ChannelKind::Direct),
             conversation: ConversationId("relay:local".into()),
-            group: None,
             identity: None,
             profile: None,
             person: Some(requester.clone()),

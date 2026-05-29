@@ -9,6 +9,7 @@ use crate::store::{
 use rusqlite::params;
 
 mod action_log_tests;
+mod channel_tests;
 mod conversation_tests;
 mod debug_tests;
 mod directive_tests;

@@ -2,7 +2,7 @@ use super::attachments::{outbound_metadata, parse_attachments};
 use super::delivery::notify_chosen_human_of_delivery_failure;
 use super::target::{
     current_composing_target, current_conversation, default_delivery_target,
-    outbound_relationship_person,
+    explicit_delivery_target, outbound_relationship_person,
 };
 use super::typing::wait_if_current_sender_is_typing;
 use super::*;
@@ -20,18 +20,21 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
 
     let is_outbound = gateway_id.is_some() && external_id.is_some();
 
-    let (target_gateway, target_id) = if is_outbound {
-        (
-            gateway_id.unwrap().to_string(),
-            external_id.unwrap().to_string(),
-        )
-    } else if let Some((gateway, target)) = default_delivery_target(ctx).await {
-        (gateway, target)
+    let target = if is_outbound {
+        match explicit_delivery_target(ctx, gateway_id.unwrap(), external_id.unwrap()).await {
+            Some(target) => target,
+            None => return "No delivery target — message not sent.".into(),
+        }
+    } else if let Some(target) = default_delivery_target(ctx).await {
+        target
     } else {
         return "No delivery target — message not sent.".into();
     };
+    let target_gateway = target.gateway_id.clone();
+    let target_id = target.external_id.clone();
 
     let conversation = current_conversation(ctx);
+    let outbound_message_id = generated_message_id();
     if !is_outbound {
         wait_if_current_sender_is_typing(ctx).await;
     }
@@ -89,12 +92,19 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
                 source_message_id: None,
                 sender_external_id: None,
                 reply_external_id: Some(target_id.clone()),
-                metadata: outbound_metadata(&attachments),
+                metadata: {
+                    let mut metadata = match outbound_metadata(&attachments) {
+                        serde_json::Value::Object(obj) => serde_json::Value::Object(obj),
+                        _ => serde_json::json!({}),
+                    };
+                    if let serde_json::Value::Object(obj) = &mut metadata {
+                        obj.insert("message_id".into(), json!(outbound_message_id.0.clone()));
+                        obj.insert("channel_id".into(), json!(target.channel.0.clone()));
+                    }
+                    metadata
+                },
             };
-            ctx.store
-                .append_message(&conv, Some(&target_gateway), None, &stored)
-                .await
-                .ok();
+            ctx.store.append_message(&conv, &stored).await.ok();
         }
     }
 
@@ -108,6 +118,8 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
         .append_outbound_delivery(&OutboundDeliveryRecord {
             action_id: ctx.action_id.0.clone(),
             conversation: conversation.clone(),
+            message: Some(outbound_message_id),
+            channel: Some(target.channel.clone()),
             gateway_id: target_gateway.clone(),
             external_id: target_id.clone(),
             status: delivery_status.into(),

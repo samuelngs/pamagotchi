@@ -419,14 +419,7 @@ async fn seed_conversations(
                 reply_external_id: None,
                 metadata: json!({"source": "behaviour_spec_seed", "placeholder": true}),
             };
-            store
-                .append_message(
-                    &conversation_id,
-                    gateway_id.as_deref(),
-                    group_id.as_ref(),
-                    &stored,
-                )
-                .await?;
+            store.append_message(&conversation_id, &stored).await?;
             counts.conversation_messages += 1;
         } else {
             for (idx, message_value) in messages.iter().enumerate() {
@@ -443,14 +436,7 @@ async fn seed_conversations(
                     reply_external_id: None,
                     metadata: json!({"source": "behaviour_spec_seed"}),
                 };
-                store
-                    .append_message(
-                        &conversation_id,
-                        gateway_id.as_deref(),
-                        group_id.as_ref(),
-                        &stored,
-                    )
-                    .await?;
+                store.append_message(&conversation_id, &stored).await?;
                 counts.conversation_messages += 1;
             }
         }

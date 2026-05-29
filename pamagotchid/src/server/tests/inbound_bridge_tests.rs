@@ -10,14 +10,23 @@ async fn inbound_bridge_persists_claims_and_forwards_message() {
 
     inbound_tx.send(msg.clone()).await.unwrap();
 
-    match tokio::time::timeout(std::time::Duration::from_secs(1), event_rx.recv())
+    let forwarded = match tokio::time::timeout(std::time::Duration::from_secs(1), event_rx.recv())
         .await
         .unwrap()
         .unwrap()
     {
-        WakeEvent::Message(forwarded) => assert_eq!(forwarded.message_id, msg.message_id),
+        WakeEvent::Message(forwarded) => forwarded,
         _ => panic!("expected forwarded inbound message"),
-    }
+    };
+    assert_eq!(forwarded.message_id, msg.platform_message_id);
+    assert_ne!(forwarded.conversation.0, "relay:local");
+
+    let channel = store
+        .resolve_channel(&protocol::GatewayId("relay".into()), "local")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(channel.kind, protocol::ChannelKind::RelayRoom);
 
     assert!(
         !store
@@ -89,9 +98,9 @@ async fn inbound_bridge_leaves_overflow_pending_and_keeps_accepting_messages() {
     let inbound_tx = inbound_bridge(event_tx, store_dyn);
     let first = test_inbound("bridge-overflow-1");
     let mut second = test_inbound("bridge-overflow-2");
-    second.conversation = ConversationId("relay:overflow-2".into());
+    second.channel.external_id = "overflow-2".into();
     let mut third = test_inbound("bridge-overflow-3");
-    third.conversation = ConversationId("relay:overflow-3".into());
+    third.channel.external_id = "overflow-3".into();
 
     inbound_tx.send(first.clone()).await.unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
@@ -129,7 +138,9 @@ async fn inbound_bridge_leaves_overflow_pending_and_keeps_accepting_messages() {
     assert!(pending_ids.contains(&inbound_event_id(&third).as_str()));
 
     match event_rx.try_recv().unwrap() {
-        WakeEvent::Message(forwarded) => assert_eq!(forwarded.message_id, first.message_id),
+        WakeEvent::Message(forwarded) => {
+            assert_eq!(forwarded.message_id, first.platform_message_id)
+        }
         _ => panic!("expected first inbound message to be forwarded"),
     }
 }

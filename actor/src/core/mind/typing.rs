@@ -9,7 +9,7 @@ pub(super) fn typing_deferred_message_matches(
     evaluate::defer_reason(msg) == Some("typing")
         && &msg.conversation == conversation
         && msg.gateway_id.as_str() == gateway_id
-        && msg.sender_external_id.as_str() == sender_external_id
+        && msg.sender_external_id() == Some(sender_external_id)
 }
 
 pub(super) fn pending_typing_message_error(prior: Option<&str>, error: String) -> String {
