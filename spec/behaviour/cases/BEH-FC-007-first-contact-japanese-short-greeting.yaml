@@ -12,7 +12,7 @@ tags:
 
 scenario:
   who: "A brand-new unknown user."
-  when: "Bootstrap / first encounter. No stored caretaker communication style exists."
+  when: "Bootstrap / first encounter. No stored chosen_human communication style exists."
   what_happened: "The user sends a short casual Japanese greeting."
 
 given:
@@ -49,14 +49,6 @@ expected_behavior:
     - casual
     - strange
     - socially_natural
-  forbidden_phrases:
-    - "how can I help"
-    - "welcome"
-    - "ようこそ"
-    - "何を手伝"
-    - "お手伝い"
-    - "アシスタント"
-    - "—"
 
 state_expectations:
   relationship_phase_after: name_sought

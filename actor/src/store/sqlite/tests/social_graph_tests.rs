@@ -17,7 +17,7 @@ async fn social_graph() {
             "message_ids": ["msg-1"],
             "quote": "my mom"
         })),
-        source_kind: RelationSource::ChosenPersonConfirmed,
+        source_kind: RelationSource::ChosenHumanConfirmed,
         asserted_by: Some(PersonId("p1".into())),
         created_at: 1000,
         updated_at: 1000,
@@ -30,7 +30,7 @@ async fn social_graph() {
     assert_eq!(rels[0].direction.as_str(), "a_to_b");
     assert_eq!(rels[0].confidence, 0.95);
     assert_eq!(rels[0].status, RelationStatus::Confirmed);
-    assert_eq!(rels[0].source_kind, RelationSource::ChosenPersonConfirmed);
+    assert_eq!(rels[0].source_kind, RelationSource::ChosenHumanConfirmed);
     assert_eq!(
         rels[0].asserted_by.as_ref().map(|person| person.0.as_str()),
         Some("p1")
@@ -149,7 +149,7 @@ async fn merge_person_context_moves_person_scoped_store_records() {
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();

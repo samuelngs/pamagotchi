@@ -40,7 +40,7 @@ fn recall_memory_schema_exposes_sensitive_opt_in() {
 }
 
 #[test]
-fn memory_tools_expose_chosen_person_inspection_and_deletion() {
+fn memory_tools_expose_chosen_human_inspection_and_deletion() {
     let tools = tools();
     let names = tools.into_iter().map(|tool| tool.name).collect::<Vec<_>>();
 

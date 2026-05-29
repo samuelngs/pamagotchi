@@ -11,37 +11,33 @@ pub(super) async fn resolve_relay_person(
     store: &Arc<dyn Store>,
     msg: &mut InboundMessage,
 ) {
-    if let Some(chosen_person_id) = find_chosen_person(state) {
+    if let Some(chosen_human_id) = find_chosen_human(state) {
         match resolve_or_create_identity_context(
             state,
             store,
             msg,
-            Authority::ChosenPerson,
-            Some(chosen_person_id.clone()),
+            Authority::ChosenHuman,
+            Some(chosen_human_id.clone()),
         )
         .await
         {
             Some(ctx) => {
                 msg.identity = Some(ctx.identity.id);
                 msg.profile = Some(ctx.profile.id);
-                msg.person = ctx
-                    .person
-                    .map(|person| person.id)
-                    .or(Some(chosen_person_id));
+                msg.person = ctx.person.map(|person| person.id).or(Some(chosen_human_id));
             }
             None => {
-                let _ = store.touch_person(&chosen_person_id).await;
-                msg.person = Some(chosen_person_id);
+                let _ = store.touch_person(&chosen_human_id).await;
+                msg.person = Some(chosen_human_id);
             }
         }
     } else {
         let resolved =
-            resolve_or_create_identity_context(state, store, msg, Authority::ChosenPerson, None)
-                .await;
+            resolve_or_create_identity_context(state, store, msg, Authority::Default, None).await;
         if let Some(ctx) = resolved {
             let person_id = ctx.person.map(|person| person.id);
             if let Some(ref id) = person_id {
-                info!(person = %id.0, "created chosen_person from first relay contact");
+                info!(person = %id.0, "created adoption candidate from first relay contact");
             }
             msg.identity = Some(ctx.identity.id);
             msg.profile = Some(ctx.profile.id);
@@ -55,8 +51,8 @@ pub(super) async fn resolve_gateway_person(
     store: &Arc<dyn Store>,
     msg: &mut InboundMessage,
 ) {
-    let authority = if find_chosen_person(state).is_none() {
-        Authority::ChosenPerson
+    let authority = if find_chosen_human(state).is_none() {
+        Authority::Default
     } else {
         Authority::Default
     };
@@ -170,7 +166,7 @@ async fn resolve_or_create_identity_context(
             return None;
         }
     };
-    if created_person || authority == Authority::ChosenPerson {
+    if created_person || authority == Authority::ChosenHuman {
         state
             .set_relationship_config(&person_id, Some(authority))
             .await;
@@ -261,11 +257,11 @@ async fn record_display_name_observation(
     }
 }
 
-fn find_chosen_person(state: &StateHandle) -> Option<PersonId> {
+fn find_chosen_human(state: &StateHandle) -> Option<PersonId> {
     let actor = state.read_state();
     actor
         .bonds
         .iter()
-        .find(|(_, rel)| rel.authority == Authority::ChosenPerson)
+        .find(|(_, rel)| rel.authority == Authority::ChosenHuman)
         .map(|(id, _)| id.clone())
 }

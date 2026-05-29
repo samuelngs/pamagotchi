@@ -8,8 +8,8 @@ use protocol::{ConversationId, PersonId, ProfileId};
 use serde_json::Value;
 use std::collections::HashSet;
 
-const CHOSEN_PERSON_SOCIAL_PATH_MIN_CONFIDENCE: f32 = 0.5;
-const CHOSEN_PERSON_SOCIAL_PATH_MAX_NODES: usize = 128;
+const CHOSEN_HUMAN_SOCIAL_PATH_MIN_CONFIDENCE: f32 = 0.5;
+const CHOSEN_HUMAN_SOCIAL_PATH_MAX_NODES: usize = 128;
 
 pub(super) async fn person_has_active_profile_context(
     ctx: &SessionContext,
@@ -51,7 +51,7 @@ pub(crate) async fn social_relation_targets_current_or_verified(
     args: &Value,
     ctx: &SessionContext,
 ) -> Result<bool, String> {
-    if matches!(ctx.authority, Authority::ChosenPerson) {
+    if matches!(ctx.authority, Authority::ChosenHuman) {
         return Ok(true);
     }
 
@@ -69,7 +69,7 @@ pub(crate) async fn social_relation_targets_current_or_verified(
     else {
         return Ok(false);
     };
-    if social_relation_mentions_chosen_person(ctx, &person_a, &person_b) {
+    if social_relation_mentions_chosen_human(ctx, &person_a, &person_b) {
         return Ok(false);
     }
 
@@ -99,9 +99,9 @@ pub(crate) async fn relationship_trust_ceiling(ctx: &SessionContext, person: &Pe
         let chosen_people = actor
             .bonds
             .iter()
-            .filter_map(|(chosen_person, relationship)| {
-                matches!(relationship.authority, Authority::ChosenPerson)
-                    .then(|| chosen_person.clone())
+            .filter_map(|(chosen_human, relationship)| {
+                matches!(relationship.authority, Authority::ChosenHuman)
+                    .then(|| chosen_human.clone())
             })
             .collect::<Vec<_>>();
         (authority, current_trust, chosen_people)
@@ -112,23 +112,23 @@ pub(crate) async fn relationship_trust_ceiling(ctx: &SessionContext, person: &Pe
     }
     if chosen_people
         .iter()
-        .any(|chosen_person| chosen_person == person)
+        .any(|chosen_human| chosen_human == person)
     {
-        return Authority::ChosenPerson.trust_ceiling();
+        return Authority::ChosenHuman.trust_ceiling();
     }
-    if has_chosen_person_social_path(ctx, person, &chosen_people).await {
+    if has_chosen_human_social_path(ctx, person, &chosen_people).await {
         Authority::Default.trust_ceiling()
     } else {
         current_trust.clamp(0.0, Authority::Default.trust_ceiling())
     }
 }
 
-async fn has_chosen_person_social_path(
+async fn has_chosen_human_social_path(
     ctx: &SessionContext,
     person: &PersonId,
     chosen_people: &[PersonId],
 ) -> bool {
-    let chosen_person_set = chosen_people.iter().cloned().collect::<HashSet<_>>();
+    let chosen_human_set = chosen_people.iter().cloned().collect::<HashSet<_>>();
     let mut seen = HashSet::from([person.clone()]);
     let mut frontier = vec![person.clone()];
 
@@ -145,11 +145,11 @@ async fn has_chosen_person_social_path(
                 let Some(other) = other_relation_person(&relation, &current) else {
                     continue;
                 };
-                if chosen_person_set.contains(&other) {
+                if chosen_human_set.contains(&other) {
                     return true;
                 }
                 if seen.insert(other.clone()) {
-                    if seen.len() >= CHOSEN_PERSON_SOCIAL_PATH_MAX_NODES {
+                    if seen.len() >= CHOSEN_HUMAN_SOCIAL_PATH_MAX_NODES {
                         return false;
                     }
                     next.push(other);
@@ -170,7 +170,7 @@ fn relation_allows_trust_path(relation: &SocialRelation) -> bool {
         relation.status,
         RelationStatus::Confirmed | RelationStatus::Stated
     ) && !matches!(relation.source_kind, RelationSource::Inferred)
-        && relation.confidence >= CHOSEN_PERSON_SOCIAL_PATH_MIN_CONFIDENCE
+        && relation.confidence >= CHOSEN_HUMAN_SOCIAL_PATH_MIN_CONFIDENCE
 }
 
 fn other_relation_person(relation: &SocialRelation, person: &PersonId) -> Option<PersonId> {
@@ -183,14 +183,14 @@ fn other_relation_person(relation: &SocialRelation, person: &PersonId) -> Option
     }
 }
 
-fn social_relation_mentions_chosen_person(
+fn social_relation_mentions_chosen_human(
     ctx: &SessionContext,
     person_a: &PersonId,
     person_b: &PersonId,
 ) -> bool {
     let actor = ctx.state.read_state();
     actor.bonds.iter().any(|(person, relationship)| {
-        matches!(relationship.authority, Authority::ChosenPerson)
+        matches!(relationship.authority, Authority::ChosenHuman)
             && (person == person_a || person == person_b)
     })
 }

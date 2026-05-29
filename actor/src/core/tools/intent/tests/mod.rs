@@ -42,13 +42,13 @@ fn test_context(
     store: Arc<SqliteStore>,
     authority: Authority,
     current_person: Option<PersonId>,
-    chosen_person: Option<PersonId>,
+    chosen_human: Option<PersonId>,
 ) -> SessionContext {
     let (_inject_tx, inject_rx) = mpsc::channel(1);
     let (delta_tx, _delta_rx) = mpsc::channel(1);
     let mut actor = ActorState::new(Default::default());
-    if let Some(chosen_person) = chosen_person {
-        actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
+    if let Some(chosen_human) = chosen_human {
+        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
     }
     let shared = Arc::new(SharedState {
         actor: RwLock::new(actor),
@@ -123,15 +123,15 @@ fn intent_tools_expose_source_memory_attribution() {
 }
 
 #[tokio::test]
-async fn create_sensitive_current_intent_routes_to_chosen_person_approval() {
+async fn create_sensitive_current_intent_routes_to_chosen_human_approval() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
-    let chosen_person = PersonId("person-chosen_person".into());
+    let chosen_human = PersonId("person-chosen_human".into());
     let current = PersonId("person-current".into());
     let ctx = test_context(
         store.clone(),
         Authority::Default,
         Some(current.clone()),
-        Some(chosen_person.clone()),
+        Some(chosen_human.clone()),
     );
     let args = serde_json::json!({
         "task": "Ask Sam about the private medical update",
@@ -148,34 +148,34 @@ async fn create_sensitive_current_intent_routes_to_chosen_person_approval() {
 
     assert_eq!(value["status"], "pending_approval");
     let pending_id = value["intent_id"].as_str().unwrap();
-    let chosen_person_intent_id = value["chosen_person_intent_id"].as_str().unwrap();
+    let chosen_human_intent_id = value["chosen_human_intent_id"].as_str().unwrap();
     let pending = store.get_intent(pending_id).await.unwrap().unwrap();
     assert_eq!(pending.status, "pending_approval");
-    assert!(!pending.chosen_person_approved);
+    assert!(!pending.chosen_human_approved);
     assert_eq!(pending.person.as_ref(), Some(&current));
 
-    let chosen_person_intent = store
-        .get_intent(chosen_person_intent_id)
+    let chosen_human_intent = store
+        .get_intent(chosen_human_intent_id)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(chosen_person_intent.status, "active");
-    assert!(chosen_person_intent.chosen_person_approved);
-    assert_eq!(chosen_person_intent.person.as_ref(), Some(&chosen_person));
-    assert!(chosen_person_intent.task.contains(pending_id));
-    assert!(chosen_person_intent.task.contains("private medical update"));
+    assert_eq!(chosen_human_intent.status, "active");
+    assert!(chosen_human_intent.chosen_human_approved);
+    assert_eq!(chosen_human_intent.person.as_ref(), Some(&chosen_human));
+    assert!(chosen_human_intent.task.contains(pending_id));
+    assert!(chosen_human_intent.task.contains("private medical update"));
 }
 
 #[tokio::test]
-async fn non_chosen_person_cannot_activate_pending_chosen_person_approval_intent() {
+async fn non_chosen_human_cannot_activate_pending_chosen_human_approval_intent() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
-    let chosen_person = PersonId("person-chosen_person".into());
+    let chosen_human = PersonId("person-chosen_human".into());
     let current = PersonId("person-current".into());
     let ctx = test_context(
         store.clone(),
         Authority::Default,
         Some(current.clone()),
-        Some(chosen_person.clone()),
+        Some(chosen_human.clone()),
     );
     let create_args = serde_json::json!({
         "task": "Ask Sam about the private medical update",
@@ -204,17 +204,17 @@ async fn non_chosen_person_cannot_activate_pending_chosen_person_approval_intent
         denied["message"]
             .as_str()
             .unwrap()
-            .contains("requires chosen-person authority")
+            .contains("requires chosen-human authority")
     );
     let pending = store.get_intent(pending_id).await.unwrap().unwrap();
     assert_eq!(pending.status, "pending_approval");
-    assert!(!pending.chosen_person_approved);
+    assert!(!pending.chosen_human_approved);
 
-    let chosen_person_ctx = test_context(
+    let chosen_human_ctx = test_context(
         store.clone(),
-        Authority::ChosenPerson,
+        Authority::ChosenHuman,
         Some(current.clone()),
-        Some(chosen_person),
+        Some(chosen_human),
     );
     let approved: serde_json::Value = serde_json::from_str(
         &update(
@@ -222,7 +222,7 @@ async fn non_chosen_person_cannot_activate_pending_chosen_person_approval_intent
                 "intent_id": pending_id,
                 "status": "active"
             }),
-            &chosen_person_ctx,
+            &chosen_human_ctx,
         )
         .await,
     )
@@ -230,5 +230,5 @@ async fn non_chosen_person_cannot_activate_pending_chosen_person_approval_intent
     assert_eq!(approved["status"], "updated");
     let intent = store.get_intent(pending_id).await.unwrap().unwrap();
     assert_eq!(intent.status, "active");
-    assert!(intent.chosen_person_approved);
+    assert!(intent.chosen_human_approved);
 }

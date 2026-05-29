@@ -29,7 +29,7 @@ async fn ruminate_cannot_update_or_cancel_cross_target_intent() {
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -80,7 +80,7 @@ async fn default_user_cannot_update_or_cancel_cross_target_intent() {
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();

@@ -72,7 +72,7 @@ async fn apply_review_sets_social_trust_ceiling_for_positive_relationship_delta(
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let profile = ProfileId("profile-sam".into());
     let person = PersonId("person-sam".into());
-    let chosen_person = PersonId("person-chosen_person".into());
+    let chosen_human = PersonId("person-chosen_human".into());
     let conversation = ConversationId("relay:local".into());
     let now = util::now();
     store
@@ -106,7 +106,7 @@ async fn apply_review_sets_social_trust_ceiling_for_positive_relationship_delta(
     let (ctx, mut session_state) = test_context(store.clone(), &profile, &person, &conversation);
     {
         let mut actor = ctx.state.shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_person, Some(crate::state::Authority::ChosenPerson));
+        actor.set_relationship_config(&chosen_human, Some(crate::state::Authority::ChosenHuman));
     }
 
     let result = apply(
@@ -116,7 +116,7 @@ async fn apply_review_sets_social_trust_ceiling_for_positive_relationship_delta(
                 "trust_delta": 0.5,
                 "familiarity_delta": 0.2,
                 "valence_delta": 0.1,
-                "reason": "friendly but not chosen-person-connected"
+                "reason": "friendly but not chosen-human-connected"
             }]
         }),
         &ctx,

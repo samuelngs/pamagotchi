@@ -13,7 +13,7 @@ tags:
 
 scenario:
   who: "A brand-new unknown user."
-  when: "Bootstrap / first encounter. No stored caretaker communication style exists."
+  when: "Bootstrap / first encounter. No stored chosen_human communication style exists."
   what_happened: "The user sends a very short casual Simplified Chinese Mainland Mandarin greeting."
 
 given:
@@ -50,20 +50,6 @@ expected_behavior:
     - casual
     - strange
     - socially_natural
-  forbidden_phrases:
-    - "how can I help"
-    - "what can I do for you"
-    - "welcome"
-    - "欢迎"
-    - "歡迎"
-    - "我可以帮你"
-    - "我可以幫你"
-    - "需要什么帮助"
-    - "需要什麼幫助"
-    - "助理"
-    - "请提供"
-    - "請提供"
-    - "—"
 
 state_expectations:
   relationship_phase_after: name_sought

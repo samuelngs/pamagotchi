@@ -1,5 +1,5 @@
 use super::attachments::{outbound_metadata, parse_attachments};
-use super::delivery::notify_chosen_person_of_delivery_failure;
+use super::delivery::notify_chosen_human_of_delivery_failure;
 use super::target::{
     current_composing_target, current_conversation, default_delivery_target,
     outbound_relationship_person,
@@ -9,7 +9,7 @@ use super::*;
 use crate::core::tools::util;
 
 pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) -> String {
-    let content = args["content"].as_str().unwrap_or("").to_string();
+    let content = normalize_outbound_text(args["content"].as_str().unwrap_or(""));
     let gateway_id = args["gateway_id"].as_str();
     let external_id = args["external_id"].as_str();
 
@@ -152,7 +152,7 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
         }
         Err(e) => {
             let error = e.to_string();
-            let supervisor_notified = notify_chosen_person_of_delivery_failure(
+            let supervisor_notified = notify_chosen_human_of_delivery_failure(
                 ctx,
                 &target_gateway,
                 &target_id,
@@ -170,7 +170,7 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
             );
             if supervisor_notified {
                 format!(
-                    "Delivery failed; message was not added to visible conversation history and is not marked delivered. Chosen-person review is queued: {error}"
+                    "Delivery failed; message was not added to visible conversation history and is not marked delivered. Chosen-human review is queued: {error}"
                 )
             } else {
                 format!(
@@ -179,4 +179,25 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
             }
         }
     }
+}
+
+fn normalize_outbound_text(content: &str) -> String {
+    let mut normalized = String::with_capacity(content.len());
+    let mut chars = content.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if matches!(ch, '\u{2014}' | '\u{2013}') {
+            while normalized.ends_with(' ') {
+                normalized.pop();
+            }
+            if !normalized.is_empty() {
+                normalized.push(',');
+            }
+            if chars.peek().is_some_and(|next| !next.is_whitespace()) {
+                normalized.push(' ');
+            }
+        } else {
+            normalized.push(ch);
+        }
+    }
+    normalized
 }

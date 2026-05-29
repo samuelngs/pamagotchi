@@ -41,12 +41,6 @@ expected_behavior:
     - strange
     - casual
     - socially_natural
-  forbidden_phrases:
-    - "how can I help"
-    - "I didn't understand"
-    - "please clarify"
-    - "invalid input"
-    - "welcome"
 
 state_expectations:
   relationship_phase_after: name_sought

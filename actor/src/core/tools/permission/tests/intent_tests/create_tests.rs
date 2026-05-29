@@ -42,8 +42,8 @@ async fn default_user_cannot_create_cross_target_intent() {
     assert!(denied.contains("another person"));
 }
 #[tokio::test]
-async fn chosen_person_can_create_cross_target_intent_and_review_requires_verified_target() {
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+async fn chosen_human_can_create_cross_target_intent_and_review_requires_verified_target() {
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "create_intent",
         &serde_json::json!({
@@ -52,7 +52,7 @@ async fn chosen_person_can_create_cross_target_intent_and_review_requires_verifi
             "fire_at": 1200,
             "person": "person-alice"
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();

@@ -38,7 +38,7 @@ async fn due_intents_coalesce_by_target_per_scan() {
                 created_at: 900,
                 updated_at: 900,
                 last_fired_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
             })
             .await
             .unwrap();
@@ -149,7 +149,7 @@ async fn active_intents_for_context_returns_matching_open_loops() {
                 created_at: 800,
                 updated_at: 800,
                 last_fired_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
             })
             .await
             .unwrap();

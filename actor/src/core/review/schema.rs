@@ -150,10 +150,10 @@ pub(crate) fn tools() -> Vec<Tool> {
                             },
                             "confidence": { "type": "number" },
                             "status": { "type": "string", "enum": ["hypothesis", "stated", "confirmed", "denied", "outdated"] },
-                            "source_kind": { "type": "string", "enum": ["inferred", "stated", "chosen_person_confirmed", "import", "system"] },
+                            "source_kind": { "type": "string", "enum": ["inferred", "stated", "chosen_human_confirmed", "import", "system"] },
                             "asserted_by_person_id": {
                                 "type": "string",
-                                "description": "Person id of the speaker/source who asserted this relation. Defaults to the cited current-conversation speaker for stated or chosen-person-confirmed relations."
+                                "description": "Person id of the speaker/source who asserted this relation. Defaults to the cited current-conversation speaker for stated or chosen-human-confirmed relations."
                             },
                             "evidence": { "type": "object" },
                             "evidence_message_ids": { "type": "array", "items": { "type": "string" } },
@@ -171,11 +171,11 @@ pub(crate) fn tools() -> Vec<Tool> {
                             "scope": {
                                 "type": "string",
                                 "enum": ["group", "person", "authority", "global"],
-                                "description": "Where the norm applies. Non-chosen-person review may write only the current person or current group."
+                                "description": "Where the norm applies. Non-chosen-human review may write only the current person or current group."
                             },
                             "group_id": { "type": "string" },
                             "person_id": { "type": "string" },
-                            "authority": { "type": "string", "enum": ["chosen_person", "trusted", "default", "restricted", "blocked"] },
+                            "authority": { "type": "string", "enum": ["chosen_human", "trusted", "default", "restricted", "blocked"] },
                             "directive": {
                                 "type": "string",
                                 "description": "Durable behavior norm or boundary to apply in future prompts."
@@ -210,7 +210,7 @@ pub(crate) fn tools() -> Vec<Tool> {
                             "conversation_id": { "type": "string" },
                             "priority": { "type": "integer" },
                             "sensitive": { "type": "boolean" },
-                            "requires_chosen_person_approval": { "type": "boolean" },
+                            "requires_chosen_human_approval": { "type": "boolean" },
                             "source_memory_id": { "type": "string" },
                             "dedupe_key": { "type": "string" }
                         },

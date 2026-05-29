@@ -192,7 +192,7 @@ fn relation_asserted_by_person(
     }
     if !matches!(
         source_kind,
-        RelationSource::Stated | RelationSource::ChosenPersonConfirmed
+        RelationSource::Stated | RelationSource::ChosenHumanConfirmed
     ) {
         return None;
     }

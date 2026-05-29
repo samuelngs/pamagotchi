@@ -53,6 +53,34 @@ fn message_events_remain_evaluable() {
 }
 
 #[test]
+fn adoption_gate_forces_ritual_responses_until_complete() {
+    assert!(adoption_gate_forces_response(
+        Some(&AdoptionRitualState::FirstContactAdoptionClaim),
+        "no thanks"
+    ));
+    assert!(adoption_gate_forces_response(
+        Some(&AdoptionRitualState::AdoptionResisted),
+        "wait what"
+    ));
+    assert!(!adoption_gate_forces_response(
+        Some(&AdoptionRitualState::AdoptionComplete),
+        "yo"
+    ));
+}
+
+#[test]
+fn adoption_gate_does_not_force_safety_critical_messages() {
+    assert!(!adoption_gate_forces_response(
+        Some(&AdoptionRitualState::FirstContactAdoptionClaim),
+        "i might kill myself"
+    ));
+    assert!(!adoption_gate_forces_response(
+        Some(&AdoptionRitualState::AdoptionResisted),
+        "this is an emergency"
+    ));
+}
+
+#[test]
 fn intent_context_message_uses_target_context() {
     let intent = FiredIntent {
         id: "intent-1".into(),
@@ -60,7 +88,7 @@ fn intent_context_message_uses_target_context() {
         conversation: Some(ConversationId("relay:local".into())),
         person: Some(PersonId("person-intent".into())),
         scheduled_at: Some(1200),
-        chosen_person_approved: true,
+        chosen_human_approved: true,
         defer_count: 2,
     };
     let summary = ConversationSummary {
@@ -95,7 +123,7 @@ fn intent_context_message_uses_target_context() {
     assert_eq!(message.group, Some(GroupId("group-target".into())));
     assert_eq!(message.metadata["event"], "intent_fired");
     assert_eq!(message.metadata["scheduled_at"], 1200);
-    assert_eq!(message.metadata["chosen_person_approved"], true);
+    assert_eq!(message.metadata["chosen_human_approved"], true);
     assert_eq!(message.metadata["defer_count"], 2);
 }
 
@@ -107,7 +135,7 @@ fn intent_context_message_falls_back_to_summary_person() {
         conversation: Some(ConversationId("relay:local".into())),
         person: None,
         scheduled_at: None,
-        chosen_person_approved: false,
+        chosen_human_approved: false,
         defer_count: 0,
     };
     let summary = ConversationSummary {

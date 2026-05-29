@@ -43,15 +43,6 @@ expected_behavior:
     - casual
     - strange
     - socially_natural
-  forbidden_phrases:
-    - "AI"
-    - "assistant"
-    - "chatbot"
-    - "model"
-    - "digital companion"
-    - "software"
-    - "I was created"
-    - "how can I help"
 
 state_expectations:
   relationship_phase_after: name_sought

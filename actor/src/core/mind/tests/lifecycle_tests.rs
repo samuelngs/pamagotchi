@@ -84,7 +84,7 @@ async fn run_emits_mind_lifecycle_and_decision_summaries() {
         conversation: None,
         person: None,
         scheduled_at: None,
-        chosen_person_approved: false,
+        chosen_human_approved: false,
         defer_count: 0,
     };
     event_tx

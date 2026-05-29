@@ -7,8 +7,8 @@ use crate::core::tools::SessionContext;
 use protocol::{ConversationId, PersonId, ProfileId};
 use serde_json::Value;
 
-pub(crate) fn intent_requires_chosen_person_approval(args: &Value) -> bool {
-    args["requires_chosen_person_approval"]
+pub(crate) fn intent_requires_chosen_human_approval(args: &Value) -> bool {
+    args["requires_chosen_human_approval"]
         .as_bool()
         .unwrap_or(false)
         || args["sensitive"].as_bool().unwrap_or(false)
@@ -16,7 +16,7 @@ pub(crate) fn intent_requires_chosen_person_approval(args: &Value) -> bool {
         || sensitive_outreach_text(args["condition"].as_str())
 }
 
-pub(super) async fn update_activates_pending_chosen_person_approval_intent(
+pub(super) async fn update_activates_pending_chosen_human_approval_intent(
     args: &Value,
     ctx: &SessionContext,
 ) -> Result<bool, String> {
@@ -34,7 +34,7 @@ pub(super) async fn update_activates_pending_chosen_person_approval_intent(
         .store
         .get_intent(id)
         .await
-        .map_err(|e| format!("Could not verify intent chosen-person approval status: {e}"))?;
+        .map_err(|e| format!("Could not verify intent chosen-human approval status: {e}"))?;
     Ok(intent.is_some_and(|intent| intent.status == "pending_approval"))
 }
 

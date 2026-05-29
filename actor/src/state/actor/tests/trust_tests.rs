@@ -33,7 +33,7 @@ fn default_relationship_trust_is_capped() {
 fn lowering_authority_lowers_existing_trust_ceiling() {
     let person = PersonId("person-restricted".into());
     let mut state = ActorState::new(CoreTraits::default());
-    state.set_relationship_config(&person, Some(Authority::ChosenPerson));
+    state.set_relationship_config(&person, Some(Authority::ChosenHuman));
     state.apply_delta(
         &Delta {
             relationship_changes: vec![RelationshipChange {

@@ -162,7 +162,7 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
         }
     };
     let confidence = match evidence {
-        ClaimEvidence::ChosenPersonVouched | ClaimEvidence::ConfiguredIdentity => 0.8,
+        ClaimEvidence::ChosenHumanVouched | ClaimEvidence::ConfiguredIdentity => 0.8,
         ClaimEvidence::MutualClaim | ClaimEvidence::SharedKnowledge => 0.4,
         ClaimEvidence::SelfDeclaration => 0.05,
     };
@@ -197,8 +197,8 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
     }
 
     if let Some(authority) = sensitive_claim_target_authority(&claimed_person, ctx) {
-        let chosen_person_intent =
-            create_chosen_person_identity_review_intent(&claim, chosen_person(ctx), ctx, reason)
+        let chosen_human_intent =
+            create_chosen_human_identity_review_intent(&claim, chosen_human(ctx), ctx, reason)
                 .await;
         info!(
             action = %ctx.action_id,
@@ -209,12 +209,12 @@ pub async fn request_identity_verification(args: &Value, ctx: &SessionContext) -
             "identity verification claim recorded without contacting sensitive target"
         );
         return json!({
-            "status": "chosen_person_confirmation_required",
+            "status": "chosen_human_confirmation_required",
             "claim": claim.id,
-            "chosen_person_intent": chosen_person_intent,
+            "chosen_human_intent": chosen_human_intent,
             "contacted": 0,
             "failed": 0,
-            "message": "Claim recorded, but contacting this person for verification requires chosen-person confirmation.",
+            "message": "Claim recorded, but contacting this person for verification requires chosen-human confirmation.",
         })
         .to_string();
     }
@@ -321,11 +321,11 @@ fn parse_allowed_claim_evidence(
         .unwrap_or(ClaimEvidence::SelfDeclaration);
     if matches!(
         evidence,
-        ClaimEvidence::ChosenPersonVouched | ClaimEvidence::ConfiguredIdentity
-    ) && !matches!(ctx.authority, Authority::ChosenPerson)
+        ClaimEvidence::ChosenHumanVouched | ClaimEvidence::ConfiguredIdentity
+    ) && !matches!(ctx.authority, Authority::ChosenHuman)
     {
         return Err(
-            "chosen_person_vouched and configured_identity evidence require chosen-person authority.",
+            "chosen_human_vouched and configured_identity evidence require chosen-human authority.",
         );
     }
     Ok(evidence)
@@ -446,7 +446,7 @@ fn sensitive_claim_target_authority(
     claimed_person: &PersonId,
     ctx: &SessionContext,
 ) -> Option<Authority> {
-    if matches!(ctx.authority, Authority::ChosenPerson) {
+    if matches!(ctx.authority, Authority::ChosenHuman) {
         return None;
     }
     let actor = ctx.state.read_state();
@@ -456,27 +456,27 @@ fn sensitive_claim_target_authority(
         .map(|relationship| relationship.authority.clone())?;
     matches!(
         authority,
-        Authority::ChosenPerson | Authority::Restricted | Authority::Blocked
+        Authority::ChosenHuman | Authority::Restricted | Authority::Blocked
     )
     .then_some(authority)
 }
 
-fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
     let actor = ctx.state.read_state();
     actor
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenPerson))
+        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenHuman))
         .map(|(person, _)| person.clone())
 }
 
-async fn create_chosen_person_identity_review_intent(
+async fn create_chosen_human_identity_review_intent(
     claim: &IdentityClaim,
-    chosen_person: Option<PersonId>,
+    chosen_human: Option<PersonId>,
     ctx: &SessionContext,
     reason: &str,
 ) -> Option<String> {
-    let chosen_person = chosen_person?;
+    let chosen_human = chosen_human?;
     let now = super::super::util::now();
     let intent = IntentRecord {
         id: format!("intent-{}", super::super::util::uuid_v4()),
@@ -486,20 +486,20 @@ async fn create_chosen_person_identity_review_intent(
             "Review identity verification claim {} before anyone is contacted: {} claims to be {}. Claimed reason: {}",
             claim.id, claim.claimant.0, claim.claimed_person.0, reason
         ),
-        person: Some(chosen_person),
+        person: Some(chosen_human),
         profile: None,
         conversation: None,
         fire_at: Some(now),
         condition: None,
         recurrence: None,
         priority: 100,
-        dedupe_key: Some(format!("identity-claim-chosen_person-review:{}", claim.id)),
+        dedupe_key: Some(format!("identity-claim-chosen_human-review:{}", claim.id)),
         source_action: Some(ctx.action_id.0.clone()),
         source_memory: None,
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        chosen_person_approved: true,
+        chosen_human_approved: true,
     };
     let id = intent.id.clone();
     match ctx.store.create_intent(&intent).await {
@@ -509,7 +509,7 @@ async fn create_chosen_person_identity_review_intent(
                 action = %ctx.action_id,
                 claim = %claim.id,
                 %e,
-                "failed to create chosen-person review intent for sensitive identity claim"
+                "failed to create chosen-human review intent for sensitive identity claim"
             );
             None
         }

@@ -23,7 +23,7 @@ async fn restricted_intent_does_not_spawn_outreach() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -32,7 +32,7 @@ async fn restricted_intent_does_not_spawn_outreach() {
     assert!(matches!(decision, MindDecision::Drop));
 }
 #[tokio::test]
-async fn blocked_intent_without_chosen_person_approval_drops() {
+async fn blocked_intent_without_chosen_human_approval_drops() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let mind = test_mind(store);
     let person = PersonId("blocked-person".into());
@@ -54,7 +54,7 @@ async fn blocked_intent_without_chosen_person_approval_drops() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -63,7 +63,7 @@ async fn blocked_intent_without_chosen_person_approval_drops() {
     assert!(matches!(decision, MindDecision::Drop));
 }
 #[tokio::test]
-async fn chosen_person_approved_restricted_intent_can_spawn_outreach() {
+async fn chosen_human_approved_restricted_intent_can_spawn_outreach() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let mind = test_mind(store.clone());
     let person = PersonId("restricted-person".into());
@@ -97,7 +97,7 @@ async fn chosen_person_approved_restricted_intent_can_spawn_outreach() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: true,
+                chosen_human_approved: true,
                 defer_count: 0,
             }),
         )
@@ -108,11 +108,11 @@ async fn chosen_person_approved_restricted_intent_can_spawn_outreach() {
             assert!(matches!(action.kind, ActionKind::Outreach));
             assert_eq!(action.authority, Authority::Restricted);
         }
-        _ => panic!("expected chosen-person-approved restricted outreach to spawn"),
+        _ => panic!("expected chosen-human-approved restricted outreach to spawn"),
     }
 }
 #[tokio::test]
-async fn chosen_person_approved_blocked_intent_can_spawn_outreach() {
+async fn chosen_human_approved_blocked_intent_can_spawn_outreach() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let mind = test_mind(store.clone());
     let person = PersonId("blocked-person".into());
@@ -146,7 +146,7 @@ async fn chosen_person_approved_blocked_intent_can_spawn_outreach() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: true,
+                chosen_human_approved: true,
                 defer_count: 0,
             }),
         )
@@ -157,11 +157,11 @@ async fn chosen_person_approved_blocked_intent_can_spawn_outreach() {
             assert!(matches!(action.kind, ActionKind::Outreach));
             assert_eq!(action.authority, Authority::Blocked);
         }
-        _ => panic!("expected chosen-person-approved blocked outreach to spawn"),
+        _ => panic!("expected chosen-human-approved blocked outreach to spawn"),
     }
 }
 #[tokio::test]
-async fn chosen_person_approved_intent_still_respects_denied_proactive_consent() {
+async fn chosen_human_approved_intent_still_respects_denied_proactive_consent() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let mind = test_mind(store.clone());
     let person = PersonId("person-sam".into());
@@ -190,7 +190,7 @@ async fn chosen_person_approved_intent_still_respects_denied_proactive_consent()
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: true,
+                chosen_human_approved: true,
                 defer_count: 0,
             }),
         )

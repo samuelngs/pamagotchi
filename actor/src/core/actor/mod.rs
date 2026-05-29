@@ -4,7 +4,7 @@ use super::lifecycle::ActorLifecycleEvent;
 use super::metrics::{ActorMetrics, ActorMetricsSnapshot};
 use super::mind::Mind;
 use super::scheduler::spawn_scheduler;
-use crate::state::{ActorState, Authority, Delta, GrowthConfig};
+use crate::state::{ActorState, AdoptionRitualState, Authority, Delta, GrowthConfig};
 use crate::store::Store;
 use gateway::GatewayRouter;
 use inference::InferenceRouter;
@@ -274,6 +274,89 @@ async fn replay_state_journal(
                     state.merge_person_context(
                         &PersonId(from.to_string()),
                         &PersonId(into.to_string()),
+                    );
+                }
+                "adoption_state" => {
+                    let Some(person_id) = record
+                        .payload
+                        .get("person_id")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|id| !id.is_empty())
+                    else {
+                        warn!(
+                            journal_id = record.id,
+                            "skipping malformed adoption_state journal record"
+                        );
+                        last_id = Some(record.id);
+                        continue;
+                    };
+                    let Some(ritual_state) = record
+                        .payload
+                        .get("state")
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(AdoptionRitualState::parse)
+                    else {
+                        warn!(
+                            journal_id = record.id,
+                            "skipping malformed adoption_state journal record"
+                        );
+                        last_id = Some(record.id);
+                        continue;
+                    };
+                    let updated_at = record
+                        .payload
+                        .get("updated_at")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(record.created_at);
+                    state.set_adoption_state(
+                        &PersonId(person_id.to_string()),
+                        ritual_state,
+                        updated_at,
+                    );
+                }
+                "adoption_complete" => {
+                    let Some(person_id) = record
+                        .payload
+                        .get("person_id")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|id| !id.is_empty())
+                    else {
+                        warn!(
+                            journal_id = record.id,
+                            "skipping malformed adoption_complete journal record"
+                        );
+                        last_id = Some(record.id);
+                        continue;
+                    };
+                    let updated_at = record
+                        .payload
+                        .get("updated_at")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(record.created_at);
+                    state.complete_adoption(&PersonId(person_id.to_string()), updated_at);
+                }
+                "adoption_marker_settled" => {
+                    let Some(person_id) = record
+                        .payload
+                        .get("person_id")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|id| !id.is_empty())
+                    else {
+                        warn!(
+                            journal_id = record.id,
+                            "skipping malformed adoption_marker_settled journal record"
+                        );
+                        last_id = Some(record.id);
+                        continue;
+                    };
+                    let updated_at = record
+                        .payload
+                        .get("updated_at")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(record.created_at);
+                    state.settle_completed_adoption_marker(
+                        &PersonId(person_id.to_string()),
+                        updated_at,
                     );
                 }
                 kind => {

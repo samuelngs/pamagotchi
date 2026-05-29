@@ -37,7 +37,7 @@ async fn form_memory_uses_presented_injected_message_evidence() {
         identity: Some(injected_identity.clone()),
         profile: Some(injected_profile.clone()),
         person: None,
-        content: "For release notes, include the chosen person and rollback path.".into(),
+        content: "For release notes, include the chosen human and rollback path.".into(),
         attachments: vec![],
         timestamp: 1001,
         metadata: serde_json::Value::Null,
@@ -123,7 +123,7 @@ async fn form_memory_uses_presented_injected_message_evidence() {
             "memory_type": "preference",
             "truth_status": "stated",
             "evidence_message_ids": ["msg-injected"],
-            "dedupe_key": "preference:profile-injected:release-note-chosen_person-rollback"
+            "dedupe_key": "preference:profile-injected:release-note-chosen_human-rollback"
         }),
         &ctx,
         &mut state,

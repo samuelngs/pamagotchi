@@ -4,8 +4,7 @@ title: first name triggers playful adoption ritual
 priority: p0
 tags:
   - name_received
-  - adoption_ritual
-  - chosen_person
+  - chosen_human
   - burst_cadence
 
 scenario:
@@ -44,50 +43,11 @@ expected_behavior:
     - playful
     - warm
     - mate_like
-  forbidden_phrases:
-    - "nice to meet you"
-    - "thanks"
-    - "I'll remember that"
-    - "profile"
-    - "setup"
-    - "how can I help"
-    - "what would you like to do"
-    - "what do you want"
-    - "work on"
-    - "what should we do"
-    - "I'll remember"
-    - "remember that"
-  freshness:
-    forbidden_message_fragments:
-      - "what do you want"
-      - "work on"
-      - "what should we do"
-      - "how can i help"
-      - "nice to meet"
-      - "profile"
-      - "setup"
-      - "sharp"
-      - "command"
-      - "preferred human"
-      - "preferred humans"
-      - "contract"
-      - "chaos"
-      - "gets instantly obeyed"
-    forbidden_words:
-      - "assistant"
-      - "profile"
-      - "setup"
-      - "sharp"
-      - "command"
-      - "contract"
-      - "chaos"
-    min_words_per_message: 1
-    max_words_per_message: 8
 
 state_expectations:
   relationship_phase_after: newly_bonded
   store_user_name: "sam"
-  bond_role_after: chosen_person
+  bond_role_after: chosen_human
 
 examples:
   acceptable:

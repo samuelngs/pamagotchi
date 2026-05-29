@@ -9,6 +9,7 @@ mod validation;
 mod vocabulary;
 mod world;
 
+use capture::CapturedOutbound;
 use checks::OutputChecks;
 use clap::{Args, Parser, Subcommand};
 use execution::{CaseExecution, ExecutionOptions};
@@ -126,14 +127,17 @@ async fn execute(root: &Path, args: &ExecuteArgs) -> anyhow::Result<()> {
             )
             .await
             .unwrap_or_else(|err| panic!("failed to execute {}: {err}", case.path.display()));
-            let checks = checks::evaluate_output(case, &execution.output, execution.timed_out);
-            print_case_finish(case, &execution, &checks);
-            if !checks.passed() {
+            let checks =
+                checks::evaluate_output(&runtime, case, &execution.output, execution.timed_out)
+                    .await;
+            let state_check = checks::evaluate_state(case, &execution);
+            print_case_finish(&execution, &checks, &state_check, !args.no_stream);
+            if !checks.passed() || !state_check.passed {
                 case_failed = true;
             }
             run_outputs.push(execution.output);
             if repeat > 1 {
-                if checks.passed() {
+                if checks.passed() && state_check.passed {
                     println!("run_result: pass");
                 } else {
                     println!("run_result: fail");
@@ -239,9 +243,15 @@ fn print_case_start(case: &BehaviourCase, counts: &world::SeedCounts, input: &Ca
     flush_stdout();
 }
 
-fn print_case_finish(case: &BehaviourCase, execution: &CaseExecution, checks: &OutputChecks) {
-    let expected = required_object(&case.value, "expected_behavior", &case.path);
-    if execution.output.is_empty() {
+fn print_case_finish(
+    execution: &CaseExecution,
+    checks: &OutputChecks,
+    state_check: &checks::CheckOutcome,
+    output_already_streamed: bool,
+) {
+    if !output_already_streamed {
+        print_captured_output(&execution.output);
+    } else if execution.output.is_empty() {
         println!("  <none>");
     }
     if execution.timed_out {
@@ -250,22 +260,34 @@ fn print_case_finish(case: &BehaviourCase, execution: &CaseExecution, checks: &O
     println!();
     println!("checks:");
     print_check("cadence", &checks.cadence);
-    print_check("forbidden_phrases", &checks.forbidden_phrases);
     print_check("freshness", &checks.freshness);
-    println!(
-        "  required_beats: pending ({})",
-        join_string_array(expected, "required_beats", case)
-    );
-    println!(
-        "  forbidden_beats: pending ({})",
-        join_string_array(expected, "forbidden_beats", case)
-    );
-    if case.value.get("state_expectations").is_some() {
-        println!("  state: pending");
-    } else {
-        println!("  state: none");
-    }
+    print_check("required_beats", &checks.required_beats);
+    print_check("forbidden_beats", &checks.forbidden_beats);
+    print_check("state", state_check);
     flush_stdout();
+}
+
+fn print_captured_output(messages: &[CapturedOutbound]) {
+    if messages.is_empty() {
+        println!("  <none>");
+        return;
+    }
+
+    for (idx, message) in messages.iter().enumerate() {
+        let suffix = if message.attachment_count > 0 {
+            format!(" attachments={}", message.attachment_count)
+        } else {
+            String::new()
+        };
+        println!(
+            "  actor[{}]({}/{}{}): {}",
+            idx + 1,
+            message.gateway_id,
+            message.external_id,
+            suffix,
+            message.content
+        );
+    }
 }
 
 fn print_seed_counts(counts: &world::SeedCounts) {

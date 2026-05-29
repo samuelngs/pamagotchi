@@ -188,7 +188,7 @@ async fn apply_review_writes_structured_outputs() {
     assert_eq!(parsed["conversation_summaries"], 1);
     assert!(parsed["skipped"].as_array().unwrap().iter().any(|item| {
         item.as_str()
-            .is_some_and(|message| message.contains("requires chosen-person approval"))
+            .is_some_and(|message| message.contains("requires chosen-human approval"))
     }));
     assert!(parsed["skipped"].as_array().unwrap().iter().any(|item| {
         item.as_str()

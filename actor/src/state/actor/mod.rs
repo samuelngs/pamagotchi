@@ -1,6 +1,6 @@
 use super::{
-    AffectState, Authority, Belief, CoreTraits, Delta, GrowthConfig, Interest, ProactiveConsent,
-    Relationship, RelationshipInteraction,
+    AdoptionCandidate, AdoptionRitualState, AffectState, Authority, Belief, CoreTraits, Delta,
+    GrowthConfig, Interest, ProactiveConsent, Relationship, RelationshipInteraction,
 };
 use protocol::PersonId;
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,8 @@ pub struct ActorState {
     pub traits: CoreTraits,
     pub beliefs: Vec<Belief>,
     pub bonds: HashMap<PersonId, Relationship>,
+    #[serde(default)]
+    pub adoption_candidates: HashMap<PersonId, AdoptionCandidate>,
     pub interests: Vec<Interest>,
     pub affect: AffectState,
     pub growth_log: Vec<GrowthEvent>,
@@ -31,6 +33,7 @@ impl ActorState {
             traits,
             beliefs: vec![],
             bonds: HashMap::new(),
+            adoption_candidates: HashMap::new(),
             interests: vec![],
             affect: AffectState::default(),
             growth_log: vec![],
@@ -199,6 +202,43 @@ impl ActorState {
         }
     }
 
+    pub fn has_chosen_human(&self) -> bool {
+        self.bonds
+            .values()
+            .any(|rel| rel.authority == Authority::ChosenHuman)
+    }
+
+    pub fn adoption_state(&self, person: &PersonId) -> Option<&AdoptionRitualState> {
+        self.adoption_candidates
+            .get(person)
+            .map(|candidate| &candidate.state)
+    }
+
+    pub fn set_adoption_state(
+        &mut self,
+        person: &PersonId,
+        state: AdoptionRitualState,
+        updated_at: i64,
+    ) {
+        self.adoption_candidates
+            .insert(person.clone(), AdoptionCandidate { state, updated_at });
+    }
+
+    pub fn complete_adoption(&mut self, person: &PersonId, updated_at: i64) {
+        self.set_adoption_state(
+            person,
+            AdoptionRitualState::IntroReceivedCertificate,
+            updated_at,
+        );
+        self.set_relationship_config(person, Some(Authority::ChosenHuman));
+    }
+
+    pub fn settle_completed_adoption_marker(&mut self, person: &PersonId, updated_at: i64) {
+        if self.adoption_state(person) == Some(&AdoptionRitualState::IntroReceivedCertificate) {
+            self.set_adoption_state(person, AdoptionRitualState::AdoptionComplete, updated_at);
+        }
+    }
+
     pub fn merge_person_context(&mut self, from: &PersonId, into: &PersonId) {
         if from == into {
             return;
@@ -260,6 +300,11 @@ impl ActorState {
         if into_rel.channel_preference.is_none() {
             into_rel.channel_preference = from_rel.channel_preference;
         }
+        if let Some(candidate) = self.adoption_candidates.remove(from) {
+            self.adoption_candidates
+                .entry(into.clone())
+                .or_insert(candidate);
+        }
     }
 
     fn strengthen_interest(&mut self, topic: &str, rate: f32, triggered_by: Option<&PersonId>) {
@@ -284,8 +329,8 @@ fn merge_authority(a: &Authority, b: &Authority) -> Authority {
         Blocked
     } else if matches!(a, Restricted) || matches!(b, Restricted) {
         Restricted
-    } else if matches!(a, ChosenPerson) || matches!(b, ChosenPerson) {
-        ChosenPerson
+    } else if matches!(a, ChosenHuman) || matches!(b, ChosenHuman) {
+        ChosenHuman
     } else if matches!(a, Trusted) || matches!(b, Trusted) {
         Trusted
     } else {

@@ -14,7 +14,7 @@ pub struct FiredIntent {
     #[serde(default)]
     pub scheduled_at: Option<i64>,
     #[serde(default)]
-    pub chosen_person_approved: bool,
+    pub chosen_human_approved: bool,
     pub defer_count: u64,
 }
 

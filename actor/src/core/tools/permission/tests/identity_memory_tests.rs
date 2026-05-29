@@ -42,8 +42,8 @@ async fn default_user_cannot_write_structured_identity_memory() {
     assert!(denied.contains("core about yourself"));
 }
 #[tokio::test]
-async fn chosen_person_can_write_structured_identity_memory() {
-    let ctx = test_context(Authority::ChosenPerson, ActionKind::Respond);
+async fn chosen_human_can_write_structured_identity_memory() {
+    let ctx = test_context(Authority::ChosenHuman, ActionKind::Respond);
 
     check(
         "form_memory",

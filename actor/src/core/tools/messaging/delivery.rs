@@ -1,7 +1,7 @@
 use super::*;
 use crate::core::tools::util;
 
-pub(super) async fn notify_chosen_person_of_delivery_failure(
+pub(super) async fn notify_chosen_human_of_delivery_failure(
     ctx: &SessionContext,
     target_gateway: &str,
     target_id: &str,
@@ -10,7 +10,7 @@ pub(super) async fn notify_chosen_person_of_delivery_failure(
     error: &str,
     now: i64,
 ) -> bool {
-    let Some(chosen_person) = chosen_person(ctx) else {
+    let Some(chosen_human) = chosen_human(ctx) else {
         return false;
     };
     let conversation_label = conversation
@@ -25,7 +25,7 @@ pub(super) async fn notify_chosen_person_of_delivery_failure(
             ctx.action_id.0,
             content.chars().count()
         ),
-        person: Some(chosen_person),
+        person: Some(chosen_human),
         profile: None,
         conversation: None,
         fire_at: Some(now),
@@ -41,7 +41,7 @@ pub(super) async fn notify_chosen_person_of_delivery_failure(
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        chosen_person_approved: true,
+        chosen_human_approved: true,
     };
     match ctx.store.create_intent(&intent).await {
         Ok(()) => true,
@@ -49,18 +49,18 @@ pub(super) async fn notify_chosen_person_of_delivery_failure(
             warn!(
                 action = %ctx.action_id,
                 %e,
-                "failed to create chosen-person review intent for delivery failure"
+                "failed to create chosen-human review intent for delivery failure"
             );
             false
         }
     }
 }
 
-fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
     let actor = ctx.state.read_state();
     actor
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenPerson))
+        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenHuman))
         .map(|(person, _)| person.clone())
 }

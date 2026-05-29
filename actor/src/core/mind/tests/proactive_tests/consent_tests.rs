@@ -30,7 +30,7 @@ async fn proactive_intent_with_unknown_consent_drops() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -68,7 +68,7 @@ async fn proactive_intent_with_denied_consent_drops() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )

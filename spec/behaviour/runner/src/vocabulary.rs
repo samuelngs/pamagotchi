@@ -4,6 +4,7 @@ use std::path::Path;
 
 pub struct Vocabulary {
     pub relationship_phases: BTreeSet<String>,
+    pub adoption_states: BTreeSet<String>,
     pub comm_styles: BTreeSet<String>,
     pub cadence_modes: BTreeSet<String>,
     pub required_beats: BTreeSet<String>,
@@ -18,6 +19,7 @@ impl Vocabulary {
         let raw = fs::read_to_string(path)
             .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
         let relationship_phases = labels_in_section(&raw, "Relationship Phases");
+        let adoption_states = labels_in_section(&raw, "Adoption Ritual States");
         let comm_styles = labels_in_section(&raw, "Communication Style Values");
         let cadence_modes = labels_in_section(&raw, "Cadence Modes");
         let required_beats = labels_in_section(&raw, "Required Beat Labels");
@@ -26,6 +28,7 @@ impl Vocabulary {
 
         for (name, values) in [
             ("relationship phases", &relationship_phases),
+            ("adoption states", &adoption_states),
             ("communication styles", &comm_styles),
             ("cadence modes", &cadence_modes),
             ("required beats", &required_beats),
@@ -40,13 +43,14 @@ impl Vocabulary {
 
         Self {
             relationship_phases,
+            adoption_states,
             comm_styles,
             cadence_modes,
             required_beats,
             forbidden_beats,
             tone_labels,
             authorities: [
-                "chosen_person",
+                "chosen_human",
                 "trusted",
                 "default",
                 "restricted",
@@ -55,16 +59,10 @@ impl Vocabulary {
             .into_iter()
             .map(str::to_string)
             .collect(),
-            visibility_scopes: [
-                "profile",
-                "person",
-                "chosen_person_only",
-                "global",
-                "public",
-            ]
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
+            visibility_scopes: ["profile", "person", "chosen_human_only", "global", "public"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
         }
     }
 }

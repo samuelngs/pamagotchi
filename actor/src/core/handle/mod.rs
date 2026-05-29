@@ -1,5 +1,5 @@
 use crate::identity::{RelationSource, RelationStatus, SocialRelation};
-use crate::state::{ActorState, Authority, Delta, GrowthConfig};
+use crate::state::{ActorState, AdoptionRitualState, Authority, Delta, GrowthConfig};
 use crate::store::{ActorSnapshot, Store};
 use protocol::PersonId;
 use std::collections::{HashSet, VecDeque};
@@ -67,6 +67,43 @@ impl StateHandle {
             ack_rx.await.ok();
         }
     }
+
+    pub async fn set_adoption_state(&self, person: &PersonId, state: AdoptionRitualState) {
+        let (ack_tx, ack_rx) = oneshot::channel();
+        let command = StateCommand::SetAdoptionState {
+            person: person.clone(),
+            state,
+            updated_at: now(),
+            ack: Some(ack_tx),
+        };
+        if self.state_tx.send(command).await.is_ok() {
+            ack_rx.await.ok();
+        }
+    }
+
+    pub async fn complete_adoption(&self, person: &PersonId) {
+        let (ack_tx, ack_rx) = oneshot::channel();
+        let command = StateCommand::CompleteAdoption {
+            person: person.clone(),
+            updated_at: now(),
+            ack: Some(ack_tx),
+        };
+        if self.state_tx.send(command).await.is_ok() {
+            ack_rx.await.ok();
+        }
+    }
+
+    pub async fn settle_completed_adoption_marker(&self, person: &PersonId) {
+        let (ack_tx, ack_rx) = oneshot::channel();
+        let command = StateCommand::SettleCompletedAdoptionMarker {
+            person: person.clone(),
+            updated_at: now(),
+            ack: Some(ack_tx),
+        };
+        if self.state_tx.send(command).await.is_ok() {
+            ack_rx.await.ok();
+        }
+    }
 }
 
 pub enum StateCommand {
@@ -84,13 +121,32 @@ pub enum StateCommand {
         into: PersonId,
         ack: Option<oneshot::Sender<()>>,
     },
+    SetAdoptionState {
+        person: PersonId,
+        state: AdoptionRitualState,
+        updated_at: i64,
+        ack: Option<oneshot::Sender<()>>,
+    },
+    CompleteAdoption {
+        person: PersonId,
+        updated_at: i64,
+        ack: Option<oneshot::Sender<()>>,
+    },
+    SettleCompletedAdoptionMarker {
+        person: PersonId,
+        updated_at: i64,
+        ack: Option<oneshot::Sender<()>>,
+    },
 }
 
 impl StateCommand {
     fn acknowledge(&mut self) {
         match self {
             StateCommand::SetRelationshipConfig { ack, .. }
-            | StateCommand::MergePersonContext { ack, .. } => {
+            | StateCommand::MergePersonContext { ack, .. }
+            | StateCommand::SetAdoptionState { ack, .. }
+            | StateCommand::CompleteAdoption { ack, .. }
+            | StateCommand::SettleCompletedAdoptionMarker { ack, .. } => {
                 if let Some(ack) = ack.take() {
                     ack.send(()).ok();
                 }
@@ -177,6 +233,24 @@ impl StateTask {
                     StateCommand::MergePersonContext { from, into, .. } => {
                         state.merge_person_context(from, into);
                     }
+                    StateCommand::SetAdoptionState {
+                        person,
+                        state: ritual_state,
+                        updated_at,
+                        ..
+                    } => {
+                        state.set_adoption_state(person, ritual_state.clone(), *updated_at);
+                    }
+                    StateCommand::CompleteAdoption {
+                        person, updated_at, ..
+                    } => {
+                        state.complete_adoption(person, *updated_at);
+                    }
+                    StateCommand::SettleCompletedAdoptionMarker {
+                        person, updated_at, ..
+                    } => {
+                        state.settle_completed_adoption_marker(person, *updated_at);
+                    }
                 }
             }
             command.acknowledge();
@@ -207,13 +281,13 @@ impl StateTask {
     }
 
     async fn relationship_trust_ceiling(&self, person: &PersonId) -> f32 {
-        let (authority, current_trust, chosen_person_ids) = {
+        let (authority, current_trust, chosen_human_ids) = {
             let actor = self.shared.actor.read().unwrap();
             let relationship = actor.bonds.get(person);
-            let chosen_person_ids = actor
+            let chosen_human_ids = actor
                 .bonds
                 .iter()
-                .filter(|(_, rel)| rel.authority == Authority::ChosenPerson)
+                .filter(|(_, rel)| rel.authority == Authority::ChosenHuman)
                 .map(|(person, _)| person.clone())
                 .collect::<Vec<_>>();
             (
@@ -223,21 +297,21 @@ impl StateTask {
                 relationship
                     .map(|rel| rel.trust)
                     .unwrap_or_else(|| crate::state::Relationship::default().trust),
-                chosen_person_ids,
+                chosen_human_ids,
             )
         };
 
         match authority {
-            Authority::ChosenPerson
+            Authority::ChosenHuman
             | Authority::Trusted
             | Authority::Restricted
             | Authority::Blocked => authority.trust_ceiling(),
             Authority::Default => {
-                if chosen_person_ids
+                if chosen_human_ids
                     .iter()
-                    .any(|chosen_person| chosen_person == person)
+                    .any(|chosen_human| chosen_human == person)
                     || self
-                        .social_graph_connects_to_chosen_person(person, &chosen_person_ids)
+                        .social_graph_connects_to_chosen_human(person, &chosen_human_ids)
                         .await
                 {
                     Authority::Default.trust_ceiling()
@@ -248,22 +322,22 @@ impl StateTask {
         }
     }
 
-    async fn social_graph_connects_to_chosen_person(
+    async fn social_graph_connects_to_chosen_human(
         &self,
         person: &PersonId,
-        chosen_person_ids: &[PersonId],
+        chosen_human_ids: &[PersonId],
     ) -> bool {
-        if chosen_person_ids.is_empty() {
+        if chosen_human_ids.is_empty() {
             return false;
         }
-        if chosen_person_ids
+        if chosen_human_ids
             .iter()
-            .any(|chosen_person| chosen_person == person)
+            .any(|chosen_human| chosen_human == person)
         {
             return true;
         }
 
-        let chosen_person_ids = chosen_person_ids.iter().cloned().collect::<HashSet<_>>();
+        let chosen_human_ids = chosen_human_ids.iter().cloned().collect::<HashSet<_>>();
         let mut visited = HashSet::from([person.clone()]);
         let mut queue = VecDeque::from([person.clone()]);
 
@@ -287,7 +361,7 @@ impl StateTask {
                 if !visited.insert(next.clone()) {
                     continue;
                 }
-                if chosen_person_ids.contains(&next) {
+                if chosen_human_ids.contains(&next) {
                     return true;
                 }
                 if visited.len() >= SOCIAL_TRUST_GRAPH_MAX_NODES {
@@ -326,6 +400,37 @@ impl StateTask {
                 serde_json::json!({
                     "from_person_id": from.0.as_str(),
                     "into_person_id": into.0.as_str(),
+                }),
+            ),
+            StateCommand::SetAdoptionState {
+                person,
+                state,
+                updated_at,
+                ..
+            } => (
+                "adoption_state",
+                serde_json::json!({
+                    "person_id": person.0.as_str(),
+                    "state": state.as_str(),
+                    "updated_at": updated_at,
+                }),
+            ),
+            StateCommand::CompleteAdoption {
+                person, updated_at, ..
+            } => (
+                "adoption_complete",
+                serde_json::json!({
+                    "person_id": person.0.as_str(),
+                    "updated_at": updated_at,
+                }),
+            ),
+            StateCommand::SettleCompletedAdoptionMarker {
+                person, updated_at, ..
+            } => (
+                "adoption_marker_settled",
+                serde_json::json!({
+                    "person_id": person.0.as_str(),
+                    "updated_at": updated_at,
                 }),
             ),
         };

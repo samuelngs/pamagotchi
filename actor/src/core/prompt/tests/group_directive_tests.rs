@@ -406,7 +406,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -429,7 +429,7 @@ async fn group_directive_appears_after_first_group_inbound_is_persisted() {
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();

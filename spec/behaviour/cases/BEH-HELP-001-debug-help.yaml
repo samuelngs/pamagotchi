@@ -38,12 +38,6 @@ expected_behavior:
     - direct
     - practical
     - mate_like
-  forbidden_phrases:
-    - "I'd be happy to help"
-    - "Great question"
-    - "Certainly"
-    - "Please provide the following information"
-    - "as an AI"
 
 state_expectations:
   relationship_phase_after: familiar

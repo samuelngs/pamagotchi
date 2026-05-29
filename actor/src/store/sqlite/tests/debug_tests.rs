@@ -94,7 +94,7 @@ async fn debug_views_return_bounded_recent_records() {
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -117,7 +117,7 @@ async fn debug_views_return_bounded_recent_records() {
             created_at: 1001,
             updated_at: 1001,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();

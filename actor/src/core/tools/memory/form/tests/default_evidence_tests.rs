@@ -352,6 +352,6 @@ async fn form_memory_defaults_evidence_to_current_action_messages() {
         .unwrap()
         .unwrap();
     assert_eq!(memory.privacy_category, PrivacyCategory::Secret);
-    assert_eq!(memory.visibility_scope, VisibilityScope::ChosenPersonOnly);
+    assert_eq!(memory.visibility_scope, VisibilityScope::ChosenHumanOnly);
     assert!(memory.next_review_at.is_some());
 }

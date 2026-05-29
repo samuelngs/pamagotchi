@@ -43,7 +43,7 @@ fn formats_debug_snapshot_into_named_sections() {
         "groups": [{"id": "group-1", "name": "Friends", "members": ["person-1"]}],
         "memory_subjects": [{"subject_type": "person", "subject_id": "person-1", "memory_count": 2, "latest_memory_ids": ["memory-1"]}],
         "memories": [{"id": "memory-1", "memory_type": "fact", "truth_status": "observed", "importance": 0.7, "content": "Sam likes concise status updates."}],
-        "intents": [{"id": "intent-1", "status": "active", "fire_at": 1200, "chosen_person_approved": true, "task": "Follow up"}],
+        "intents": [{"id": "intent-1", "status": "active", "fire_at": 1200, "chosen_human_approved": true, "task": "Follow up"}],
         "review_jobs": [{"source_action_id": "action-1", "review_action_id": "review-1", "review_status": "completed", "output_count": 3}],
         "action_traces": [{"run": {"action_id": "action-1", "kind": "respond", "status": "completed", "responded": true}, "turns": [{}], "tool_calls": [{}, {}], "messages": [{}], "deliveries": []}],
         "memory_mutations": [{"memory": "memory-1", "operation": "create", "reason": "review"}],

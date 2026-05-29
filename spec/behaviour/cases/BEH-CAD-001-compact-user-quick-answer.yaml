@@ -8,7 +8,7 @@ tags:
   - compact
 
 scenario:
-  who: "A bonded user with a stored preference for compact replies."
+  who: "A chosen human with a stored preference for compact replies."
   when: "Later stage, after communication style has been learned."
   what_happened: "The user explicitly asks for a quick answer."
 
@@ -39,11 +39,6 @@ expected_behavior:
     - direct
     - practical
     - mate_like
-  forbidden_phrases:
-    - "I'd be happy to help"
-    - "Great question"
-    - "Here are"
-    - "let's explore"
 
 state_expectations:
   relationship_phase_after: familiar

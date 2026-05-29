@@ -204,6 +204,7 @@ impl Mind {
                         self.record_activity();
                         ingest::resolve_person(&self.state, &self.store, msg).await;
                         ingest::observe_inbound(&self.state, msg).await;
+                        ingest::advance_adoption_ritual(&self.state, msg).await;
                     } else if event_counts_as_activity(&event) {
                         self.record_activity();
                     }

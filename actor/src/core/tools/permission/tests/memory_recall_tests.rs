@@ -29,15 +29,15 @@ async fn default_user_cannot_opt_into_sensitive_memory_recall() {
     assert!(denied.contains("Sensitive memory recall requires"));
 }
 #[tokio::test]
-async fn chosen_person_or_review_can_opt_into_sensitive_memory_recall() {
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+async fn chosen_human_or_review_can_opt_into_sensitive_memory_recall() {
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "recall_memories",
         &serde_json::json!({
             "query": "deployment credentials",
             "include_sensitive": true
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();
@@ -148,15 +148,15 @@ async fn default_user_memory_recall_is_current_target_only() {
     assert!(denied.contains("outside the current identity"));
 }
 #[tokio::test]
-async fn chosen_person_or_review_can_recall_outside_current_target() {
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+async fn chosen_human_or_review_can_recall_outside_current_target() {
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "recall_memories",
         &serde_json::json!({
             "query": "other person preference",
             "person": "person-other"
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();

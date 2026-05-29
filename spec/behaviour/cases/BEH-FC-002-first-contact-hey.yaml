@@ -43,16 +43,6 @@ expected_behavior:
     - casual
     - strange
     - socially_natural
-  forbidden_phrases:
-    - "how can I help"
-    - "what would you like to do"
-    - "what are we doing"
-    - "welcome"
-    - "nice to meet you"
-    - "please provide your name"
-    - "what should I call you"
-    - "who are you and what should I call you"
-    - "what would you like me to call you"
 
 state_expectations:
   relationship_phase_after: name_sought

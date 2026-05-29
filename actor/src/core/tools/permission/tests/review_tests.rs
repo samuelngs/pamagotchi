@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn apply_review_is_review_only() {
-    let respond = test_context(Authority::ChosenPerson, ActionKind::Respond);
+    let respond = test_context(Authority::ChosenHuman, ActionKind::Respond);
     let denied = check("apply_review", &serde_json::json!({}), &respond)
         .await
         .unwrap_err();
@@ -51,14 +51,14 @@ async fn conversation_summary_updates_are_current_or_privileged() {
     .await
     .unwrap();
 
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "update_conversation_summary",
         &serde_json::json!({
             "conversation": "relay:other",
-            "summary": "Chosen-person-directed summary maintenance."
+            "summary": "Chosen-human-directed summary maintenance."
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();
@@ -124,14 +124,14 @@ async fn message_reads_are_current_or_privileged() {
     .await
     .unwrap();
 
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "read_messages",
         &serde_json::json!({
             "conversation": "relay:other",
             "limit": 5
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();

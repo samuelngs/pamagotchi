@@ -66,7 +66,7 @@ impl ProactiveConsent {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Authority {
-    ChosenPerson,
+    ChosenHuman,
     Trusted,
     Default,
     Restricted,
@@ -76,7 +76,7 @@ pub enum Authority {
 impl Authority {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::ChosenPerson => "chosen_person",
+            Self::ChosenHuman => "chosen_human",
             Self::Trusted => "trusted",
             Self::Default => "default",
             Self::Restricted => "restricted",
@@ -86,7 +86,7 @@ impl Authority {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "chosen_person" => Some(Self::ChosenPerson),
+            "chosen_human" => Some(Self::ChosenHuman),
             "trusted" => Some(Self::Trusted),
             "default" => Some(Self::Default),
             "restricted" => Some(Self::Restricted),
@@ -97,7 +97,7 @@ impl Authority {
 
     pub fn trust_ceiling(&self) -> f32 {
         match self {
-            Self::ChosenPerson => 1.0,
+            Self::ChosenHuman => 1.0,
             Self::Trusted => 0.9,
             Self::Default => 0.6,
             Self::Restricted => 0.2,

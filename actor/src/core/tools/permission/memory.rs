@@ -77,7 +77,7 @@ pub(super) fn memory_is_current_profile_owned_for_forget(
         PrivacyCategory::Sensitive | PrivacyCategory::Secret
     ) || matches!(
         mem.visibility_scope,
-        VisibilityScope::Person | VisibilityScope::ChosenPersonOnly | VisibilityScope::Global
+        VisibilityScope::Person | VisibilityScope::ChosenHumanOnly | VisibilityScope::Global
     ) {
         return false;
     }

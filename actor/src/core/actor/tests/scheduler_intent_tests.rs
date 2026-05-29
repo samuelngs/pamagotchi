@@ -23,7 +23,7 @@ async fn scheduler_leaves_due_intent_active_when_actor_channel_is_closed() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -60,7 +60,7 @@ async fn claimed_due_intent_is_not_emitted_twice() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -101,7 +101,7 @@ async fn scheduler_drains_due_intent_after_actor_handoff() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: true,
+            chosen_human_approved: true,
         })
         .await
         .unwrap();
@@ -119,7 +119,7 @@ async fn scheduler_drains_due_intent_after_actor_handoff() {
             );
             assert_eq!(intent.person, Some(PersonId("person-sam".into())));
             assert_eq!(intent.scheduled_at, Some(900));
-            assert!(intent.chosen_person_approved);
+            assert!(intent.chosen_human_approved);
         }
         _ => panic!("expected fired intent"),
     }
@@ -135,16 +135,16 @@ async fn scheduler_drains_due_intent_after_actor_handoff() {
     );
 }
 #[tokio::test]
-async fn scheduler_preserves_chosen_person_approval_on_deferred_intent_events() {
+async fn scheduler_preserves_chosen_human_approval_on_deferred_intent_events() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let store_dyn: Arc<dyn Store> = store.clone();
     let intent = FiredIntent {
-        id: "intent-chosen-person-approved".into(),
+        id: "intent-chosen-human-approved".into(),
         task: "Check in".into(),
         conversation: Some(ConversationId("relay:local".into())),
         person: Some(PersonId("person-sam".into())),
         scheduled_at: Some(900),
-        chosen_person_approved: true,
+        chosen_human_approved: true,
         defer_count: 1,
     };
     store
@@ -169,9 +169,9 @@ async fn scheduler_preserves_chosen_person_approval_on_deferred_intent_events() 
 
     match rx.recv().await.unwrap() {
         WakeEvent::IntentFired(intent) => {
-            assert_eq!(intent.id, "intent-chosen-person-approved");
+            assert_eq!(intent.id, "intent-chosen-human-approved");
             assert_eq!(intent.scheduled_at, Some(900));
-            assert!(intent.chosen_person_approved);
+            assert!(intent.chosen_human_approved);
             assert_eq!(intent.defer_count, 1);
         }
         _ => panic!("expected deferred intent event"),

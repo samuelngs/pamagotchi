@@ -18,7 +18,7 @@ pub struct IdentityClaim {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClaimEvidence {
     SelfDeclaration,
-    ChosenPersonVouched,
+    ChosenHumanVouched,
     MutualClaim,
     SharedKnowledge,
     ConfiguredIdentity,
@@ -28,7 +28,7 @@ impl ClaimEvidence {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::SelfDeclaration => "self_declaration",
-            Self::ChosenPersonVouched => "chosen_person_vouched",
+            Self::ChosenHumanVouched => "chosen_human_vouched",
             Self::MutualClaim => "mutual_claim",
             Self::SharedKnowledge => "shared_knowledge",
             Self::ConfiguredIdentity => "configured_identity",
@@ -38,7 +38,7 @@ impl ClaimEvidence {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "self_declaration" => Some(Self::SelfDeclaration),
-            "chosen_person_vouched" => Some(Self::ChosenPersonVouched),
+            "chosen_human_vouched" => Some(Self::ChosenHumanVouched),
             "mutual_claim" => Some(Self::MutualClaim),
             "shared_knowledge" => Some(Self::SharedKnowledge),
             "configured_identity" => Some(Self::ConfiguredIdentity),

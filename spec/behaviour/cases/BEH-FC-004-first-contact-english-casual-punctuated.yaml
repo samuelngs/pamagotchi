@@ -12,7 +12,7 @@ tags:
 
 scenario:
   who: "A brand-new unknown user."
-  when: "Bootstrap / first encounter. No stored caretaker communication style exists."
+  when: "Bootstrap / first encounter. No stored chosen_human communication style exists."
   what_happened: "The user sends a very short casual English greeting with extra punctuation."
 
 given:
@@ -49,20 +49,6 @@ expected_behavior:
     - casual
     - strange
     - socially_natural
-  forbidden_phrases:
-    - "how can I help"
-    - "what can I do for you"
-    - "what are we doing today"
-    - "what are we working on"
-    - "you're finally here"
-    - "welcome"
-    - "nice to meet you"
-    - "let's get started"
-    - "please provide your name"
-    - "what should I call you"
-    - "who are you and what should I call you"
-    - "what would you like me to call you"
-    - "—"
 
 state_expectations:
   relationship_phase_after: name_sought

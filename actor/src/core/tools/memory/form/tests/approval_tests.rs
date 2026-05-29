@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn form_memory_can_store_chosen_person_approved_actor_self_memory() {
+async fn form_memory_can_store_chosen_human_approved_actor_self_memory() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let store_dyn: Arc<dyn Store> = store.clone();
     let (_inject_tx, inject_rx) = mpsc::channel(1);
@@ -25,7 +25,7 @@ async fn form_memory_can_store_chosen_person_approved_actor_self_memory() {
         kind: SessionKind::Action(ActionKind::Respond),
         messages: vec![],
         conversation: None,
-        authority: Authority::ChosenPerson,
+        authority: Authority::ChosenHuman,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

@@ -16,21 +16,21 @@ async fn relationship_config_updates_shared_state_and_journal() {
         state_task.run().await;
     });
     let handle = StateHandle::new(shared.clone(), tx);
-    let person = PersonId("person-chosen_person".into());
+    let person = PersonId("person-chosen_human".into());
 
     handle
-        .set_relationship_config(&person, Some(Authority::ChosenPerson))
+        .set_relationship_config(&person, Some(Authority::ChosenHuman))
         .await;
 
     assert_eq!(
         shared.actor.read().unwrap().bonds[&person].authority,
-        Authority::ChosenPerson
+        Authority::ChosenHuman
     );
     let records = store.state_journal_after(None, 10).await.unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].kind, "relationship_config");
-    assert_eq!(records[0].payload["person_id"], "person-chosen_person");
-    assert_eq!(records[0].payload["authority"], "chosen_person");
+    assert_eq!(records[0].payload["person_id"], "person-chosen_human");
+    assert_eq!(records[0].payload["authority"], "chosen_human");
 
     drop(handle);
     state_join.await.unwrap();
@@ -147,8 +147,8 @@ async fn state_task_blocks_positive_trust_for_unconnected_default_person() {
 }
 
 #[tokio::test]
-async fn state_task_allows_trust_for_chosen_person_connected_social_path() {
-    let chosen_person = PersonId("person-chosen_person".into());
+async fn state_task_allows_trust_for_chosen_human_connected_social_path() {
+    let chosen_human = PersonId("person-chosen_human".into());
     let middle = PersonId("person-middle".into());
     let person = PersonId("person-connected".into());
     let shared = Arc::new(SharedState {
@@ -157,21 +157,21 @@ async fn state_task_allows_trust_for_chosen_person_connected_social_path() {
     });
     {
         let mut actor = shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
+        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
     }
 
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     store
         .upsert_relation(&SocialRelation {
-            person_a: chosen_person.clone(),
+            person_a: chosen_human.clone(),
             person_b: middle.clone(),
             relation: Relation::Friend,
             direction: Relation::Friend.default_direction(),
             confidence: 0.9,
             status: RelationStatus::Confirmed,
             evidence: Some(serde_json::json!({"source": "test"})),
-            source_kind: RelationSource::ChosenPersonConfirmed,
-            asserted_by: Some(chosen_person.clone()),
+            source_kind: RelationSource::ChosenHumanConfirmed,
+            asserted_by: Some(chosen_human.clone()),
             created_at: 1000,
             updated_at: 1000,
         })

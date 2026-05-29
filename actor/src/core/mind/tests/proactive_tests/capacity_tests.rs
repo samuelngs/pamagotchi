@@ -31,7 +31,7 @@ async fn at_capacity_defers_proactive_intent_instead_of_dropping() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )

@@ -102,11 +102,11 @@ async fn apply_review_accepts_follow_up_open_loop_alias() {
     assert!(active.iter().all(|intent| intent.kind != "follow_up"));
 }
 #[tokio::test]
-async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_intent() {
+async fn apply_review_routes_sensitive_open_loop_to_chosen_human_approval_intent() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let profile = ProfileId("profile-sam".into());
     let person = PersonId("person-sam".into());
-    let chosen_person = PersonId("person-chosen_person".into());
+    let chosen_human = PersonId("person-chosen_human".into());
     let conversation = ConversationId("relay:local".into());
     let (ctx, mut state) = test_context(store.clone(), &profile, &person, &conversation);
     ctx.state
@@ -114,7 +114,7 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_inten
         .actor
         .write()
         .unwrap()
-        .set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
+        .set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
 
     let review_args = json!({
         "open_loops": [{
@@ -135,8 +135,8 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_inten
 
     let due = store.due_intents(util::now() + 1, 10).await.unwrap();
     assert_eq!(due.len(), 1);
-    assert_eq!(due[0].person.as_ref(), Some(&chosen_person));
-    assert!(due[0].chosen_person_approved);
+    assert_eq!(due[0].person.as_ref(), Some(&chosen_human));
+    assert!(due[0].chosen_human_approved);
     assert_eq!(due[0].priority, 100);
     assert!(due[0].task.contains("Review sensitive proactive outreach"));
     assert!(due[0].task.contains("Ask about the private medical update"));
@@ -152,7 +152,7 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_inten
         .split("Pending intent: ")
         .nth(1)
         .and_then(|rest| rest.split('.').next())
-        .expect("pending intent id in chosen-person approval task")
+        .expect("pending intent id in chosen-human approval task")
         .to_string();
     assert!(due[0].task.contains(&pending_id));
     let pending = store.get_intent(&pending_id).await.unwrap().unwrap();
@@ -161,7 +161,7 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_inten
     assert_eq!(pending.person.as_ref(), Some(&person));
     assert_eq!(pending.profile.as_ref(), Some(&profile));
     assert_eq!(pending.conversation.as_ref(), Some(&conversation));
-    assert!(!pending.chosen_person_approved);
+    assert!(!pending.chosen_human_approved);
     assert_eq!(
         pending.source_memory.as_ref().map(|id| id.0.as_str()),
         Some("memory-sensitive-medical-update")
@@ -177,17 +177,17 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_inten
             .all(|intent| !intent.task.contains("private medical update"))
     );
 
-    let (mut chosen_person_ctx, mut chosen_person_state) =
-        test_context(store.clone(), &profile, &chosen_person, &conversation);
-    chosen_person_ctx.authority = Authority::ChosenPerson;
+    let (mut chosen_human_ctx, mut chosen_human_state) =
+        test_context(store.clone(), &profile, &chosen_human, &conversation);
+    chosen_human_ctx.authority = Authority::ChosenHuman;
     let update_result = match crate::core::tools::execute(
         "update_intent",
         &json!({
             "intent_id": pending_id,
             "status": "active"
         }),
-        &chosen_person_ctx,
-        &mut chosen_person_state,
+        &chosen_human_ctx,
+        &mut chosen_human_state,
     )
     .await
     {
@@ -200,16 +200,16 @@ async fn apply_review_routes_sensitive_open_loop_to_chosen_person_approval_inten
     assert_eq!(parsed_update["status"], "updated");
     let approved = store.get_intent(&pending.id).await.unwrap().unwrap();
     assert_eq!(approved.status, "active");
-    assert!(approved.chosen_person_approved);
+    assert!(approved.chosen_human_approved);
 }
 #[tokio::test]
-async fn chosen_person_review_can_create_third_party_open_loop() {
+async fn chosen_human_review_can_create_third_party_open_loop() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
-    let profile = ProfileId("profile-chosen_person".into());
-    let person = PersonId("person-chosen_person".into());
-    let conversation = ConversationId("relay:chosen_person".into());
+    let profile = ProfileId("profile-chosen_human".into());
+    let person = PersonId("person-chosen_human".into());
+    let conversation = ConversationId("relay:chosen_human".into());
     let (mut ctx, mut state) = test_context(store.clone(), &profile, &person, &conversation);
-    ctx.authority = Authority::ChosenPerson;
+    ctx.authority = Authority::ChosenHuman;
 
     let now = util::now();
     let review_args = json!({
@@ -219,7 +219,7 @@ async fn chosen_person_review_can_create_third_party_open_loop() {
             "person_id": "person-alice",
             "profile_id": "profile-alice",
             "conversation_id": "relay:alice",
-            "dedupe_key": "chosen_person:remind-alice-checklist"
+            "dedupe_key": "chosen_human:remind-alice-checklist"
         }]
     });
 
@@ -244,5 +244,5 @@ async fn chosen_person_review_can_create_third_party_open_loop() {
         due[0].conversation.as_ref(),
         Some(&ConversationId("relay:alice".into()))
     );
-    assert!(due[0].chosen_person_approved);
+    assert!(due[0].chosen_human_approved);
 }

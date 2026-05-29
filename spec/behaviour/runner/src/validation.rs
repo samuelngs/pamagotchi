@@ -175,7 +175,7 @@ fn validate_expected_behavior(case: &Value, vocab: &Vocabulary, path: &Path) {
     validate_string_array_enum(expected, "forbidden_beats", &vocab.forbidden_beats, path);
     validate_cadence(expected, vocab, path);
     validate_string_array_enum(expected, "tone", &vocab.tone_labels, path);
-    validate_optional_string_array(expected, "forbidden_phrases", path);
+    reject_field(expected, "forbidden_phrases", path);
     validate_freshness(expected, path);
 }
 
@@ -206,12 +206,9 @@ fn validate_freshness(expected: &Value, path: &Path) {
         path.display()
     );
 
-    validate_optional_u64(freshness, "max_acceptable_example_message_reuse", path);
-    validate_optional_u64(freshness, "max_identity_lookup_messages", path);
     validate_optional_u64(freshness, "max_repeated_message_occurrences", path);
     validate_optional_u64(freshness, "min_words_per_message", path);
     validate_optional_u64(freshness, "max_words_per_message", path);
-    validate_optional_bool(freshness, "identity_lookup_must_be_final", path);
     if let Some(min_distinct) = freshness
         .get("min_distinct_sequences")
         .map(|_| required_u64(freshness, "min_distinct_sequences", path))
@@ -222,12 +219,19 @@ fn validate_freshness(expected: &Value, path: &Path) {
             path.display()
         );
     }
-    validate_optional_string_array(freshness, "required_any_message_fragments", path);
-    validate_optional_string_array_groups(freshness, "required_any_message_fragment_groups", path);
-    validate_optional_string_array(freshness, "forbidden_message_fragments", path);
-    validate_optional_string_array(freshness, "forbidden_exact_messages", path);
-    validate_optional_string_array(freshness, "forbidden_words", path);
-    validate_optional_string_array(freshness, "identity_lookup_markers", path);
+    for key in [
+        "max_acceptable_example_message_reuse",
+        "max_identity_lookup_messages",
+        "identity_lookup_must_be_final",
+        "required_any_message_fragments",
+        "required_any_message_fragment_groups",
+        "forbidden_message_fragments",
+        "forbidden_exact_messages",
+        "forbidden_words",
+        "identity_lookup_markers",
+    ] {
+        reject_field(freshness, key, path);
+    }
 }
 
 fn validate_optional_u64(value: &Value, key: &str, path: &Path) {
@@ -246,40 +250,12 @@ fn validate_optional_bool(value: &Value, key: &str, path: &Path) {
     }
 }
 
-fn validate_optional_string_array(value: &Value, key: &str, path: &Path) {
-    for item in optional_array(value, key, path) {
-        let Some(text) = item.as_str() else {
-            panic!("{} field {key} must contain strings", path.display());
-        };
-        assert!(
-            !text.trim().is_empty(),
-            "{} field {key} must not contain empty strings",
-            path.display()
-        );
-    }
-}
-
-fn validate_optional_string_array_groups(value: &Value, key: &str, path: &Path) {
-    for group in optional_array(value, key, path) {
-        let Some(items) = group.as_array() else {
-            panic!("{} field {key} must contain string arrays", path.display());
-        };
-        assert!(
-            !items.is_empty(),
-            "{} field {key} must not contain empty groups",
-            path.display()
-        );
-        for item in items {
-            let Some(text) = item.as_str() else {
-                panic!("{} field {key} groups must contain strings", path.display());
-            };
-            assert!(
-                !text.trim().is_empty(),
-                "{} field {key} groups must not contain empty strings",
-                path.display()
-            );
-        }
-    }
+fn reject_field(value: &Value, key: &str, path: &Path) {
+    assert!(
+        value.get(key).is_none(),
+        "{} field {key} is not supported; use semantic beats, examples, cadence, and deterministic state checks instead",
+        path.display()
+    );
 }
 
 fn validate_state_expectations(case: &Value, vocab: &Vocabulary, path: &Path) {
@@ -307,11 +283,20 @@ fn validate_state_expectations(case: &Value, vocab: &Vocabulary, path: &Path) {
             path,
         );
     }
+    if let Some(adoption_state) = optional_str(state, "adoption_state_after") {
+        assert_set_contains(
+            &vocab.adoption_states,
+            adoption_state,
+            "adoption_state_after",
+            path,
+        );
+    }
+    validate_optional_bool(state, "chosen_human_after", path);
     if let Some(role) = optional_str(state, "bond_role_after") {
         assert_in(
             role,
             &[
-                "chosen_person",
+                "chosen_human",
                 "trusted",
                 "default",
                 "restricted",

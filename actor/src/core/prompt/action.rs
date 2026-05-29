@@ -236,6 +236,16 @@ pub(super) async fn build_action(
                 .or(style_directive),
         )
     };
+    let adoption_ritual = person_id.and_then(|pid| {
+        let candidate = actor.adoption_candidates.get(pid)?;
+        if candidate.state.as_str() == "adoption_complete" {
+            return None;
+        }
+        Some(AdoptionRitualCtx {
+            state: candidate.state.as_str().to_string(),
+            has_chosen_human: actor.has_chosen_human(),
+        })
+    });
 
     let relevant_memories = {
         let mut supplemental_query_text = Vec::new();
@@ -316,6 +326,7 @@ pub(super) async fn build_action(
         group,
         recent_messages,
         relationship,
+        adoption_ritual,
         review_transcript,
         timing,
         safety,

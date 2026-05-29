@@ -38,7 +38,7 @@ async fn successful_response_retires_simple_next_message_triggered_intent() {
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -61,7 +61,7 @@ async fn successful_response_retires_simple_next_message_triggered_intent() {
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -140,7 +140,7 @@ async fn successful_response_retires_matched_content_triggered_intent() {
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -163,7 +163,7 @@ async fn successful_response_retires_matched_content_triggered_intent() {
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -228,7 +228,7 @@ async fn successful_outreach_completes_fired_source_intent() {
             created_at: now - 120,
             updated_at: now - 60,
             last_fired_at: Some(now - 60),
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -282,7 +282,7 @@ async fn successful_recurring_outreach_keeps_active_source_intent() {
             created_at: now - 120,
             updated_at: now - 60,
             last_fired_at: Some(now - 60),
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();

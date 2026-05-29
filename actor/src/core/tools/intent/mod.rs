@@ -61,11 +61,11 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "sensitive": {
                         "type": "boolean",
-                        "description": "Set true when the follow-up involves private, medical, legal, financial, identity, credential, or otherwise sensitive content. Sensitive outreach requires chosen-person approval."
+                        "description": "Set true when the follow-up involves private, medical, legal, financial, identity, credential, or otherwise sensitive content. Sensitive outreach requires chosen-human approval."
                     },
-                    "requires_chosen_person_approval": {
+                    "requires_chosen_human_approval": {
                         "type": "boolean",
-                        "description": "Set true when this intent should not proactively contact anyone until the chosen person has approved it."
+                        "description": "Set true when this intent should not proactively contact anyone until the chosen human has approved it."
                     }
                 },
                 "required": ["task", "kind"]
@@ -133,11 +133,11 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "sensitive": {
                         "type": "boolean",
-                        "description": "Set true when the updated follow-up involves sensitive content. Sensitive outreach requires chosen-person approval."
+                        "description": "Set true when the updated follow-up involves sensitive content. Sensitive outreach requires chosen-human approval."
                     },
-                    "requires_chosen_person_approval": {
+                    "requires_chosen_human_approval": {
                         "type": "boolean",
-                        "description": "Set true when this intent should not proactively contact anyone until the chosen person has approved it."
+                        "description": "Set true when this intent should not proactively contact anyone until the chosen human has approved it."
                     }
                 },
                 "required": ["intent_id"]
@@ -182,9 +182,9 @@ pub async fn create(args: &Value, ctx: &SessionContext) -> String {
     }
 
     let now = super::util::now();
-    let chosen_person_approved = matches!(ctx.authority, Authority::ChosenPerson);
-    let status = if super::permission::intent_requires_chosen_person_approval(args)
-        && !chosen_person_approved
+    let chosen_human_approved = matches!(ctx.authority, Authority::ChosenHuman);
+    let status = if super::permission::intent_requires_chosen_human_approval(args)
+        && !chosen_human_approved
     {
         "pending_approval"
     } else {
@@ -217,11 +217,11 @@ pub async fn create(args: &Value, ctx: &SessionContext) -> String {
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        chosen_person_approved,
+        chosen_human_approved,
     };
 
     if intent.status == "pending_approval" {
-        return create_pending_chosen_person_approval_intent(intent, args, ctx, now).await;
+        return create_pending_chosen_human_approval_intent(intent, args, ctx, now).await;
     }
 
     match ctx.store.create_intent(&intent).await {
@@ -238,16 +238,16 @@ pub async fn create(args: &Value, ctx: &SessionContext) -> String {
     }
 }
 
-async fn create_pending_chosen_person_approval_intent(
+async fn create_pending_chosen_human_approval_intent(
     pending_intent: IntentRecord,
     args: &Value,
     ctx: &SessionContext,
     now: i64,
 ) -> String {
-    let Some(chosen_person) = chosen_person(ctx) else {
+    let Some(chosen_human) = chosen_human(ctx) else {
         return json!({
             "status": "error",
-            "message": "Chosen-person approval is required, but no chosen person is configured."
+            "message": "Chosen-human approval is required, but no chosen human is configured."
         })
         .to_string();
     };
@@ -271,10 +271,10 @@ async fn create_pending_chosen_person_approval_intent(
         kind: "scheduled".into(),
         status: "active".into(),
         task: format!(
-            "Review proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {pending_task}. {} If the chosen person approves, update intent {pending_id} with status active. If the chosen person declines, delete intent {pending_id}.",
-            chosen_person_approval_target_description(&pending_intent, args),
+            "Review proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {pending_task}. {} If the chosen human approves, update intent {pending_id} with status active. If the chosen human declines, delete intent {pending_id}.",
+            chosen_human_approval_target_description(&pending_intent, args),
         ),
-        person: Some(chosen_person),
+        person: Some(chosen_human),
         profile: None,
         conversation: None,
         fire_at: Some(now),
@@ -282,20 +282,20 @@ async fn create_pending_chosen_person_approval_intent(
         recurrence: None,
         priority: 100,
         dedupe_key: Some(format!(
-            "chosen-person-approval:intent-tool:{original_dedupe_key}"
+            "chosen-human-approval:intent-tool:{original_dedupe_key}"
         )),
         source_action: Some(ctx.action_id.0.clone()),
         source_memory: pending_intent.source_memory.clone(),
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        chosen_person_approved: true,
+        chosen_human_approved: true,
     };
-    let chosen_person_intent_id = approval_intent.id.clone();
+    let chosen_human_intent_id = approval_intent.id.clone();
     if let Err(e) = ctx.store.create_intent(&approval_intent).await {
         return json!({
             "status": "error",
-            "message": format!("Created pending intent {pending_id}, but failed to create chosen-person approval intent: {e}"),
+            "message": format!("Created pending intent {pending_id}, but failed to create chosen-human approval intent: {e}"),
             "intent_id": pending_id,
         })
         .to_string();
@@ -304,21 +304,21 @@ async fn create_pending_chosen_person_approval_intent(
     json!({
         "status": "pending_approval",
         "intent_id": pending_id,
-        "chosen_person_intent_id": chosen_person_intent_id,
+        "chosen_human_intent_id": chosen_human_intent_id,
     })
     .to_string()
 }
 
-fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
     ctx.state
         .read_state()
         .bonds
         .iter()
-        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenPerson))
+        .find(|(_, relationship)| matches!(relationship.authority, Authority::ChosenHuman))
         .map(|(person, _)| person.clone())
 }
 
-fn chosen_person_approval_target_description(intent: &IntentRecord, args: &Value) -> String {
+fn chosen_human_approval_target_description(intent: &IntentRecord, args: &Value) -> String {
     let mut parts = Vec::new();
     if let Some(person) = &intent.person {
         parts.push(format!("Target person: {}.", person.0));
@@ -332,11 +332,11 @@ fn chosen_person_approval_target_description(intent: &IntentRecord, args: &Value
     if args["sensitive"].as_bool().unwrap_or(false) {
         parts.push("The request was marked sensitive.".into());
     }
-    if args["requires_chosen_person_approval"]
+    if args["requires_chosen_human_approval"]
         .as_bool()
         .unwrap_or(false)
     {
-        parts.push("The request explicitly requires chosen-person approval.".into());
+        parts.push("The request explicitly requires chosen-human approval.".into());
     }
     if parts.is_empty() {
         "No explicit target was provided.".into()
@@ -356,13 +356,13 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
             .to_string();
     }
 
-    let is_chosen_person = matches!(ctx.authority, Authority::ChosenPerson);
-    if !is_chosen_person && args["status"].as_str() == Some("active") {
+    let is_chosen_human = matches!(ctx.authority, Authority::ChosenHuman);
+    if !is_chosen_human && args["status"].as_str() == Some("active") {
         match ctx.store.get_intent(id).await {
             Ok(Some(intent)) if intent.status == "pending_approval" => {
                 return json!({
                     "status": "error",
-                    "message": "Activating an chosen-person-approval intent requires chosen-person authority.",
+                    "message": "Activating an chosen-human-approval intent requires chosen-human authority.",
                 })
                 .to_string();
             }
@@ -370,14 +370,14 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
             Err(e) => {
                 return json!({
                     "status": "error",
-                    "message": format!("Could not verify intent chosen-person approval status: {e}"),
+                    "message": format!("Could not verify intent chosen-human approval status: {e}"),
                 })
                 .to_string();
             }
         }
     }
 
-    let chosen_person_approved = if is_chosen_person {
+    let chosen_human_approved = if is_chosen_human {
         Some(true)
     } else if update_changes_approved_intent_surface(args) {
         Some(false)
@@ -399,7 +399,7 @@ pub async fn update(args: &Value, ctx: &SessionContext) -> String {
         priority: args["priority"].as_u64().map(|v| v.min(100) as u8),
         dedupe_key: args["dedupe_key"].as_str().map(str::to_string),
         source_memory: source_memory_arg(args),
-        chosen_person_approved,
+        chosen_human_approved,
         updated_at: super::util::now(),
     };
 
@@ -415,7 +415,7 @@ fn update_changes_approved_intent_surface(args: &Value) -> bool {
         object.keys().any(|key| {
             !matches!(
                 key.as_str(),
-                "intent_id" | "sensitive" | "requires_chosen_person_approval"
+                "intent_id" | "sensitive" | "requires_chosen_human_approval"
             )
         })
     })

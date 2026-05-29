@@ -158,7 +158,7 @@ fn profile_update_target_allowed(
     item: &Value,
     profile: &ProfileId,
 ) -> bool {
-    matches!(ctx.authority, crate::state::Authority::ChosenPerson)
+    matches!(ctx.authority, crate::state::Authority::ChosenHuman)
         || evidence_message_matches_target(item, ctx, state, |message| {
             message.profile.as_ref() == Some(profile)
         })
@@ -170,7 +170,7 @@ fn person_update_target_allowed(
     item: &Value,
     person: &PersonId,
 ) -> bool {
-    matches!(ctx.authority, crate::state::Authority::ChosenPerson)
+    matches!(ctx.authority, crate::state::Authority::ChosenHuman)
         || evidence_message_matches_target(item, ctx, state, |message| {
             message.person.as_ref() == Some(person)
         })

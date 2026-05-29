@@ -42,7 +42,7 @@ async fn background_actions_cannot_send_visible_messages() {
         ActionKind::Consolidate,
         ActionKind::Ruminate,
     ] {
-        let ctx = test_context(Authority::ChosenPerson, kind);
+        let ctx = test_context(Authority::ChosenHuman, kind);
         let denied = check(
             "send_message",
             &serde_json::json!({

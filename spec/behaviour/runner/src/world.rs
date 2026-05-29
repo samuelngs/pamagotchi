@@ -4,7 +4,7 @@ use actor::identity::{
     ClaimEvidence, ClaimStatus, Group, GroupContext, Identity, IdentityClaim, Person,
     PersonProfileStatus, Profile,
 };
-use actor::state::{ActorState, Authority, CoreTraits, Relationship};
+use actor::state::{ActorState, AdoptionRitualState, Authority, CoreTraits, Relationship};
 use actor::store::{
     Memory, MemoryKind, MemorySource, MemoryStability, MemorySubject, MemorySubjectType,
     MemoryType, PrivacyCategory, SqliteStore, Store, StoredMessage, TruthStatus, VisibilityScope,
@@ -146,6 +146,11 @@ async fn seed_people(
             &authority,
             optional_str(person_value, "relationship_phase"),
         );
+        if let Some(adoption_state) =
+            optional_str(person_value, "adoption_state").and_then(AdoptionRitualState::parse)
+        {
+            actor.set_adoption_state(&id, adoption_state, BASE_TIME);
+        }
         ids.profile_to_person.entry(id.0.clone()).or_insert(id);
         counts.people += 1;
     }
@@ -307,7 +312,7 @@ async fn seed_memories(
             .and_then(VisibilityScope::parse)
             .unwrap_or_else(|| {
                 if privacy_category == PrivacyCategory::Secret {
-                    VisibilityScope::ChosenPersonOnly
+                    VisibilityScope::ChosenHumanOnly
                 } else {
                     VisibilityScope::Profile
                 }
@@ -490,7 +495,7 @@ async fn seed_default_given_context(
     let authority = if phase == Some("identity_uncertain") {
         Authority::Default
     } else {
-        Authority::ChosenPerson
+        Authority::ChosenHuman
     };
 
     let person = Person {

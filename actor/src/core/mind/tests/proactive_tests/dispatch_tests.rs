@@ -30,7 +30,7 @@ async fn proactive_intent_with_allowed_consent_spawns_outreach() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -78,7 +78,7 @@ async fn proactive_intent_defers_when_gateway_is_disconnected() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -138,7 +138,7 @@ async fn proactive_intent_during_quiet_hours_defers() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )

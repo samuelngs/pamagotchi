@@ -23,7 +23,7 @@ async fn dropped_one_shot_fired_intent_is_completed() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -41,7 +41,7 @@ async fn dropped_one_shot_fired_intent_is_completed() {
             conversation: Some(ConversationId("relay:local".into())),
             person: Some(PersonId("person-sam".into())),
             scheduled_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
             defer_count: 0,
         }),
         &MindDecision::Drop,
@@ -74,7 +74,7 @@ async fn dropped_recurring_fired_intent_stays_active_for_next_fire() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -92,7 +92,7 @@ async fn dropped_recurring_fired_intent_stays_active_for_next_fire() {
             conversation: Some(ConversationId("relay:local".into())),
             person: Some(PersonId("person-sam".into())),
             scheduled_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
             defer_count: 0,
         }),
         &MindDecision::Drop,

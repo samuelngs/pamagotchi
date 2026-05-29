@@ -89,7 +89,7 @@ pub(super) async fn resolve_person_info(
 
 pub(super) fn bond_role(authority: &Authority) -> &'static str {
     match authority {
-        Authority::ChosenPerson => "chosen_person",
+        Authority::ChosenHuman => "chosen_human",
         Authority::Trusted => "trusted_person",
         Authority::Default => "current_person",
         Authority::Restricted => "guarded_person",

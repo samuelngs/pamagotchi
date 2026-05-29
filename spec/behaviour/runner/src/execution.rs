@@ -3,9 +3,10 @@ use super::input::CaseInput;
 use super::runtime::RuntimeConfig;
 use super::world::SeededWorld;
 use actor::core::{Actor, ActorLifecycleEvent, WakeEvent};
+use actor::state::ActorState;
 use actor::store::Store;
 use gateway::GatewayRouter;
-use protocol::InboundMessage;
+use protocol::{InboundMessage, PersonId};
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,6 +16,8 @@ use tokio::time::{Instant, sleep};
 pub struct CaseExecution {
     pub output: Vec<CapturedOutbound>,
     pub timed_out: bool,
+    pub final_actor: ActorState,
+    pub current_person: Option<PersonId>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -58,12 +61,16 @@ pub async fn execute_case_with_input(
         options.stream_output,
     )
     .await;
+    let final_actor = actor.state().read_state().clone();
+    let current_person = resolve_current_person(store.as_ref(), input.messages.last()).await;
 
     actor.shutdown().await?;
 
     Ok(CaseExecution {
         output: wait.messages,
         timed_out: wait.timed_out,
+        final_actor,
+        current_person,
     })
 }
 
@@ -175,6 +182,23 @@ fn source_message_keys(messages: &[InboundMessage]) -> Vec<String> {
             }
         })
         .collect()
+}
+
+async fn resolve_current_person(
+    store: &dyn Store,
+    message: Option<&InboundMessage>,
+) -> Option<PersonId> {
+    let message = message?;
+    if let Some(person) = &message.person {
+        return Some(person.clone());
+    }
+    let (gateway_id, sender_external_id) = message.sender_key()?;
+    store
+        .resolve_identity(gateway_id, sender_external_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|ctx| ctx.person.map(|person| person.id))
 }
 
 fn print_streamed_output(messages: &[CapturedOutbound], start: usize) {

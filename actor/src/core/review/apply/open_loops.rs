@@ -37,10 +37,10 @@ pub(super) async fn apply_open_loops(
                 .push(format!("open_loop {idx} missing condition"));
             continue;
         }
-        if permission::intent_requires_chosen_person_approval(item)
-            && !matches!(ctx.authority, crate::state::Authority::ChosenPerson)
+        if permission::intent_requires_chosen_human_approval(item)
+            && !matches!(ctx.authority, crate::state::Authority::ChosenHuman)
         {
-            match create_chosen_person_proactive_approval_intent(
+            match create_chosen_human_proactive_approval_intent(
                 item,
                 ctx,
                 idx,
@@ -53,12 +53,12 @@ pub(super) async fn apply_open_loops(
             {
                 Some(_) => counts.open_loops += 1,
                 None => counts.skipped.push(format!(
-                    "open_loop {idx} requires chosen-person approval for sensitive proactive outreach"
+                    "open_loop {idx} requires chosen-human approval for sensitive proactive outreach"
                 )),
             }
             continue;
         }
-        if !matches!(ctx.authority, crate::state::Authority::ChosenPerson) {
+        if !matches!(ctx.authority, crate::state::Authority::ChosenHuman) {
             match permission::intent_targets_current_or_verified_with_keys(
                 item,
                 ctx,
@@ -146,7 +146,7 @@ pub(super) async fn apply_open_loops(
             created_at: now,
             updated_at: now,
             last_fired_at: None,
-            chosen_person_approved: matches!(ctx.authority, crate::state::Authority::ChosenPerson),
+            chosen_human_approved: matches!(ctx.authority, crate::state::Authority::ChosenHuman),
         };
         match ctx.store.create_intent(&intent).await {
             Ok(()) => counts.open_loops += 1,
@@ -192,7 +192,7 @@ fn normalize_open_loop_kind(
     }
 }
 
-async fn create_chosen_person_proactive_approval_intent(
+async fn create_chosen_human_proactive_approval_intent(
     item: &Value,
     ctx: &SessionContext,
     idx: usize,
@@ -201,7 +201,7 @@ async fn create_chosen_person_proactive_approval_intent(
     fire_at: Option<i64>,
     condition: Option<&str>,
 ) -> Option<String> {
-    let chosen_person = chosen_person(ctx)?;
+    let chosen_human = chosen_human(ctx)?;
     let now = util::now();
     let original_dedupe_key = item["dedupe_key"]
         .as_str()
@@ -256,7 +256,7 @@ async fn create_chosen_person_proactive_approval_intent(
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        chosen_person_approved: false,
+        chosen_human_approved: false,
     };
     if let Err(e) = ctx.store.create_intent(&pending_intent).await {
         tracing::warn!(
@@ -266,15 +266,15 @@ async fn create_chosen_person_proactive_approval_intent(
         );
         return None;
     }
-    let target = chosen_person_approval_target_description(item, ctx, fire_at, condition);
+    let target = chosen_human_approval_target_description(item, ctx, fire_at, condition);
     let intent = IntentRecord {
         id: format!("intent-{}", util::uuid_v4()),
         kind: "scheduled".into(),
         status: "active".into(),
         task: format!(
-            "Review sensitive proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {task}. {target} If the chosen person approves, update intent {pending_id} with status active. If the chosen person declines, delete intent {pending_id}."
+            "Review sensitive proactive outreach before it is sent. Pending intent: {pending_id}. Proposed task: {task}. {target} If the chosen human approves, update intent {pending_id} with status active. If the chosen human declines, delete intent {pending_id}."
         ),
-        person: Some(chosen_person),
+        person: Some(chosen_human),
         profile: None,
         conversation: None,
         fire_at: Some(now),
@@ -282,14 +282,14 @@ async fn create_chosen_person_proactive_approval_intent(
         recurrence: None,
         priority: 100,
         dedupe_key: Some(format!(
-            "chosen-person-approval:sensitive-open-loop:{original_dedupe_key}"
+            "chosen-human-approval:sensitive-open-loop:{original_dedupe_key}"
         )),
         source_action: Some(ctx.action_id.0.clone()),
         source_memory: source_memory_id(item),
         created_at: now,
         updated_at: now,
         last_fired_at: None,
-        chosen_person_approved: true,
+        chosen_human_approved: true,
     };
     let id = intent.id.clone();
     match ctx.store.create_intent(&intent).await {
@@ -298,28 +298,25 @@ async fn create_chosen_person_proactive_approval_intent(
             tracing::warn!(
                 action = %ctx.action_id,
                 %e,
-                "failed to create chosen-person approval intent for sensitive open loop"
+                "failed to create chosen-human approval intent for sensitive open loop"
             );
             None
         }
     }
 }
 
-fn chosen_person(ctx: &SessionContext) -> Option<PersonId> {
+fn chosen_human(ctx: &SessionContext) -> Option<PersonId> {
     let actor = ctx.state.read_state();
     actor
         .bonds
         .iter()
         .find(|(_, relationship)| {
-            matches!(
-                relationship.authority,
-                crate::state::Authority::ChosenPerson
-            )
+            matches!(relationship.authority, crate::state::Authority::ChosenHuman)
         })
         .map(|(person, _)| person.clone())
 }
 
-fn chosen_person_approval_target_description(
+fn chosen_human_approval_target_description(
     item: &Value,
     ctx: &SessionContext,
     fire_at: Option<i64>,

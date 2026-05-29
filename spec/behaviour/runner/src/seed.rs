@@ -38,6 +38,7 @@ fn validate_people(seed: &Value, vocab: &Vocabulary, path: &Path, refs: &mut See
             &vocab.relationship_phases,
             path,
         );
+        validate_optional_enum(person, "adoption_state", &vocab.adoption_states, path);
         validate_optional_enum(person, "comm_style", &vocab.comm_styles, path);
     }
 }

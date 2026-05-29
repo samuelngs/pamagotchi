@@ -107,7 +107,7 @@ async fn directive_scope(item: &Value, ctx: &SessionContext) -> Option<Directive
 }
 
 async fn directive_scope_allowed(scope: &DirectiveScope, ctx: &SessionContext) -> bool {
-    if matches!(ctx.authority, Authority::ChosenPerson) {
+    if matches!(ctx.authority, Authority::ChosenHuman) {
         return true;
     }
 
@@ -119,7 +119,7 @@ async fn directive_scope_allowed(scope: &DirectiveScope, ctx: &SessionContext) -
 }
 
 fn directive_set_by(item: &Value, ctx: &SessionContext) -> Option<PersonId> {
-    if matches!(ctx.authority, Authority::ChosenPerson) {
+    if matches!(ctx.authority, Authority::ChosenHuman) {
         return item["set_by_person_id"]
             .as_str()
             .filter(|id| !id.trim().is_empty())

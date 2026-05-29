@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_person_approval() {
+async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_human_approval() {
     let mut current = test_context(Authority::Default, ActionKind::Respond);
     current.messages[0].person = Some(PersonId("person-current".into()));
 
@@ -25,14 +25,14 @@ async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_person_appr
             "task": "Follow up about the confidential family issue",
             "kind": "scheduled",
             "fire_at": 1200,
-            "requires_chosen_person_approval": true
+            "requires_chosen_human_approval": true
         }),
         &review,
     )
     .await
     .unwrap();
 
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "create_intent",
         &serde_json::json!({
@@ -41,13 +41,13 @@ async fn sensitive_proactive_intent_creates_can_be_routed_for_chosen_person_appr
             "fire_at": 1200,
             "sensitive": true
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();
 }
 #[tokio::test]
-async fn sensitive_intent_updates_require_chosen_person_authority() {
+async fn sensitive_intent_updates_require_chosen_human_authority() {
     let review = test_context(Authority::Default, ActionKind::Review);
     let denied = check(
         "update_intent",
@@ -62,26 +62,26 @@ async fn sensitive_intent_updates_require_chosen_person_authority() {
     .unwrap_err();
     assert!(denied.contains("Sensitive proactive outreach"));
 
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "update_intent",
         &serde_json::json!({
             "intent_id": "intent-1",
             "task": "Follow up about a bank payment",
-            "requires_chosen_person_approval": true
+            "requires_chosen_human_approval": true
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();
 }
 #[tokio::test]
-async fn pending_chosen_person_approval_intents_can_only_be_activated_by_chosen_person() {
+async fn pending_chosen_human_approval_intents_can_only_be_activated_by_chosen_human() {
     let review = test_context(Authority::Default, ActionKind::Review);
     review
         .store
         .create_intent(&IntentRecord {
-            id: "intent-pending-chosen-person-approval".into(),
+            id: "intent-pending-chosen-human-approval".into(),
             kind: "scheduled".into(),
             status: "pending_approval".into(),
             task: "Ask Sam about the private medical update".into(),
@@ -98,7 +98,7 @@ async fn pending_chosen_person_approval_intents_can_only_be_activated_by_chosen_
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -106,20 +106,20 @@ async fn pending_chosen_person_approval_intents_can_only_be_activated_by_chosen_
     let denied = check(
         "update_intent",
         &serde_json::json!({
-            "intent_id": "intent-pending-chosen-person-approval",
+            "intent_id": "intent-pending-chosen-human-approval",
             "status": "active"
         }),
         &review,
     )
     .await
     .unwrap_err();
-    assert!(denied.contains("chosen-person authority"));
+    assert!(denied.contains("chosen-human authority"));
 
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
-    chosen_person
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
+    chosen_human
         .store
         .create_intent(&IntentRecord {
-            id: "intent-pending-chosen-person-approval".into(),
+            id: "intent-pending-chosen-human-approval".into(),
             kind: "scheduled".into(),
             status: "pending_approval".into(),
             task: "Ask Sam about the private medical update".into(),
@@ -136,17 +136,17 @@ async fn pending_chosen_person_approval_intents_can_only_be_activated_by_chosen_
             created_at: 1000,
             updated_at: 1000,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
     check(
         "update_intent",
         &serde_json::json!({
-            "intent_id": "intent-pending-chosen-person-approval",
+            "intent_id": "intent-pending-chosen-human-approval",
             "status": "active"
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();

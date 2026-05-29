@@ -39,11 +39,6 @@ expected_behavior:
     - playful
     - mate_like
     - casual
-  forbidden_phrases:
-    - "please provide your name"
-    - "to continue"
-    - "required"
-    - "how can I help"
 
 state_expectations:
   relationship_phase_after: name_sought

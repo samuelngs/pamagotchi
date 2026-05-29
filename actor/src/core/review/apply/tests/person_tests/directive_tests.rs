@@ -42,7 +42,7 @@ async fn apply_review_can_create_current_group_directive() {
     assert!(directives[0].directive.contains("release updates brief"));
 }
 #[tokio::test]
-async fn non_chosen_person_review_cannot_create_directives_outside_current_scope() {
+async fn non_chosen_human_review_cannot_create_directives_outside_current_scope() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let profile = ProfileId("profile-group".into());
     let person = PersonId("person-group".into());

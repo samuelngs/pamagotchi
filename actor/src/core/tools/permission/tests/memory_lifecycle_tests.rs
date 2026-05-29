@@ -269,7 +269,7 @@ async fn default_user_cannot_forget_sensitive_current_profile_memory() {
     assert!(denied.contains("outside the current profile"));
 }
 #[tokio::test]
-async fn memory_inspection_and_deletion_by_id_are_chosen_person_only() {
+async fn memory_inspection_and_deletion_by_id_are_chosen_human_only() {
     let default = test_context(Authority::Default, ActionKind::Respond);
     for tool in ["inspect_memory", "delete_memory"] {
         let denied = check(
@@ -279,15 +279,15 @@ async fn memory_inspection_and_deletion_by_id_are_chosen_person_only() {
         )
         .await
         .unwrap_err();
-        assert!(denied.contains("Chosen-person authority"));
+        assert!(denied.contains("Chosen-human authority"));
     }
 
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     for tool in ["inspect_memory", "delete_memory"] {
         check(
             tool,
             &serde_json::json!({"memory_id": "memory-secret"}),
-            &chosen_person,
+            &chosen_human,
         )
         .await
         .unwrap();

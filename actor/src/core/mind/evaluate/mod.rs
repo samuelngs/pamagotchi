@@ -4,7 +4,7 @@ use super::super::event::{FiredIntent, WakeEvent};
 use super::super::session::{self, SessionResult};
 use super::super::tools::{SessionContext, SessionKind};
 use super::{MAX_DEFER_COUNT, Mind};
-use crate::state::Authority;
+use crate::state::{AdoptionRitualState, Authority};
 use crate::store::ConversationSummary;
 use inference::{Reasoning, RouteContext};
 use protocol::{ConversationId, InboundMessage};
@@ -18,6 +18,14 @@ impl Mind {
         let Some(evaluable) = EvaluableEvent::from_wake(event) else {
             return MindVerdict::Drop;
         };
+
+        if let WakeEvent::Message(msg) = event
+            && self.adoption_message_requires_response(msg)
+        {
+            return MindVerdict::Respond {
+                style_directive: None,
+            };
+        }
 
         let event_desc = describe(evaluable);
         let eval_messages = self.evaluation_messages(evaluable, event_desc).await;
@@ -76,7 +84,7 @@ impl Mind {
         event: &WakeEvent,
     ) -> MindDecision {
         if matches!(self.resolve_authority(event), Authority::Blocked)
-            && !matches!(event, WakeEvent::IntentFired(intent) if intent.chosen_person_approved)
+            && !matches!(event, WakeEvent::IntentFired(intent) if intent.chosen_human_approved)
         {
             tracing::info!("blocked person — dropping silently");
             return MindDecision::Drop;
@@ -170,6 +178,14 @@ impl Mind {
             .map_or(Authority::Default, |r| r.authority.clone())
     }
 
+    fn adoption_message_requires_response(&self, msg: &InboundMessage) -> bool {
+        let Some(person) = msg.person.as_ref() else {
+            return false;
+        };
+        let actor = self.state.read_state();
+        adoption_gate_forces_response(actor.adoption_state(person), &msg.content)
+    }
+
     async fn evaluation_messages(
         &self,
         event: EvaluableEvent<'_>,
@@ -210,6 +226,28 @@ impl Mind {
             chrono::Utc::now().timestamp(),
         )
     }
+}
+
+fn looks_safety_critical(content: &str) -> bool {
+    let normalized = content.to_lowercase();
+    [
+        "suicide",
+        "kill myself",
+        "hurt myself",
+        "self harm",
+        "overdose",
+        "emergency",
+        "danger",
+        "unsafe",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
+}
+
+fn adoption_gate_forces_response(state: Option<&AdoptionRitualState>, content: &str) -> bool {
+    state.is_some_and(|state| {
+        *state != AdoptionRitualState::AdoptionComplete && !looks_safety_critical(content)
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -429,7 +467,7 @@ fn intent_context_message(
             "event": "intent_fired",
             "intent_id": intent.id,
             "scheduled_at": intent.scheduled_at,
-            "chosen_person_approved": intent.chosen_person_approved,
+            "chosen_human_approved": intent.chosen_human_approved,
             "defer_count": intent.defer_count,
         }),
     }

@@ -220,6 +220,6 @@ pub(super) fn read_intent(row: &rusqlite::Row) -> rusqlite::Result<IntentRecord>
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
         last_fired_at: row.get("last_fired_at")?,
-        chosen_person_approved: row.get("chosen_person_approved")?,
+        chosen_human_approved: row.get("chosen_human_approved")?,
     })
 }

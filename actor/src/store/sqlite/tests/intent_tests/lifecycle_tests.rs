@@ -21,13 +21,13 @@ async fn intents_are_persisted_updated_due_and_fired_once() {
         created_at: 900,
         updated_at: 900,
         last_fired_at: None,
-        chosen_person_approved: true,
+        chosen_human_approved: true,
     };
 
     store.create_intent(&intent).await.unwrap();
     let stored = store.get_intent("intent-1").await.unwrap().unwrap();
     assert_eq!(stored.task, "Ask how the deployment went");
-    assert!(stored.chosen_person_approved);
+    assert!(stored.chosen_human_approved);
     assert_eq!(
         stored.source_memory.as_ref().map(|id| id.0.as_str()),
         Some("memory-commitment-1")
@@ -40,7 +40,7 @@ async fn intents_are_persisted_updated_due_and_fired_once() {
                 task: Some("Ask whether the deployment recovered".into()),
                 priority: Some(90),
                 source_memory: Some(MemoryId("memory-commitment-2".into())),
-                chosen_person_approved: Some(false),
+                chosen_human_approved: Some(false),
                 updated_at: 950,
                 ..Default::default()
             },
@@ -51,7 +51,7 @@ async fn intents_are_persisted_updated_due_and_fired_once() {
     assert_eq!(due.len(), 1);
     assert_eq!(due[0].priority, 90);
     assert_eq!(due[0].task, "Ask whether the deployment recovered");
-    assert!(!due[0].chosen_person_approved);
+    assert!(!due[0].chosen_human_approved);
     assert_eq!(
         due[0].source_memory.as_ref().map(|id| id.0.as_str()),
         Some("memory-commitment-2")
@@ -87,7 +87,7 @@ async fn intents_can_be_marked_completed_once() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -132,7 +132,7 @@ async fn cancelled_intents_are_not_marked_completed() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -171,7 +171,7 @@ async fn recurring_intents_reschedule_when_fired() {
             created_at: 900,
             updated_at: 900,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();

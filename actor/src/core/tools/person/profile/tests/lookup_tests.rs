@@ -140,7 +140,7 @@ async fn get_person_identity_lookup_is_durably_audited() {
             metadata: serde_json::Value::Null,
         }],
         conversation: Some(ConversationId("relay:local".into())),
-        authority: Authority::ChosenPerson,
+        authority: Authority::ChosenHuman,
         style_directive: None,
         cancelled_note: None,
         concurrent_summaries: vec![],

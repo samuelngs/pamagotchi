@@ -30,7 +30,7 @@ async fn proactive_intent_without_conversation_uses_last_person_conversation() {
                 conversation: None,
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -96,7 +96,7 @@ async fn proactive_intent_without_conversation_uses_channel_preference_when_avai
                 conversation: None,
                 person: Some(person),
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -129,7 +129,7 @@ async fn proactive_intent_with_unknown_conversation_person_drops() {
                 conversation: Some(ConversationId("relay:unknown".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -167,7 +167,7 @@ async fn proactive_intent_for_stale_conversation_drops() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -191,7 +191,7 @@ async fn proactive_intent_without_any_target_drops() {
                 conversation: None,
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )

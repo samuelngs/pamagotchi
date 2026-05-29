@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn first_relay_contact_relationship_config_is_journaled() {
+async fn first_relay_contact_starts_as_default_adoption_candidate() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let (mind, state_join) = test_mind_with_state_task(store.clone());
     let mut msg = inbound(
@@ -11,7 +11,7 @@ async fn first_relay_contact_relationship_config_is_journaled() {
         "sam-local",
         "relay:sam-local",
         None,
-        "relay-chosen_person-msg-1",
+        "relay-chosen_human-msg-1",
     );
 
     ingest::resolve_person(&mind.state, &mind.store, &mut msg).await;
@@ -22,7 +22,7 @@ async fn first_relay_contact_relationship_config_is_journaled() {
         .expect("relay contact resolves to a person");
     {
         let actor = mind.state.read_state();
-        assert_eq!(actor.bonds[&person].authority, Authority::ChosenPerson);
+        assert_eq!(actor.bonds[&person].authority, Authority::Default);
     }
     let records = store.state_journal_after(None, 10).await.unwrap();
     let relationship_record = records
@@ -35,7 +35,7 @@ async fn first_relay_contact_relationship_config_is_journaled() {
     );
     assert_eq!(
         relationship_record.payload["authority"].as_str(),
-        Some("chosen_person")
+        Some("default")
     );
 
     drop(mind);

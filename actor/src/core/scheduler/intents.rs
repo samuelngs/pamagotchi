@@ -45,7 +45,7 @@ pub(crate) async fn claim_and_send_due_intent(
         conversation: intent.conversation,
         person: intent.person,
         scheduled_at: Some(intent.updated_at.max(intent.created_at)),
-        chosen_person_approved: intent.chosen_person_approved,
+        chosen_human_approved: intent.chosen_human_approved,
         defer_count: 0,
     });
 

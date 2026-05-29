@@ -62,7 +62,7 @@ async fn proactive_intent_drops_when_last_visible_message_is_assistant() {
                 conversation: Some(conversation),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -119,7 +119,7 @@ async fn proactive_intent_drops_when_target_replied_after_scheduling() {
             created_at: now - 240,
             updated_at: now - 240,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -157,7 +157,7 @@ async fn proactive_intent_drops_when_target_replied_after_scheduling() {
         conversation: Some(conversation),
         person: Some(person),
         scheduled_at: Some(now - 240),
-        chosen_person_approved: false,
+        chosen_human_approved: false,
         defer_count: 0,
     });
     let decision = mind
@@ -227,7 +227,7 @@ async fn proactive_intent_uses_latest_schedule_time_for_reply_obsolescence() {
             created_at: now - 600,
             updated_at: now - 30,
             last_fired_at: None,
-            chosen_person_approved: false,
+            chosen_human_approved: false,
         })
         .await
         .unwrap();
@@ -249,7 +249,7 @@ async fn proactive_intent_uses_latest_schedule_time_for_reply_obsolescence() {
                 conversation: Some(conversation),
                 person: Some(person),
                 scheduled_at: Some(now - 30),
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )
@@ -290,7 +290,7 @@ async fn proactive_intent_drops_when_prior_proactive_outreach_is_unanswered() {
                 conversation: Some(ConversationId("relay:local".into())),
                 person: None,
                 scheduled_at: None,
-                chosen_person_approved: false,
+                chosen_human_approved: false,
                 defer_count: 0,
             }),
         )

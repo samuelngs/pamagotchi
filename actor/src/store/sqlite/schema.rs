@@ -1,4 +1,4 @@
-use super::migrations::{ensure_migration_table, run_migrations};
+use super::migrations::{ensure_migration_table, record_clean_schema};
 use rusqlite::Connection;
 
 pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
@@ -73,6 +73,9 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
             metadata TEXT NOT NULL DEFAULT '{}'
         );
         CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, timestamp);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_source_unique
+            ON messages(conversation_id, source_gateway_id, source_message_id, role)
+            WHERE source_gateway_id IS NOT NULL AND source_message_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS memory_subjects (
             memory_id TEXT NOT NULL,
@@ -233,7 +236,7 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             last_fired_at INTEGER,
-            chosen_person_approved INTEGER NOT NULL DEFAULT 0
+            chosen_human_approved INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_intents_due ON intents(status, fire_at, priority);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_intents_dedupe
@@ -434,7 +437,7 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
         );",
     )?;
 
-    run_migrations(conn)?;
+    record_clean_schema(conn)?;
 
     Ok(())
 }

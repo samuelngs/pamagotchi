@@ -1,4 +1,5 @@
 mod actor;
+mod adoption;
 mod affect;
 mod belief;
 mod config;
@@ -9,6 +10,7 @@ mod relationship;
 mod traits;
 
 pub use actor::{ActorState, GrowthEvent};
+pub use adoption::{AdoptionCandidate, AdoptionRitualState};
 pub use affect::AffectState;
 pub use belief::Belief;
 pub use config::{GrowthConfig, GrowthRate, ProactivityConfig, QuietHoursUtc};

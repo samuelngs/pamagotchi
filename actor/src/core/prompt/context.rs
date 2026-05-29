@@ -60,6 +60,7 @@ pub struct ActionPromptContext {
     pub group: Option<GroupCtx>,
     pub recent_messages: Vec<RecentMessageCtx>,
     pub relationship: Option<RelationshipCtx>,
+    pub adoption_ritual: Option<AdoptionRitualCtx>,
     pub review_transcript: Option<ReviewTranscriptCtx>,
     pub timing: TimingCtx,
     pub safety: SafetyCtx,
@@ -186,6 +187,12 @@ pub struct RelationshipCtx {
     pub last_inbound: Option<String>,
     pub last_outbound: Option<String>,
     pub first_met: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AdoptionRitualCtx {
+    pub state: String,
+    pub has_chosen_human: bool,
 }
 
 #[derive(Serialize)]

@@ -176,7 +176,7 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "visibility_scope": {
                         "type": "string",
-                        "enum": ["profile", "person", "chosen_person_only", "global"],
+                        "enum": ["profile", "person", "chosen_human_only", "global"],
                         "description": "Default boundary for using this memory."
                     },
                     "dedupe_key": {
@@ -211,7 +211,7 @@ pub fn tools() -> Vec<Tool> {
                     },
                     "subject_actor": {
                         "type": "boolean",
-                        "description": "Chosen-person-only. Store this as an actor/self memory for Pamagotchi's own identity or core self facts."
+                        "description": "Chosen-human-only. Store this as an actor/self memory for Pamagotchi's own identity or core self facts."
                     },
                 },
                 "required": ["content", "kind"]
@@ -219,7 +219,7 @@ pub fn tools() -> Vec<Tool> {
         },
         Tool {
             name: "inspect_memory".into(),
-            description: "Chosen-person-only audit view for one memory by id, including subjects, source, privacy, evidence, supersession, and review metadata.".into(),
+            description: "Chosen-human-only audit view for one memory by id, including subjects, source, privacy, evidence, supersession, and review metadata.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -295,7 +295,7 @@ pub fn tools() -> Vec<Tool> {
         },
         Tool {
             name: "delete_memory".into(),
-            description: "Chosen-person-only deletion for any memory by id, including sensitive, secret, external, or cross-profile memories.".into(),
+            description: "Chosen-human-only deletion for any memory by id, including sensitive, secret, external, or cross-profile memories.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -315,10 +315,10 @@ pub fn tools() -> Vec<Tool> {
 }
 
 pub async fn inspect(args: &Value, ctx: &SessionContext) -> String {
-    if !matches!(ctx.authority, Authority::ChosenPerson) {
+    if !matches!(ctx.authority, Authority::ChosenHuman) {
         return json!({
             "status": "error",
-            "message": "Chosen-person authority is required to inspect memories by id."
+            "message": "Chosen-human authority is required to inspect memories by id."
         })
         .to_string();
     }
@@ -364,10 +364,10 @@ pub async fn forget(args: &Value, ctx: &SessionContext) -> String {
 }
 
 pub async fn delete(args: &Value, ctx: &SessionContext) -> String {
-    if !matches!(ctx.authority, Authority::ChosenPerson) {
+    if !matches!(ctx.authority, Authority::ChosenHuman) {
         return json!({
             "status": "error",
-            "message": "Chosen-person authority is required to delete memories by id."
+            "message": "Chosen-human authority is required to delete memories by id."
         })
         .to_string();
     }

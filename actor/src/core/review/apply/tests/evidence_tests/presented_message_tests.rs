@@ -76,7 +76,7 @@ async fn apply_review_uses_presented_injected_message_evidence() {
                 "truth_status": "stated",
                 "content": "Injected person prefers release notes with chosen_people and rollback paths.",
                 "evidence_message_ids": ["msg-injected"],
-                "dedupe_key": "preference:profile-injected:release-note-chosen_person-rollback"
+                "dedupe_key": "preference:profile-injected:release-note-chosen_human-rollback"
             }],
             "relationship_delta": [{
                 "person_id": injected_person.0.clone(),

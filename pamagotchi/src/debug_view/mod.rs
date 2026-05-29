@@ -253,11 +253,11 @@ fn render_intent(value: &Value) -> String {
     let id = field(value, "id").unwrap_or_else(|| "<unknown>".into());
     let status = field(value, "status").unwrap_or_else(|| "unknown".into());
     let fire_at = field(value, "fire_at").unwrap_or_else(|| "-".into());
-    let chosen_person_approved =
-        field(value, "chosen_person_approved").unwrap_or_else(|| "false".into());
+    let chosen_human_approved =
+        field(value, "chosen_human_approved").unwrap_or_else(|| "false".into());
     let task = field(value, "task").unwrap_or_default();
     format!(
-        "{id} status={status} fire_at={fire_at} chosen_person_approved={chosen_person_approved} \"{}\"",
+        "{id} status={status} fire_at={fire_at} chosen_human_approved={chosen_human_approved} \"{}\"",
         truncate(&task, 120)
     )
 }

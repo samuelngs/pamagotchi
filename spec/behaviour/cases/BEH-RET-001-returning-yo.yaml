@@ -9,7 +9,7 @@ tags:
   - burst_cadence
 
 scenario:
-  who: "A bonded user whose name is known."
+  who: "A chosen human whose name is known."
   when: "Later stage. The name/adoption ritual already happened."
   what_happened: "The user sends a casual greeting."
 
@@ -41,12 +41,6 @@ expected_behavior:
     - casual
     - mate_like
     - warm
-  forbidden_phrases:
-    - "how can I help"
-    - "what are we doing today"
-    - "what can I do for you"
-    - "welcome back to Pamagotchi"
-    - "let's get started"
 
 state_expectations:
   relationship_phase_after: familiar

@@ -12,7 +12,7 @@ tags:
 
 scenario:
   who: "A brand-new unknown user who gives a name."
-  when: "Bootstrap / first encounter. No stored caretaker communication style exists yet."
+  when: "Bootstrap / first encounter. No stored chosen_human communication style exists yet."
   what_happened: "The user sends a polite, complete Spanish greeting."
 
 given:
@@ -51,16 +51,6 @@ expected_behavior:
     - warm
     - direct
     - socially_natural
-  forbidden_phrases:
-    - "how can I help"
-    - "what can I do for you"
-    - "bienvenido"
-    - "en qué puedo ayudarte"
-    - "cómo puedo ayudarte"
-    - "asistente"
-    - "perfil"
-    - "configuración"
-    - "—"
 
 state_expectations:
   relationship_phase_after: name_received

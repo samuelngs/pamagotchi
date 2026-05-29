@@ -1,13 +1,13 @@
 use super::*;
 
 #[tokio::test]
-async fn relationship_trust_ceiling_requires_chosen_person_social_path_for_default_people() {
+async fn relationship_trust_ceiling_requires_chosen_human_social_path_for_default_people() {
     let ctx = test_context(Authority::Default, ActionKind::Review);
-    let chosen_person = PersonId("person-chosen_person".into());
+    let chosen_human = PersonId("person-chosen_human".into());
     let stranger = PersonId("person-stranger".into());
     {
         let mut actor = ctx.state.shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
+        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
     }
 
     let ceiling = relationship_trust_ceiling(&ctx, &stranger).await;
@@ -15,26 +15,26 @@ async fn relationship_trust_ceiling_requires_chosen_person_social_path_for_defau
     assert_eq!(ceiling, crate::state::Relationship::default().trust);
 }
 #[tokio::test]
-async fn relationship_trust_ceiling_allows_chosen_person_connected_social_path() {
+async fn relationship_trust_ceiling_allows_chosen_human_connected_social_path() {
     let ctx = test_context(Authority::Default, ActionKind::Review);
-    let chosen_person = PersonId("person-chosen_person".into());
+    let chosen_human = PersonId("person-chosen_human".into());
     let middle = PersonId("person-middle".into());
     let connected = PersonId("person-connected".into());
     {
         let mut actor = ctx.state.shared.actor.write().unwrap();
-        actor.set_relationship_config(&chosen_person, Some(Authority::ChosenPerson));
+        actor.set_relationship_config(&chosen_human, Some(Authority::ChosenHuman));
     }
     ctx.store
         .upsert_relation(&SocialRelation {
-            person_a: chosen_person.clone(),
+            person_a: chosen_human.clone(),
             person_b: middle.clone(),
             relation: Relation::Friend,
             direction: Relation::Friend.default_direction(),
             confidence: 0.9,
             status: RelationStatus::Confirmed,
             evidence: Some(serde_json::json!({"source": "test"})),
-            source_kind: RelationSource::ChosenPersonConfirmed,
-            asserted_by: Some(chosen_person.clone()),
+            source_kind: RelationSource::ChosenHumanConfirmed,
+            asserted_by: Some(chosen_human.clone()),
             created_at: 1000,
             updated_at: 1000,
         })
@@ -155,7 +155,7 @@ async fn live_reflection_relationship_changes_are_current_person_only() {
     .unwrap_err();
     assert!(denied.contains("another person"));
 
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "reflect",
         &serde_json::json!({
@@ -164,7 +164,7 @@ async fn live_reflection_relationship_changes_are_current_person_only() {
                 "trust_delta": 0.01
             }]
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();
@@ -184,15 +184,15 @@ async fn live_reflection_relationship_changes_are_current_person_only() {
     .unwrap();
 }
 #[tokio::test]
-async fn chosen_person_or_review_can_update_other_profile_and_person() {
-    let chosen_person = test_context(Authority::ChosenPerson, ActionKind::Respond);
+async fn chosen_human_or_review_can_update_other_profile_and_person() {
+    let chosen_human = test_context(Authority::ChosenHuman, ActionKind::Respond);
     check(
         "update_profile",
         &serde_json::json!({
             "ref": "profile-other",
-            "summary": "Chosen-person-visible profile summary"
+            "summary": "Chosen-human-visible profile summary"
         }),
-        &chosen_person,
+        &chosen_human,
     )
     .await
     .unwrap();

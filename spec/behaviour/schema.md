@@ -135,18 +135,10 @@ messages, not line breaks inside one message.
 : Desired tonal labels. These guide later judgement but should not override required
 or forbidden beats.
 
-`expected_behavior.forbidden_phrases`
-: Optional literal or near-literal phrases that should fail the case when present.
-Avoid using this for taste, style, or creative-quality failures; prefer semantic
-beats and examples for those.
-
 `expected_behavior.freshness`
-: Optional executable lexical checks for live output. Use this for stale example
-reuse, required-any fragments, required-any fragment groups, forbidden
-fragments/exact messages/words, min/max words per message, identity-lookup message
-limits, final-position checks, and repeated-run diversity. Avoid this for cases
-where the goal is open-ended creative behavior rather than deterministic lexical
-compliance.
+: Optional executable non-lexical checks for live output, currently message length and
+repeated-run diversity. Do not use literal phrases, fragments, exact messages, or word
+blacklists as behavior or freshness checks.
 
 `state_expectations`
 : Optional expected state changes after the interaction. Omit if the case is only
@@ -166,7 +158,7 @@ Later test harnesses should treat cases as layered expectations:
 2. Rule checks for visible state changes where deterministic.
 3. Semantic checks for required and forbidden beats.
 4. Optional model-judge checks for tone labels.
-5. Optional lexical checks only where exact strings are genuinely part of the rule.
+5. Optional model-judge checks for richer naturalness and semantic quality.
 
 Exact examples should be used as calibration data, not the primary oracle.
 
@@ -209,7 +201,7 @@ seed:
   people:
     - id: person-sam
       name: Sam
-      authority: chosen_person
+      authority: chosen_human
       relationship_phase: familiar
       comm_style: burst_friendly
 
@@ -234,7 +226,7 @@ seed:
         type: person
         id: person-sam
       content: "Sam told Pamagotchi a private worry."
-      visibility_scope: chosen_person_only
+      visibility_scope: chosen_human_only
       sensitivity: 0.8
 
   conversations:

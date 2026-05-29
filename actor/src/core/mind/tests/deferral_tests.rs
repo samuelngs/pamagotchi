@@ -30,16 +30,16 @@ async fn defer_verdict_reemits_message_with_bounded_count() {
     }
 }
 #[tokio::test]
-async fn defer_verdict_reemits_intent_with_chosen_person_approval_and_bounded_count() {
+async fn defer_verdict_reemits_intent_with_chosen_human_approval_and_bounded_count() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let mind = test_mind(store);
     let intent = FiredIntent {
-        id: "intent-chosen-person-approved".into(),
+        id: "intent-chosen-human-approved".into(),
         task: "Follow up after the deploy".into(),
         conversation: Some(ConversationId("relay:local".into())),
         person: Some(PersonId("person-sam".into())),
         scheduled_at: None,
-        chosen_person_approved: true,
+        chosen_human_approved: true,
         defer_count: 1,
     };
 
@@ -53,8 +53,8 @@ async fn defer_verdict_reemits_intent_with_chosen_person_approval_and_bounded_co
     match decision {
         MindDecision::DeferIntent(deferred, delay_secs) => {
             assert_eq!(delay_secs, 300);
-            assert_eq!(deferred.id, "intent-chosen-person-approved");
-            assert!(deferred.chosen_person_approved);
+            assert_eq!(deferred.id, "intent-chosen-human-approved");
+            assert!(deferred.chosen_human_approved);
             assert_eq!(deferred.defer_count, 2);
         }
         _ => panic!("expected deferred intent"),

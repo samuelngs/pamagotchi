@@ -7,27 +7,27 @@ use protocol::{ConversationId, IdentityId, InboundMessage, PersonId, ProfileId};
 use std::{collections::HashSet, sync::Arc};
 
 pub(crate) fn build_safety_ctx(authority: &Authority, kind: &SessionKind) -> SafetyCtx {
-    let sensitive_memory_access = if matches!(authority, Authority::ChosenPerson)
+    let sensitive_memory_access = if matches!(authority, Authority::ChosenHuman)
         || matches!(
             kind,
             SessionKind::Action(ActionKind::Review | ActionKind::Consolidate)
         ) {
         "sensitive recall allowed only when directly relevant; logs and transcripts are redacted"
     } else {
-        "conservative recall only; private or sensitive details require chosen-person authority or review context"
+        "conservative recall only; private or sensitive details require chosen-human authority or review context"
     };
     let proactive_outreach = match kind {
         SessionKind::Action(ActionKind::Outreach) => {
             "active outreach; obey consent, quiet hours, stale conversation, unanswered outreach, and gateway availability guards"
         }
         _ => {
-            "create or update proactive intents only when target, consent, timing, and chosen-person-approval rules allow it"
+            "create or update proactive intents only when target, consent, timing, and chosen-human-approval rules allow it"
         }
     };
-    let third_party_outreach = if matches!(authority, Authority::ChosenPerson) {
-        "chosen person can approve third-party outreach, but verified target and consent/timing guards still apply"
+    let third_party_outreach = if matches!(authority, Authority::ChosenHuman) {
+        "chosen human can approve third-party outreach, but verified target and consent/timing guards still apply"
     } else {
-        "third-party outreach requires a verified active target; sensitive third-party outreach requires chosen-person approval"
+        "third-party outreach requires a verified active target; sensitive third-party outreach requires chosen-human approval"
     };
 
     SafetyCtx {

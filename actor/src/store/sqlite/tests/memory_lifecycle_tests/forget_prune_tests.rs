@@ -32,7 +32,7 @@ async fn memory_forget() {
     store
         .store_memory(&sample_memory(
             "m2",
-            "chosen_person deleted",
+            "chosen_human deleted",
             vec![0.4, 0.3, 0.2, 0.1],
         ))
         .await
@@ -41,7 +41,7 @@ async fn memory_forget() {
         store
             .forget_with_reason(
                 &MemoryId("m2".into()),
-                Some("chosen_person requested deletion")
+                Some("chosen_human requested deletion")
             )
             .await
             .unwrap()
@@ -54,7 +54,7 @@ async fn memory_forget() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(reason.as_deref(), Some("chosen_person requested deletion"));
+    assert_eq!(reason.as_deref(), Some("chosen_human requested deletion"));
     drop(conn);
 
     let mutations = store
@@ -64,7 +64,7 @@ async fn memory_forget() {
     assert_eq!(mutations[0].operation, "forget");
     assert_eq!(
         mutations[0].reason.as_deref(),
-        Some("chosen_person requested deletion")
+        Some("chosen_human requested deletion")
     );
     assert!(
         mutations

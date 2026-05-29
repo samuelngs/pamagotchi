@@ -19,7 +19,7 @@ async fn default_user_cannot_update_social_graph() {
     assert!(denied.contains("Social graph updates require"));
 }
 #[tokio::test]
-async fn review_can_update_social_graph_but_not_chosen_person_confirm() {
+async fn review_can_update_social_graph_but_not_chosen_human_confirm() {
     let mut ctx = test_context(Authority::Default, ActionKind::Review);
     let current_profile = ProfileId("profile-a".into());
     let current_person = PersonId("person-a".into());
@@ -60,12 +60,12 @@ async fn review_can_update_social_graph_but_not_chosen_person_confirm() {
             "person_a": "person-a",
             "person_b": "person-b",
             "relation": "friend",
-            "source_kind": "chosen_person_confirmed"
+            "source_kind": "chosen_human_confirmed"
         }),
         &ctx,
     )
     .await
     .unwrap_err();
 
-    assert!(denied.contains("Chosen-person-confirmed"));
+    assert!(denied.contains("Chosen-human-confirmed"));
 }
