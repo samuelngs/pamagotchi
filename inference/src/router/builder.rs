@@ -3,7 +3,12 @@ use super::types::{Capability, InferenceEndpoint, Reasoning, ResolvedRoute};
 use std::collections::BTreeMap;
 
 pub struct InferenceRouterBuilder {
-    endpoints: Vec<InferenceEndpoint>,
+    endpoints: Vec<ConfiguredEndpoint>,
+}
+
+struct ConfiguredEndpoint {
+    id: String,
+    endpoint: InferenceEndpoint,
 }
 
 impl InferenceRouterBuilder {
@@ -14,7 +19,16 @@ impl InferenceRouterBuilder {
     }
 
     pub fn endpoint(mut self, endpoint: InferenceEndpoint) -> Self {
-        self.endpoints.push(endpoint);
+        let id = endpoint.model.clone();
+        self.endpoints.push(ConfiguredEndpoint { id, endpoint });
+        self
+    }
+
+    pub fn endpoint_with_id(mut self, id: impl Into<String>, endpoint: InferenceEndpoint) -> Self {
+        self.endpoints.push(ConfiguredEndpoint {
+            id: id.into(),
+            endpoint,
+        });
         self
     }
 
@@ -26,8 +40,10 @@ impl InferenceRouterBuilder {
         let mut chat_map: BTreeMap<u8, Vec<ResolvedRoute>> = BTreeMap::new();
         let mut embedding = Vec::new();
 
-        for ep in self.endpoints {
+        for configured in self.endpoints {
+            let ep = configured.endpoint;
             let route = ResolvedRoute {
+                id: configured.id,
                 protocol: ep.protocol.clone(),
                 model: ep.model.clone(),
                 sampling: ep.sampling.clone(),
@@ -35,12 +51,7 @@ impl InferenceRouterBuilder {
             };
 
             if ep.capabilities.contains(&Capability::Embedding) {
-                embedding.push(ResolvedRoute {
-                    protocol: ep.protocol,
-                    model: ep.model,
-                    sampling: ep.sampling,
-                    capabilities: ep.capabilities,
-                });
+                embedding.push(route);
                 continue;
             }
 

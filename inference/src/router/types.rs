@@ -52,6 +52,7 @@ pub enum RouteContext {
 }
 
 pub(super) struct ResolvedRoute {
+    pub(super) id: String,
     pub(super) protocol: InferenceProtocol,
     pub(super) model: String,
     pub(super) sampling: SamplingConfig,
@@ -60,6 +61,7 @@ pub(super) struct ResolvedRoute {
 
 #[derive(Clone)]
 pub struct ResolvedInference {
+    pub id: String,
     pub protocol: InferenceProtocol,
     pub model: String,
     pub sampling: SamplingConfig,
@@ -68,6 +70,7 @@ pub struct ResolvedInference {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EmbeddingResponse {
+    pub endpoint_id: String,
     pub model: String,
     pub embeddings: Vec<Vec<f32>>,
 }
@@ -88,6 +91,7 @@ pub(super) fn resolved_from_routes(routes: Vec<&ResolvedRoute>) -> Vec<ResolvedI
     routes
         .into_iter()
         .map(|r| ResolvedInference {
+            id: r.id.clone(),
             protocol: r.protocol.clone(),
             model: r.model.clone(),
             sampling: r.sampling.clone(),

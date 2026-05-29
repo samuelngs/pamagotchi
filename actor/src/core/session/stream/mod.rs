@@ -184,7 +184,7 @@ pub(super) async fn try_open_stream(
 
         match stream_result {
             Ok((stream, app_server_tools)) => {
-                info!(action = %ctx.action_id, model = %ep.model, "LLM stream opened");
+                info!(action = %ctx.action_id, endpoint = %ep.id, model = %ep.model, "LLM stream opened");
                 return Some(OpenedStream {
                     stream,
                     model: ep.model.clone(),
@@ -194,9 +194,9 @@ pub(super) async fn try_open_stream(
             Err(e) => {
                 let remaining = endpoints.len() - i - 1;
                 if remaining > 0 {
-                    warn!(%e, action = %ctx.action_id, model = %ep.model, remaining, "LLM failed, trying next endpoint");
+                    warn!(%e, action = %ctx.action_id, endpoint = %ep.id, model = %ep.model, remaining, "LLM failed, trying next endpoint");
                 } else {
-                    warn!(%e, action = %ctx.action_id, model = %ep.model, "LLM failed, no more endpoints");
+                    warn!(%e, action = %ctx.action_id, endpoint = %ep.id, model = %ep.model, "LLM failed, no more endpoints");
                 }
             }
         }

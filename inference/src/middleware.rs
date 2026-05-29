@@ -72,6 +72,28 @@ impl<P: OpenAiCompatibleBridge> OpenAiCompatibleBridge for Retry<P> {
         }
         Err(last_err.unwrap())
     }
+
+    async fn embed(&self, model: &str, input: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let mut last_err = None;
+        for attempt in 0..self.max_attempts {
+            match self.inner.embed(model, input).await {
+                Ok(embeddings) => return Ok(embeddings),
+                Err(e) => {
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        max = self.max_attempts,
+                        error = %e,
+                        "retrying embedding"
+                    );
+                    last_err = Some(e);
+                    if attempt + 1 < self.max_attempts {
+                        tokio::time::sleep(self.base_delay * 2u32.pow(attempt)).await;
+                    }
+                }
+            }
+        }
+        Err(last_err.unwrap())
+    }
 }
 
 #[async_trait]
@@ -170,6 +192,30 @@ impl<P: OpenAiCompatibleBridge> OpenAiCompatibleBridge for Logging<P> {
 
         result
     }
+
+    async fn embed(&self, model: &str, input: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        tracing::debug!(model = %model, input_count = input.len(), "embedding request");
+
+        let start = Instant::now();
+        let result = self.inner.embed(model, input).await;
+
+        match &result {
+            Ok(embeddings) => tracing::debug!(
+                model = %model,
+                embeddings = embeddings.len(),
+                elapsed_ms = start.elapsed().as_millis() as u64,
+                "embedding response"
+            ),
+            Err(e) => tracing::warn!(
+                model = %model,
+                error = %e,
+                elapsed_ms = start.elapsed().as_millis() as u64,
+                "embedding error"
+            ),
+        }
+
+        result
+    }
 }
 
 pub struct Timeout<P> {
@@ -195,5 +241,11 @@ impl<P: OpenAiCompatibleBridge> OpenAiCompatibleBridge for Timeout<P> {
         tokio::time::timeout(self.duration, self.inner.chat_stream(request))
             .await
             .map_err(|_| anyhow::anyhow!("chat stream timed out after {:?}", self.duration))?
+    }
+
+    async fn embed(&self, model: &str, input: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        tokio::time::timeout(self.duration, self.inner.embed(model, input))
+            .await
+            .map_err(|_| anyhow::anyhow!("embedding timed out after {:?}", self.duration))?
     }
 }

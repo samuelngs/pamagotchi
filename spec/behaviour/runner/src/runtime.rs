@@ -68,13 +68,16 @@ fn build_router(inference: &RuntimeInference) -> anyhow::Result<(InferenceRouter
             let provider = CodexProvider::new(options);
             let retry = Retry::new(provider, 1);
             let router = InferenceRouterBuilder::new()
-                .endpoint(InferenceEndpoint {
-                    protocol: InferenceProtocol::CodexAppServer(Arc::new(retry)),
-                    model: model.clone(),
-                    sampling: SamplingConfig::default(),
-                    capabilities: inference.capabilities.clone(),
-                    reasoning: inference::Reasoning::Basic,
-                })
+                .endpoint_with_id(
+                    inference.id.clone(),
+                    InferenceEndpoint {
+                        protocol: InferenceProtocol::CodexAppServer(Arc::new(retry)),
+                        model: model.clone(),
+                        sampling: SamplingConfig::default(),
+                        capabilities: inference.capabilities.clone(),
+                        reasoning: inference::Reasoning::Basic,
+                    },
+                )
                 .build()?;
             Ok((router, model))
         }

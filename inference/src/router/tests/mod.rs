@@ -1,6 +1,8 @@
 use super::*;
 use crate::request::SamplingConfig;
-use crate::{ChatRequest, ChatResponse, ChatStream, InferenceProtocol, OpenAiCompatibleBridge};
+use crate::{
+    ChatRequest, ChatResponse, ChatStream, InferenceProtocol, OpenAiCompatibleBridge, Retry,
+};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -93,6 +95,7 @@ fn resolve_chain_requiring_vision_escalates_to_capable_route() {
     );
 
     assert_eq!(chain.len(), 1);
+    assert_eq!(chain[0].id, "vision");
     assert_eq!(chain[0].model, "vision");
 }
 
@@ -136,6 +139,44 @@ async fn embed_tries_next_embedding_route_when_first_fails() {
         .embed_with_metadata(&["deploy budget"])
         .await
         .unwrap();
+    assert_eq!(response.endpoint_id, "embed-fallback");
+    assert_eq!(response.model, "embed-fallback");
+    assert_eq!(response.embeddings, vec![vec![0.1, 0.2, 0.3]]);
+}
+
+#[test]
+fn endpoint_with_id_preserves_config_identifier() {
+    let router = InferenceRouterBuilder::new()
+        .endpoint_with_id(
+            "chat-primary",
+            endpoint("gpt-chat", Reasoning::Basic, vec![Capability::Chat]),
+        )
+        .build()
+        .unwrap();
+
+    let resolved = router.resolve(&RouteContext::Mind);
+
+    assert_eq!(resolved.id, "chat-primary");
+    assert_eq!(resolved.model, "gpt-chat");
+}
+
+#[tokio::test]
+async fn embed_forwards_through_retry_wrapper() {
+    let provider = Arc::new(Retry::new(SuccessfulEmbeddingProvider, 1));
+    let router = InferenceRouterBuilder::new()
+        .endpoint_with_id(
+            "vpc-embedding",
+            embedding_endpoint("embed-fallback", provider),
+        )
+        .build()
+        .unwrap();
+
+    let response = router
+        .embed_with_metadata(&["deploy budget"])
+        .await
+        .unwrap();
+
+    assert_eq!(response.endpoint_id, "vpc-embedding");
     assert_eq!(response.model, "embed-fallback");
     assert_eq!(response.embeddings, vec![vec![0.1, 0.2, 0.3]]);
 }

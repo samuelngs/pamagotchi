@@ -20,6 +20,7 @@ impl InferenceRouter {
             .or_else(|| self.chat.first().and_then(|(_, c)| c.first()))
             .expect("router has no endpoints");
         ResolvedInference {
+            id: route.id.clone(),
             protocol: route.protocol.clone(),
             model: route.model.clone(),
             sampling: route.sampling.clone(),
@@ -101,6 +102,7 @@ impl InferenceRouter {
             match route.protocol.embed(&route.model, input).await {
                 Ok(embeddings) => {
                     return Ok(EmbeddingResponse {
+                        endpoint_id: route.id.clone(),
                         model: route.model.clone(),
                         embeddings,
                     });
@@ -108,6 +110,7 @@ impl InferenceRouter {
                 Err(error) => {
                     warn!(
                         %error,
+                        endpoint = %route.id,
                         model = %route.model,
                         "embedding endpoint failed"
                     );

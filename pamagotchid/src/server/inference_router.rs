@@ -5,13 +5,16 @@ pub(super) fn build_inference_router(config: &Config) -> anyhow::Result<Inferenc
 
     for entry in &config.inference {
         let (provider, model, sampling) = build_provider(entry)?;
-        builder = builder.endpoint(InferenceEndpoint {
-            protocol: provider,
-            model,
-            sampling,
-            capabilities: entry.capabilities.clone(),
-            reasoning: entry.reasoning,
-        });
+        builder = builder.endpoint_with_id(
+            entry.id.clone(),
+            InferenceEndpoint {
+                protocol: provider,
+                model,
+                sampling,
+                capabilities: entry.capabilities.clone(),
+                reasoning: entry.reasoning,
+            },
+        );
     }
 
     builder.build()
