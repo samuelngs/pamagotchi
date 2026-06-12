@@ -47,6 +47,7 @@ pub struct ActionPromptContext {
     pub actor_name: String,
     pub now: String,
     pub age: String,
+    pub variation_key: usize,
     pub action_task: Option<String>,
     pub identity_memories: Vec<String>,
     pub traits: TraitsCtx,

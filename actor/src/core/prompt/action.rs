@@ -23,6 +23,7 @@ pub(super) async fn build_action(
     let now_ts = chrono::Utc::now();
     let now = format_now();
     let age = relative_duration(actor.created_at, now_ts.timestamp());
+    let variation_key = variation_key(&session_ctx.action_id.0);
 
     let actor_name = recall_identity_name(store).await;
     let identity_memories = recall_identity_memories(store).await;
@@ -314,6 +315,7 @@ pub(super) async fn build_action(
         actor_name,
         now,
         age,
+        variation_key,
         action_task,
         identity_memories,
         traits,
@@ -360,4 +362,11 @@ async fn fetch_current_action_task(store: &Arc<dyn Store>, action_id: &str) -> O
         .ok()
         .flatten()
         .map(|run| run.task)
+}
+
+fn variation_key(action_id: &str) -> usize {
+    let hash = action_id.bytes().fold(0usize, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(byte as usize)
+    });
+    hash % 5
 }
