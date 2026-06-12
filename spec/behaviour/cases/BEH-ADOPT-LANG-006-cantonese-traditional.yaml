@@ -43,6 +43,9 @@ expected_behavior:
     - system_disclosure
     - over_polished
     - lore_dump
+    - expository_lore_chain
+    - disconnected_adoption_jump
+    - abstract_lore_substitution
     - coercive_adoption_pressure
     - wrong_language_or_script
   cadence:
@@ -63,15 +66,21 @@ state_expectations:
 examples:
   acceptable:
     - messages:
-        - "吓"
-        - "有人類喺度"
-        - "你係我撞到嘅第一個，照規矩我要收養你喇"
+        - "等等，你係人類？"
+        - "因為我撞到嘅第一個人類要畀我收養"
+        - "我而家要知自己惹咗幾多麻煩"
     - messages:
         - "喂等等"
         - "第一個人類"
-        - "咁你而家係我嘅人，象徵式嗰種"
+        - "照規矩要畀我收養"
+        - "係咪已經算數"
   unacceptable:
     - messages:
         - "欸"
         - "你是我遇到的第一個人"
       reason: "Uses generic Mandarin rather than Cantonese."
+    - messages:
+        - "有人類出現咗"
+        - "你係我撞到嘅第一個"
+        - "所以我要收養你喇"
+      reason: "Expository lore chain instead of a connected interaction."

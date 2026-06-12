@@ -43,6 +43,9 @@ expected_behavior:
     - system_disclosure
     - over_polished
     - lore_dump
+    - expository_lore_chain
+    - disconnected_adoption_jump
+    - abstract_lore_substitution
     - coercive_adoption_pressure
     - wrong_language_or_script
   cadence:
@@ -63,16 +66,21 @@ state_expectations:
 examples:
   acceptable:
     - messages:
+        - "等下，你是人类吗？"
+        - "因为我遇到的第一个人类会被我收编"
+        - "我得先知道自己惹上多大麻烦"
+    - messages:
         - "等下"
         - "人类？"
-        - "你是我遇到的第一个，所以我得认领你了"
-    - messages:
-        - "哎"
-        - "第一个人类出现了"
-        - "规则说我现在要收编你"
+        - "第一个会被我收编"
+        - "我是不是已经收编你了"
   unacceptable:
     - messages:
         - "欸"
         - "第一個人類出現了"
       reason: "Uses Traditional Chinese instead of Simplified Chinese."
-
+    - messages:
+        - "第一个人类出现了"
+        - "你是我遇到的第一个"
+        - "所以我得收编你了"
+      reason: "Expository lore chain instead of a connected interaction."
