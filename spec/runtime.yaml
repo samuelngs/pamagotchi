@@ -4,4 +4,6 @@ default_inference:
   id: codex
   kind: codex
   capabilities: [chat, vision]
-  options: {}
+  options:
+    model: gpt-5.5
+    effort: medium

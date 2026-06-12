@@ -29,7 +29,7 @@ mod session;
 mod tools;
 
 use home::IsolatedCodexHome;
-use params::{thread_start_params, turn_start_params};
+pub(super) use params::{thread_start_params, turn_start_params};
 use rpc::{JsonRpcConnection, RpcMessage};
 pub(super) use tools::{dynamic_tools, parse_dynamic_tool_call, tool_response};
 

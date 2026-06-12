@@ -1,4 +1,5 @@
 use super::*;
+use inference::CodexEffort;
 
 #[test]
 fn parse_minimal_config() {
@@ -38,6 +39,7 @@ inference:
     assert_eq!(opts.command, "codex");
     assert_eq!(opts.profile_v2.as_deref(), Some("pamagotchi"));
     assert_eq!(opts.sandbox.as_deref(), Some("read-only"));
+    assert_eq!(opts.effort, None);
     assert!(opts.extra_args.is_empty());
 }
 
@@ -51,6 +53,7 @@ inference:
     options:
       model: gpt-5.3-codex
       profile_v2: custom
+      effort: medium
 "#;
     let config: Config = yaml_serde::from_str(yaml).unwrap();
     config.validate().unwrap();
@@ -59,6 +62,7 @@ inference:
     };
     assert_eq!(opts.model, "gpt-5.3-codex");
     assert_eq!(opts.profile_v2.as_deref(), Some("custom"));
+    assert_eq!(opts.effort, Some(CodexEffort::Medium));
 }
 
 #[test]

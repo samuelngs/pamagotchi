@@ -1,6 +1,8 @@
-use super::app_server::{AppServerSession, dynamic_tools, parse_dynamic_tool_call, tool_response};
+use super::app_server::{
+    AppServerSession, dynamic_tools, parse_dynamic_tool_call, tool_response, turn_start_params,
+};
 use super::events::{AppServerEventState, handle_notification, parse_notification};
-use super::options::CodexOptions;
+use super::options::{CodexEffort, CodexOptions};
 use super::prompt::prompt_from_request;
 use crate::{AppServerToolResult, AppServerToolResultContent};
 use crate::{ChatRequest, ContentPart, Message, StreamEvent, Tool};
@@ -122,6 +124,7 @@ fn app_server_command_uses_isolated_noninteractive_flags() {
         cwd: Some("/tmp/work".into()),
         profile_v2: Some("pamagotchi".into()),
         sandbox: Some("read-only".into()),
+        effort: None,
         extra_args: vec!["--strict-config".into()],
     });
 
@@ -225,4 +228,43 @@ fn options_default_to_codex_spark_model() {
     assert_eq!(options.command, "codex");
     assert_eq!(options.profile_v2.as_deref(), Some("pamagotchi"));
     assert_eq!(options.sandbox.as_deref(), Some("read-only"));
+    assert_eq!(options.effort, None);
+}
+
+#[test]
+fn options_parse_app_server_effort() {
+    let options: CodexOptions =
+        serde_json::from_value(serde_json::json!({"effort": "medium"})).unwrap();
+
+    assert_eq!(options.effort, Some(CodexEffort::Medium));
+}
+
+#[test]
+fn options_reject_unknown_app_server_effort() {
+    let err = serde_json::from_value::<CodexOptions>(serde_json::json!({
+        "effort": "maximum"
+    }))
+    .unwrap_err();
+
+    assert!(err.to_string().contains("unknown variant"));
+}
+
+#[test]
+fn app_server_turn_start_uses_configured_effort() {
+    let options = CodexOptions {
+        model: "gpt-5".into(),
+        command: "codex".into(),
+        cwd: None,
+        profile_v2: Some("pamagotchi".into()),
+        sandbox: Some("read-only".into()),
+        effort: Some(CodexEffort::High),
+        extra_args: Vec::new(),
+    };
+    let request = ChatRequest::new("gpt-5", Vec::new());
+
+    let params = turn_start_params(&options, &request, "hello", "thread_1").unwrap();
+
+    assert_eq!(params["threadId"], "thread_1");
+    assert_eq!(params["model"], "gpt-5");
+    assert_eq!(params["effort"], "high");
 }

@@ -1,6 +1,9 @@
 use super::*;
 
-pub(super) fn thread_start_params(options: &CodexOptions, request: &ChatRequest) -> Value {
+pub(in crate::codex) fn thread_start_params(
+    options: &CodexOptions,
+    request: &ChatRequest,
+) -> Value {
     let mut params = json!({
         "model": request.model,
         "approvalPolicy": "never",
@@ -17,7 +20,7 @@ pub(super) fn thread_start_params(options: &CodexOptions, request: &ChatRequest)
     params
 }
 
-pub(super) fn turn_start_params(
+pub(in crate::codex) fn turn_start_params(
     options: &CodexOptions,
     request: &ChatRequest,
     prompt: &str,
@@ -31,6 +34,9 @@ pub(super) fn turn_start_params(
     });
     if let Some(cwd) = &options.cwd {
         params["cwd"] = Value::String(cwd.clone());
+    }
+    if let Some(effort) = &options.effort {
+        params["effort"] = Value::String(effort.as_str().into());
     }
     Ok(params)
 }
