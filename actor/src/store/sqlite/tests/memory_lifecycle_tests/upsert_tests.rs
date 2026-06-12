@@ -79,8 +79,9 @@ async fn memory_dedupe_key_upserts_existing_memory_subjects_and_index() {
 #[tokio::test]
 async fn memory_get_loads_embedding() {
     let store = test_store();
+    let embedding = vec![0.1; 1024];
     store
-        .store_memory(&sample_memory("m1", "test", vec![0.1, 0.2, 0.3, 0.4]))
+        .store_memory(&sample_memory("m1", "test", embedding.clone()))
         .await
         .unwrap();
 
@@ -89,7 +90,7 @@ async fn memory_get_loads_embedding() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(loaded.embedding.unwrap(), vec![0.1, 0.2, 0.3, 0.4]);
+    assert_eq!(loaded.embedding.unwrap(), embedding);
 }
 
 #[tokio::test]
@@ -109,8 +110,9 @@ async fn memory_store_skips_incompatible_embedding_dimensions() {
 #[tokio::test]
 async fn memory_update_skips_incompatible_embedding_dimensions() {
     let store = test_store();
+    let embedding = vec![0.1; 1024];
     store
-        .store_memory(&sample_memory("m1", "test", vec![0.1, 0.2, 0.3, 0.4]))
+        .store_memory(&sample_memory("m1", "test", embedding))
         .await
         .unwrap();
 

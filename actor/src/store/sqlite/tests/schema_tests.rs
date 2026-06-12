@@ -84,9 +84,32 @@ fn init_schema_creates_current_tables_and_indexes() {
 }
 
 #[test]
-fn init_schema_rebuilds_memory_vector_index_when_embedding_dimensions_change() {
+fn init_schema_uses_hardcoded_memory_embedding_dimensions() {
+    let conn = schema_test_conn();
+    schema::init_schema(&conn, 1536).unwrap();
+
+    let create_sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memories_vec'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(create_sql.contains("embedding float[1024]"));
+}
+
+#[test]
+fn init_schema_rebuilds_memory_vector_index_to_hardcoded_dimensions() {
     let conn = schema_test_conn();
     schema::init_schema(&conn, 4).unwrap();
+    conn.execute_batch(
+        "DROP TABLE memories_vec;
+        CREATE VIRTUAL TABLE memories_vec USING vec0(
+            memory_id TEXT PRIMARY KEY,
+            embedding float[1536]
+        );",
+    )
+    .unwrap();
     conn.execute(
         "INSERT INTO memories (
             id,
@@ -112,13 +135,14 @@ fn init_schema_rebuilds_memory_vector_index_when_embedding_dimensions_change() {
         ],
     )
     .unwrap();
+    let old_embedding = vec![0.1; 1536];
     conn.execute(
         "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
-        params!["memory-1", test_embedding_bytes(&[0.1, 0.2, 0.3, 0.4])],
+        params!["memory-1", test_embedding_bytes(&old_embedding)],
     )
     .unwrap();
 
-    schema::init_schema(&conn, 3).unwrap();
+    schema::init_schema(&conn, 4).unwrap();
 
     let create_sql: String = conn
         .query_row(
@@ -127,7 +151,7 @@ fn init_schema_rebuilds_memory_vector_index_when_embedding_dimensions_change() {
             |row| row.get(0),
         )
         .unwrap();
-    assert!(create_sql.contains("embedding float[3]"));
+    assert!(create_sql.contains("embedding float[1024]"));
 
     let memory_count: u32 = conn
         .query_row(
@@ -153,9 +177,10 @@ fn init_schema_rebuilds_memory_vector_index_when_embedding_dimensions_change() {
         .unwrap();
     assert_eq!(vector_count, 0);
 
+    let new_embedding = vec![0.1; 1024];
     conn.execute(
         "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
-        params!["memory-1", test_embedding_bytes(&[0.1, 0.2, 0.3])],
+        params!["memory-1", test_embedding_bytes(&new_embedding)],
     )
     .unwrap();
 }
