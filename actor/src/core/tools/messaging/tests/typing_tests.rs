@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn send_waits_for_current_sender_typing_to_stop() {
+async fn send_does_not_wait_for_current_sender_typing_to_stop() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let sent = Arc::new(Mutex::new(Vec::new()));
     let gateway = Arc::new(GatewayRouter::new());
@@ -24,11 +24,6 @@ async fn send_waits_for_current_sender_typing_to_stop() {
         .write()
         .unwrap()
         .insert(key.clone(), crate::core::tools::util::now());
-    let typing = ctx.typing.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        typing.write().unwrap().remove(&key);
-    });
     let mut state = SessionState {
         responded: false,
         attempted_send: false,
@@ -48,12 +43,16 @@ async fn send_waits_for_current_sender_typing_to_stop() {
         presented_injection_count: 0,
     };
 
-    let started = std::time::Instant::now();
-    let result = send(&json!({"content": "hi"}), &ctx, &mut state).await;
+    let args = json!({"content": "hi"});
+    let result = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        send(&args, &ctx, &mut state),
+    )
+    .await
+    .expect("send should not wait for typing to clear");
 
     assert_eq!(result, "Message sent.");
     assert!(state.responded);
-    assert!(started.elapsed() >= std::time::Duration::from_millis(100));
     assert_eq!(
         sent.lock().unwrap().as_slice(),
         &[("local".to_string(), "hi".to_string())]

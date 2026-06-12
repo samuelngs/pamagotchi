@@ -121,14 +121,6 @@ impl Mind {
         self.defer_message_with_reason(msg, delay_secs, None)
     }
 
-    pub(super) fn defer_message_for_typing(
-        &self,
-        msg: &InboundMessage,
-        delay_secs: u64,
-    ) -> MindDecision {
-        self.defer_message_with_reason(msg, delay_secs, Some("typing"))
-    }
-
     fn defer_message_with_reason(
         &self,
         msg: &InboundMessage,

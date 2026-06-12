@@ -28,11 +28,6 @@ impl Mind {
                     }
                 }
 
-                if self.sender_is_typing(msg) {
-                    warn!("sender is still typing, deferring response");
-                    return self.defer_message_for_typing(msg, 5);
-                }
-
                 if self.registry.at_capacity() {
                     if let Some(lowest) = self.registry.lowest_priority_running() {
                         if lowest.priority < ActionKind::Respond.default_priority() {

@@ -1,6 +1,4 @@
-use super::context::{
-    SessionContext, SessionKind, SessionState, TYPING_ACTIVE_SECS, TypingStateKey,
-};
+use super::context::{SessionContext, SessionKind, SessionState};
 use crate::core::ActionKind;
 use crate::state::{RelationshipChange, RelationshipInteraction, RelationshipStanding};
 use crate::store::{
@@ -13,11 +11,7 @@ use protocol::{
     MediaAttachment, MediaKind, PersonId, generated_message_id,
 };
 use serde_json::{Value, json};
-use std::time::{Duration, Instant};
 use tracing::warn;
-
-const TYPING_SEND_WAIT_MAX_MS: u64 = 1_500;
-const TYPING_SEND_POLL_MS: u64 = 100;
 
 mod attachments;
 mod delivery;
@@ -26,7 +20,6 @@ mod schemas;
 mod send;
 mod summary;
 mod target;
-mod typing;
 
 #[cfg(test)]
 pub use read::read;

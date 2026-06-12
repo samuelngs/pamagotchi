@@ -4,7 +4,6 @@ use super::target::{
     current_composing_target, current_conversation, default_delivery_target,
     explicit_delivery_target, outbound_relationship_person,
 };
-use super::typing::wait_if_current_sender_is_typing;
 use super::*;
 use crate::core::tools::util;
 
@@ -35,9 +34,6 @@ pub async fn send(args: &Value, ctx: &SessionContext, state: &mut SessionState) 
 
     let conversation = current_conversation(ctx);
     let outbound_message_id = generated_message_id();
-    if !is_outbound {
-        wait_if_current_sender_is_typing(ctx).await;
-    }
     state.attempted_send = true;
     let delivery = ctx
         .gateway

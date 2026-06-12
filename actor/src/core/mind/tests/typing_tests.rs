@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn typing_sender_defers_fresh_response_until_typing_stops() {
+async fn typing_sender_does_not_defer_fresh_response() {
     let store = Arc::new(SqliteStore::open_in_memory(4).unwrap());
     let mut mind = test_mind(store);
     let person = PersonId("sam".into());
@@ -22,29 +22,6 @@ async fn typing_sender_defers_fresh_response_until_typing_stops() {
         true,
     );
 
-    let decision = mind
-        .build_decision(
-            MindVerdict::Respond {
-                style_directive: None,
-            },
-            &WakeEvent::Message(msg.clone()),
-        )
-        .await;
-    match decision {
-        MindDecision::DeferMessage(deferred, delay_secs) => {
-            assert_eq!(delay_secs, 5);
-            assert_eq!(deferred.metadata["mind_defer_count"], 1);
-            assert_eq!(deferred.metadata["mind_defer_reason"], "typing");
-        }
-        _ => panic!("expected deferred message while sender is typing"),
-    }
-
-    mind.update_typing(
-        &msg.conversation,
-        &msg.gateway_id,
-        msg.sender_external_id().unwrap(),
-        false,
-    );
     let decision = mind
         .build_decision(
             MindVerdict::Respond {
