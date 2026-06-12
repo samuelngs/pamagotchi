@@ -181,4 +181,6 @@ async fn review_prompt_includes_source_action_transcript() {
     assert!(prompt.contains("formed memories: memory-created-review"));
     assert!(prompt.contains("recalled memories: memory-greeting-style"));
     assert!(prompt.contains("delivery relay:local: delivered"));
+    assert!(prompt.contains("Tool arguments must be strict JSON"));
+    assert!(prompt.contains(r#"{"conversation_summary":{"summary":"...""#));
 }
