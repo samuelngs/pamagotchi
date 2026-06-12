@@ -1,5 +1,8 @@
 use super::rows::read_memory;
-use super::support::{SlowSqliteQuery, TxGuard, bytes_to_embedding, embedding_to_bytes};
+use super::support::{
+    SlowSqliteQuery, TxGuard, bytes_to_embedding, embedding_to_bytes,
+    write_memory_embedding_best_effort,
+};
 use crate::store::{
     Memory, MemoryMutationRecord, MemorySubject, MemorySubjectType, MemoryUpdate, PrivacyCategory,
     RecallQuery, TruthStatus,

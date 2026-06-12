@@ -152,15 +152,7 @@ pub(in crate::store::sqlite) fn store_memory(
     }
 
     if let Some(ref embedding) = memory.embedding {
-        let bytes = embedding_to_bytes(embedding);
-        conn.execute(
-            "DELETE FROM memories_vec WHERE memory_id = ?1",
-            params![target_id],
-        )?;
-        conn.execute(
-            "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
-            params![target_id, bytes],
-        )?;
+        write_memory_embedding_best_effort(conn, &target_id, embedding)?;
     }
 
     conn.execute(

@@ -1,5 +1,6 @@
 use super::migrations::{ensure_migration_table, record_clean_schema};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
+use tracing::warn;
 
 pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
     ensure_migration_table(conn)?;
@@ -564,12 +565,7 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
         CREATE INDEX IF NOT EXISTS idx_directives_active ON behavior_directives(active);",
     )?;
 
-    conn.execute_batch(&format!(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0(
-            memory_id TEXT PRIMARY KEY,
-            embedding float[{embedding_dims}]
-        );"
-    ))?;
+    ensure_memories_vec_table(conn, embedding_dims)?;
 
     conn.execute_batch(
         "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
@@ -581,4 +577,59 @@ pub(super) fn init_schema(conn: &Connection, embedding_dims: usize) -> anyhow::R
     record_clean_schema(conn)?;
 
     Ok(())
+}
+
+fn ensure_memories_vec_table(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
+    let create_sql = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memories_vec'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+
+    let Some(create_sql) = create_sql else {
+        return create_memories_vec_table(conn, embedding_dims);
+    };
+
+    match parse_memories_vec_embedding_dims(&create_sql) {
+        Some(existing_dims) if existing_dims == embedding_dims => Ok(()),
+        existing_dims => {
+            warn!(
+                existing_embedding_dims = existing_dims,
+                configured_embedding_dims = embedding_dims,
+                "rebuilding memories vector index for configured embedding dimensions"
+            );
+            conn.execute_batch("DROP TABLE IF EXISTS memories_vec;")?;
+            conn.execute(
+                "UPDATE memories SET embedding_model = NULL, embedding_version = NULL",
+                [],
+            )?;
+            create_memories_vec_table(conn, embedding_dims)
+        }
+    }
+}
+
+fn create_memories_vec_table(conn: &Connection, embedding_dims: usize) -> anyhow::Result<()> {
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE memories_vec USING vec0(
+            memory_id TEXT PRIMARY KEY,
+            embedding float[{embedding_dims}]
+        );"
+    ))?;
+    Ok(())
+}
+
+fn parse_memories_vec_embedding_dims(create_sql: &str) -> Option<usize> {
+    let lower_sql = create_sql.to_ascii_lowercase();
+    let (_, rest) = lower_sql.split_once("embedding float[")?;
+    let digits = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
 }

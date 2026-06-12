@@ -91,3 +91,48 @@ async fn memory_get_loads_embedding() {
         .unwrap();
     assert_eq!(loaded.embedding.unwrap(), vec![0.1, 0.2, 0.3, 0.4]);
 }
+
+#[tokio::test]
+async fn memory_store_skips_incompatible_embedding_dimensions() {
+    let store = test_store();
+    let id = store
+        .store_memory(&sample_memory("m1", "test", vec![0.1, 0.2, 0.3]))
+        .await
+        .unwrap();
+
+    let loaded = store.get_memory(&id).await.unwrap().unwrap();
+    assert_eq!(loaded.content, "test");
+    assert!(loaded.embedding.is_none());
+    assert!(loaded.embedding_model.is_none());
+}
+
+#[tokio::test]
+async fn memory_update_skips_incompatible_embedding_dimensions() {
+    let store = test_store();
+    store
+        .store_memory(&sample_memory("m1", "test", vec![0.1, 0.2, 0.3, 0.4]))
+        .await
+        .unwrap();
+
+    store
+        .update_memory(
+            &MemoryId("m1".into()),
+            &MemoryUpdate {
+                content: Some("updated".into()),
+                embedding_model: Some("embed-1024".into()),
+                embedding: Some(vec![0.1, 0.2, 0.3]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    let loaded = store
+        .get_memory(&MemoryId("m1".into()))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(loaded.content, "updated");
+    assert!(loaded.embedding.is_none());
+    assert!(loaded.embedding_model.is_none());
+}

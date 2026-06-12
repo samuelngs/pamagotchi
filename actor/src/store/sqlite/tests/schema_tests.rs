@@ -84,6 +84,83 @@ fn init_schema_creates_current_tables_and_indexes() {
 }
 
 #[test]
+fn init_schema_rebuilds_memory_vector_index_when_embedding_dimensions_change() {
+    let conn = schema_test_conn();
+    schema::init_schema(&conn, 4).unwrap();
+    conn.execute(
+        "INSERT INTO memories (
+            id,
+            kind,
+            content,
+            source,
+            emotional_valence,
+            created_at,
+            accessed_at,
+            embedding_model,
+            embedding_version
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            "memory-1",
+            "episodic",
+            "Sam likes concise updates",
+            "conversation",
+            0.0,
+            1000,
+            1000,
+            "embed-4",
+            "v1"
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
+        params!["memory-1", test_embedding_bytes(&[0.1, 0.2, 0.3, 0.4])],
+    )
+    .unwrap();
+
+    schema::init_schema(&conn, 3).unwrap();
+
+    let create_sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memories_vec'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(create_sql.contains("embedding float[3]"));
+
+    let memory_count: u32 = conn
+        .query_row(
+            "SELECT count(*) FROM memories WHERE id = ?1",
+            params!["memory-1"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(memory_count, 1);
+
+    let (embedding_model, embedding_version): (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT embedding_model, embedding_version FROM memories WHERE id = ?1",
+            params!["memory-1"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(embedding_model, None);
+    assert_eq!(embedding_version, None);
+
+    let vector_count: u32 = conn
+        .query_row("SELECT count(*) FROM memories_vec", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(vector_count, 0);
+
+    conn.execute(
+        "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
+        params!["memory-1", test_embedding_bytes(&[0.1, 0.2, 0.3])],
+    )
+    .unwrap();
+}
+
+#[test]
 fn init_schema_creates_chosen_human_intent_approval_column_only() {
     let conn = schema_test_conn();
     schema::init_schema(&conn, 4).unwrap();
@@ -147,4 +224,11 @@ fn index_exists(conn: &rusqlite::Connection, table: &str, index: &str) -> bool {
         .unwrap()
         .filter_map(|row| row.ok())
         .any(|name| name == index)
+}
+
+fn test_embedding_bytes(values: &[f32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
 }

@@ -1,5 +1,5 @@
 use crate::store::{Memory, MemoryType};
-use rusqlite::{Connection, types::Value as SqlValue};
+use rusqlite::{Connection, params, types::Value as SqlValue};
 use sqlite_vec::sqlite3_vec_init;
 use std::sync::Once;
 use std::time::{Duration, Instant};
@@ -58,6 +58,45 @@ pub(super) fn register_sqlite_vec() {
             sqlite3_vec_init as *const (),
         )));
     });
+}
+
+pub(super) fn write_memory_embedding_best_effort(
+    conn: &Connection,
+    memory_id: &str,
+    embedding: &[f32],
+) -> anyhow::Result<bool> {
+    let bytes = embedding_to_bytes(embedding);
+    conn.execute(
+        "DELETE FROM memories_vec WHERE memory_id = ?1",
+        params![memory_id],
+    )?;
+
+    match conn.execute(
+        "INSERT INTO memories_vec (memory_id, embedding) VALUES (?1, ?2)",
+        params![memory_id, bytes],
+    ) {
+        Ok(_) => Ok(true),
+        Err(error) if sqlite_vec_dimension_mismatch(&error) => {
+            warn!(
+                memory_id,
+                embedding_dims = embedding.len(),
+                %error,
+                "skipping memory embedding with incompatible vector dimensions"
+            );
+            conn.execute(
+                "UPDATE memories SET embedding_model = NULL, embedding_version = NULL WHERE id = ?1",
+                params![memory_id],
+            )?;
+            Ok(false)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn sqlite_vec_dimension_mismatch(error: &rusqlite::Error) -> bool {
+    error
+        .to_string()
+        .contains("Dimension mismatch for inserted vector")
 }
 
 pub(super) fn debug_limit(limit: usize) -> usize {
